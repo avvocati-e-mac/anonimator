@@ -1,5 +1,5 @@
 {
-  "name": "legal-shield-anonimizzatore",
+  "name": "anonimator",
   "version": "1.0.0",
   "description": "App desktop per la pseudoanonimizzazione offline di documenti legali italiani (GDPR compliant)",
   "main": "out/main/index.js",

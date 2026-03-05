@@ -91,7 +91,7 @@ export default function DropZone({ onOpenSettings }: DropZoneProps): React.JSX.E
       <div className="text-center mb-8">
         <div className="flex items-center justify-center gap-2 mb-3">
           <ShieldCheck className="text-blue-600" size={36} />
-          <h1 className="text-2xl font-bold text-slate-800">LegalShield</h1>
+          <h1 className="text-2xl font-bold text-slate-800">Anonimator</h1>
         </div>
         <p className="text-slate-500">Anonimizzatore di documenti legali — elaborazione locale</p>
       </div>

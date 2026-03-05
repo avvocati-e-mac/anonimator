@@ -12,7 +12,7 @@ function createWindow(): BrowserWindow {
     height: 680,
     minWidth: 700,
     minHeight: 500,
-    title: 'LegalShield — Anonimizzatore',
+    title: 'Anonimator',
     webPreferences: {
       // Sicurezza: renderer isolato, senza accesso diretto a Node.js
       preload: join(__dirname, '../preload/index.js'),

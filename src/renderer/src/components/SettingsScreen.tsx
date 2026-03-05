@@ -12,8 +12,39 @@ interface SettingsScreenProps {
 
 type TestState = 'idle' | 'loading' | 'ok' | 'error'
 
+// Preset per i due software LLM supportati
+const LLM_PRESETS = {
+  ollama:   { label: 'Ollama',    defaultPort: 11434, path: '/v1' },
+  lmstudio: { label: 'LM Studio', defaultPort: 1234,  path: '/v1' },
+} as const
+type PresetKey = keyof typeof LLM_PRESETS
+
+function buildBaseUrl(preset: PresetKey, host: string): string {
+  const { defaultPort, path } = LLM_PRESETS[preset]
+  const h = host.trim() || 'localhost'
+  // Se l'host non include già la porta, aggiungila
+  const hasPort = /:\d+$/.test(h)
+  return `http://${h}${hasPort ? '' : `:${defaultPort}`}${path}`
+}
+
+function detectPresetFromUrl(url: string): PresetKey {
+  if (url.includes(':1234')) return 'lmstudio'
+  return 'ollama'
+}
+
+function extractHostFromUrl(url: string): string {
+  try {
+    const u = new URL(url)
+    return u.hostname + (u.port ? `:${u.port}` : '')
+  } catch {
+    return 'localhost'
+  }
+}
+
 export default function SettingsScreen({ onBack }: SettingsScreenProps): React.JSX.Element {
   const [llm, setLlm] = useState<LlmConfig>(DEFAULT_LLM_CONFIG)
+  const [preset, setPreset] = useState<PresetKey>('ollama')
+  const [host, setHost] = useState('localhost')
   const [availableModels, setAvailableModels] = useState<string[]>([])
   const [testState, setTestState] = useState<TestState>('idle')
   const [testMessage, setTestMessage] = useState('')
@@ -24,6 +55,9 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps): React.J
   useEffect(() => {
     window.electronAPI.getSettings().then(({ llm: saved }) => {
       setLlm(saved)
+      const detectedPreset = detectPresetFromUrl(saved.baseUrl)
+      setPreset(detectedPreset)
+      setHost(extractHostFromUrl(saved.baseUrl))
       if (saved.baseUrl) loadModels(saved.baseUrl)
     })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -41,6 +75,21 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps): React.J
     }
   }, [])
 
+  function handlePresetChange(p: PresetKey): void {
+    setPreset(p)
+    const newUrl = buildBaseUrl(p, host)
+    setLlm((prev) => ({ ...prev, baseUrl: newUrl }))
+    loadModels(newUrl)
+    setTestState('idle')
+  }
+
+  function handleHostBlur(): void {
+    const newUrl = buildBaseUrl(preset, host)
+    setLlm((prev) => ({ ...prev, baseUrl: newUrl }))
+    loadModels(newUrl)
+    setTestState('idle')
+  }
+
   async function handleTest(): Promise<void> {
     setTestState('loading')
     setTestMessage('')
@@ -55,10 +104,6 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps): React.J
     await window.electronAPI.setSettings({ llm })
     setSaving(false)
     onBack()
-  }
-
-  function handleUrlBlur(): void {
-    if (llm.baseUrl) loadModels(llm.baseUrl)
   }
 
   const inputClass =
@@ -92,8 +137,8 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps): React.J
               <h2 className="font-semibold text-slate-800">LLM locale (opzionale)</h2>
             </div>
             <p className="text-sm text-slate-500">
-              Connetti un server LLM locale (Ollama, LM Studio, ecc.) per migliorare il
-              riconoscimento dei nomi. I dati non escono mai dalla tua macchina.
+              Connetti un server LLM locale per migliorare il riconoscimento dei nomi.
+              I dati non escono mai dalla tua macchina.
             </p>
 
             {/* Toggle abilitazione */}
@@ -119,23 +164,48 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps): React.J
 
             {llm.enabled && (
               <div className="space-y-4 pt-1">
-                {/* Base URL */}
+
+                {/* Scelta preset: Ollama / LM Studio */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-2">Software</label>
+                  <div className="flex gap-2">
+                    {(Object.keys(LLM_PRESETS) as PresetKey[]).map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => handlePresetChange(p)}
+                        className={`
+                          flex-1 py-2 px-3 text-sm font-medium rounded-lg border transition-colors
+                          ${preset === p
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-white text-slate-700 border-slate-300 hover:border-blue-400'}
+                        `}
+                      >
+                        {LLM_PRESETS[p].label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Host / IP */}
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">
-                    URL server
+                    Host (IP o localhost)
                   </label>
                   <input
                     type="text"
                     className={inputClass}
-                    value={llm.baseUrl}
-                    onChange={(e) => setLlm((prev) => ({ ...prev, baseUrl: e.target.value }))}
-                    onBlur={handleUrlBlur}
-                    placeholder="http://localhost:11434/v1"
+                    value={host}
+                    onChange={(e) => setHost(e.target.value)}
+                    onBlur={handleHostBlur}
+                    placeholder="localhost oppure 192.168.1.x"
                     spellCheck={false}
                   />
-                  <p className="text-xs text-slate-400 mt-1">
-                    Ollama: <code>http://localhost:11434</code> · LM Studio: <code>http://localhost:1234</code> · il <code>/v1</code> viene aggiunto automaticamente
-                  </p>
+                </div>
+
+                {/* URL completo (sola lettura, per verifica) */}
+                <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 flex items-center gap-2">
+                  <span className="text-xs text-slate-400 flex-shrink-0">URL:</span>
+                  <code className="text-xs text-slate-600 break-all">{llm.baseUrl}</code>
                 </div>
 
                 {/* Selezione modello */}
@@ -172,13 +242,10 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps): React.J
                       className={inputClass}
                       value={llm.model}
                       onChange={(e) => setLlm((prev) => ({ ...prev, model: e.target.value }))}
-                      placeholder="es. llama3.2, mistral, gemma3..."
+                      placeholder="es. mistral, llama3.2, gemma3..."
                       spellCheck={false}
                     />
                   )}
-                  <p className="text-xs text-slate-400 mt-1">
-                    Clicca &quot;Aggiorna lista&quot; per caricare i modelli disponibili sul server.
-                  </p>
                 </div>
 
                 {/* Impostazioni avanzate */}

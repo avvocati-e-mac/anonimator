@@ -19,9 +19,26 @@ const ENTITY_CONFIG: Record<EntityType, { label: string; color: string; icon: Re
 }
 
 function EntityRow({ entity }: { entity: DetectedEntity }): React.JSX.Element {
-  const { toggleEntityConfirmed } = useSessionStore()
+  const { toggleEntityConfirmed, updateEntityPseudonym } = useSessionStore()
   const config = ENTITY_CONFIG[entity.type]
   const Icon = config.icon
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(entity.pseudonym)
+
+  function commitEdit(): void {
+    const trimmed = draft.trim()
+    if (trimmed && trimmed !== entity.pseudonym) {
+      updateEntityPseudonym(entity.id, trimmed)
+    } else {
+      setDraft(entity.pseudonym)
+    }
+    setEditing(false)
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent): void {
+    if (e.key === 'Enter') commitEdit()
+    if (e.key === 'Escape') { setDraft(entity.pseudonym); setEditing(false) }
+  }
 
   return (
     <div
@@ -51,17 +68,35 @@ function EntityRow({ entity }: { entity: DetectedEntity }): React.JSX.Element {
         {config.label}
       </span>
 
-      {/* Testo originale → pseudonimo */}
+      {/* Testo originale */}
       <div className="flex-1 min-w-0">
         <span className="text-sm text-slate-700 font-medium truncate block" title={entity.originalText}>
           {entity.originalText}
         </span>
       </div>
+
       <span className="text-slate-400 text-sm flex-shrink-0">→</span>
+
+      {/* Pseudonimo editabile */}
       <div className="flex-shrink-0">
-        <span className="text-sm font-mono text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-          {entity.pseudonym}
-        </span>
+        {editing ? (
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitEdit}
+            onKeyDown={handleKeyDown}
+            className="text-sm font-mono text-slate-700 bg-white border border-blue-400 rounded px-2 py-0.5 w-24 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+        ) : (
+          <button
+            onClick={() => { setDraft(entity.pseudonym); setEditing(true) }}
+            title="Clicca per modificare"
+            className="text-sm font-mono text-slate-500 bg-slate-100 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300 border border-transparent px-2 py-0.5 rounded transition-colors cursor-text"
+          >
+            {entity.pseudonym}
+          </button>
+        )}
       </div>
 
       {/* Occorrenze */}
@@ -127,7 +162,7 @@ export default function EntityReview(): React.JSX.Element {
       <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-2">
           <ShieldCheck size={22} className="text-blue-600" />
-          <span className="font-semibold text-slate-800">LegalShield</span>
+          <span className="font-semibold text-slate-800">Anonimator</span>
         </div>
         <div className="text-sm text-slate-500">
           {analysisResult?.fileName && (

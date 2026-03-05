@@ -37,6 +37,7 @@ interface SessionState {
   setAnalysisResult: (result: DocumentAnalysisResult) => void
   setProgress: (percent: number, message: string) => void
   toggleEntityConfirmed: (id: string) => void
+  updateEntityPseudonym: (id: string, pseudonym: string) => void
   setSuccessInfo: (info: SuccessInfo) => void
   setError: (error: string | null) => void
   reset: () => void
@@ -71,6 +72,13 @@ export const useSessionStore = create<SessionState>((set) => ({
     set((state) => ({
       entities: state.entities.map((e) =>
         e.id === id ? { ...e, confirmed: !e.confirmed } : e
+      ),
+    })),
+
+  updateEntityPseudonym: (id, pseudonym) =>
+    set((state) => ({
+      entities: state.entities.map((e) =>
+        e.id === id ? { ...e, pseudonym } : e
       ),
     })),
 
