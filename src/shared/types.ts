@@ -79,6 +79,7 @@ export interface LlmConfig {
   model: string      // es. "llama3.2" o "mistral"
   maxTokens: number
   timeoutMs: number
+  parallelRequests: number  // quante sezioni del documento analizza l'LLM contemporaneamente (1–4)
 }
 
 export const DEFAULT_LLM_CONFIG: LlmConfig = {
@@ -86,5 +87,6 @@ export const DEFAULT_LLM_CONFIG: LlmConfig = {
   baseUrl: 'http://localhost:11434/v1',
   model: '',
   maxTokens: 8192,
-  timeoutMs: 120000
+  timeoutMs: 120000,
+  parallelRequests: 1
 }

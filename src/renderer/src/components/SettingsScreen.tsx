@@ -288,6 +288,38 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps): React.J
                         }
                       />
                     </div>
+
+                    {/* Richieste parallele */}
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">
+                        Velocità analisi
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="range"
+                          min={1}
+                          max={4}
+                          step={1}
+                          value={llm.parallelRequests ?? 1}
+                          onChange={(e) =>
+                            setLlm((prev) => ({ ...prev, parallelRequests: parseInt(e.target.value) }))
+                          }
+                          className="flex-1 accent-blue-600"
+                        />
+                        <span className="text-sm font-semibold text-slate-700 w-4 text-right">
+                          {llm.parallelRequests ?? 1}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-xs text-slate-400 mt-0.5 px-0.5">
+                        <span>Prudente</span>
+                        <span>Veloce</span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                        Controlla quante sezioni del documento vengono inviate all'assistente AI contemporaneamente.
+                        Con <strong>1</strong> (predefinito) le sezioni vengono analizzate una alla volta: più lento ma stabile su qualsiasi computer.
+                        Valori più alti (<strong>2–4</strong>) velocizzano l'analisi di documenti lunghi, ma richiedono un computer con GPU dedicata o molti core; su macchine meno potenti potrebbero causare errori di timeout.
+                      </p>
+                    </div>
                   </div>
                 </details>
 

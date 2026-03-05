@@ -100,10 +100,14 @@ module.exports = {
   // dentro asar — vanno estratti a filesystem.
   // sharp (@huggingface/transformers lo trascina) usa binari platform-specific
   // in @img/sharp-*: devono stare fuori dall'asar insieme a sharp stesso.
+  // onnxruntime-node usa require('../bin/napi-v3/darwin/arm64/onnxruntime_binding.node')
+  // — i file .node e .dylib non possono essere dlopen() dall'interno di un asar.
   asar: true,
   asarUnpack: [
     'node_modules/mupdf/**/*',
     'node_modules/@huggingface/transformers/**/*',
+    'node_modules/onnxruntime-node/**/*',
+    'node_modules/onnxruntime-common/**/*',
     'node_modules/sharp/**/*',
     'node_modules/@img/**/*',
     'node_modules/tesseract.js/**/*',

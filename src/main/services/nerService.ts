@@ -7,7 +7,6 @@ import type {
 // Tipo funzionale del pipeline NER — evita la union type troppo complessa di Transformers.js
 type NerPipelineFn = (text: string) => Promise<TokenClassificationOutput | TokenClassificationOutput[]>
 import { join } from 'path'
-import { app } from 'electron'
 import log from 'electron-log'
 import type { DetectedEntity, EntityType, LlmConfig } from '@shared/types'
 import { detectNamesWithLlm } from './llmService'
@@ -17,6 +16,17 @@ import { sessionManager } from './sessionManager'
 // Disabilita qualunque tentativo di download dalla rete
 env.allowRemoteModels = false
 env.allowLocalModels = true
+
+// ─── Path modello NER ─────────────────────────────────────────────────────────
+// In produzione (app compilata): app.getAppPath() punta DENTRO l'asar
+//   (.../Anonimator.app/Contents/Resources/app.asar) mentre extraResources
+//   copia i modelli in Contents/Resources/resources/ — un livello sopra l'asar.
+// process.resourcesPath = Contents/Resources/ → percorso corretto sia in dev che prod.
+// Fallback: radice progetto (per test unitari fuori da Electron).
+function getModelPath(): string {
+  const base = process.resourcesPath ?? join(__dirname, '..', '..', '..')
+  return join(base, 'resources', 'models', 'italian-ner-xxl-v2')
+}
 
 // ─── Regex per dati strutturati italiani ─────────────────────────────────────
 const REGEX_PATTERNS: { type: EntityType; pattern: RegExp }[] = [
@@ -66,15 +76,22 @@ async function getNerPipeline(): Promise<NerPipelineFn | null> {
   if (modelLoadFailed) return null
 
   try {
-    const modelPath = join(app.getAppPath(), 'resources', 'models', 'italian-ner-xxl-v2')
+    const modelPath = getModelPath()
     log.info('Caricamento modello NER...', { path: modelPath })
     const startMs = Date.now()
 
+    // Usa fino a 4 thread per l'inferenza ORT (senza overhead eccessivo su ARM)
+    const numThreads = Math.min(4, require('os').cpus().length)
+
     nerPipeline = await pipeline('token-classification', modelPath, {
-      local_files_only: true
+      local_files_only: true,
+      session_options: {
+        intraOpNumThreads: numThreads,
+        interOpNumThreads: 1
+      }
     }) as unknown as NerPipelineFn
 
-    log.info('Modello NER caricato', { ms: Date.now() - startMs })
+    log.info('Modello NER caricato', { ms: Date.now() - startMs, threads: numThreads })
     return nerPipeline
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -179,23 +196,28 @@ export async function analyzeText(
   if (pipe) {
     try {
       const chunks = splitTextIntoChunks(text, 400)
-      for (const chunk of chunks) {
-        const raw = await pipe(chunk) as TokenClassificationOutput | TokenClassificationOutput[]
-        // Normalizza: il risultato può essere array piatto o array di array (batch)
-        const flat: TokenClassificationSingle[] = Array.isArray(raw[0])
-          ? (raw as TokenClassificationOutput[]).flat()
-          : (raw as TokenClassificationOutput)
+      // Processa i chunk in parallelo (batch da 4) per sfruttare i thread ORT
+      const BATCH = 4
+      for (let i = 0; i < chunks.length; i += BATCH) {
+        const batch = chunks.slice(i, i + BATCH)
+        const results = await Promise.all(batch.map((chunk) => pipe(chunk)))
+        for (const raw of results) {
+          // Normalizza: il risultato può essere array piatto o array di array (batch)
+          const flat: TokenClassificationSingle[] = Array.isArray(raw[0])
+            ? (raw as TokenClassificationOutput[]).flat()
+            : (raw as TokenClassificationOutput)
 
-        const aggregated = aggregateBioTokens(flat)
+          const aggregated = aggregateBioTokens(flat)
 
-        for (const { word, label, score } of aggregated) {
-          if (score < 0.60) continue
-          const entityType = LABEL_TO_ENTITY_TYPE[label]
-          if (!entityType) continue
-          const cleaned = word.trim().replace(/^#+/, '')
-          if (cleaned.length < 2 || foundTexts.has(cleaned.toLowerCase())) continue
-          foundTexts.add(cleaned.toLowerCase())
-          allEntities.push(buildEntity(cleaned, entityType))
+          for (const { word, label, score } of aggregated) {
+            if (score < 0.60) continue
+            const entityType = LABEL_TO_ENTITY_TYPE[label]
+            if (!entityType) continue
+            const cleaned = word.trim().replace(/^#+/, '')
+            if (cleaned.length < 2 || foundTexts.has(cleaned.toLowerCase())) continue
+            foundTexts.add(cleaned.toLowerCase())
+            allEntities.push(buildEntity(cleaned, entityType))
+          }
         }
       }
       nerUsed = true
@@ -217,20 +239,32 @@ export async function analyzeText(
       const chunks = pages.length > 1 ? pages : splitTextIntoLlmChunks(text, 3000)
       log.info('nerService: avvio analisi LLM', { model: llmConfig.model, chunks: chunks.length })
 
-      for (let ci = 0; ci < chunks.length; ci++) {
-        log.info(`nerService: LLM chunk ${ci + 1}/${chunks.length}`)
-        onLlmProgress?.(ci + 1, chunks.length)
-        const llmNames = await detectNamesWithLlm(chunks[ci], llmConfig)
-        for (const { original, replacement } of llmNames) {
-          const trimmed = original.trim()
-          if (!trimmed || foundTexts.has(trimmed.toLowerCase())) continue
-          // Determina il tipo: iniziali pure (es. "M. R.") → PERSONA, altrimenti ORGANIZZAZIONE
-          const type: EntityType = /^([A-Z]\.\s*)+$/.test(replacement.trim())
-            ? 'PERSONA'
-            : 'ORGANIZZAZIONE'
-          foundTexts.add(trimmed.toLowerCase())
-          const pseudonym = sessionManager.registerLlmPseudonym(trimmed, replacement.trim(), type)
-          allEntities.push({ ...buildEntity(trimmed, type), pseudonym })
+      // Processa i chunk in batch paralleli secondo la preferenza dell'utente.
+      // Ollama/LM Studio accodano le richieste concorrenti; il valore ottimale
+      // dipende dalla GPU/CPU disponibile — configurabile nelle impostazioni avanzate.
+      const LLM_BATCH = Math.max(1, llmConfig.parallelRequests ?? 1)
+      let completed = 0
+      for (let i = 0; i < chunks.length; i += LLM_BATCH) {
+        const batch = chunks.slice(i, i + LLM_BATCH)
+        const results = await Promise.all(
+          batch.map((chunk) => detectNamesWithLlm(chunk, llmConfig))
+        )
+        completed += batch.length
+        onLlmProgress?.(Math.min(completed, chunks.length), chunks.length)
+        log.info(`nerService: LLM batch ${i / LLM_BATCH + 1} completato`, { completed, total: chunks.length })
+
+        for (const llmNames of results) {
+          for (const { original, replacement } of llmNames) {
+            const trimmed = original.trim()
+            if (!trimmed || foundTexts.has(trimmed.toLowerCase())) continue
+            // Determina il tipo: iniziali pure (es. "M. R.") → PERSONA, altrimenti ORGANIZZAZIONE
+            const type: EntityType = /^([A-Z]\.\s*)+$/.test(replacement.trim())
+              ? 'PERSONA'
+              : 'ORGANIZZAZIONE'
+            foundTexts.add(trimmed.toLowerCase())
+            const pseudonym = sessionManager.registerLlmPseudonym(trimmed, replacement.trim(), type)
+            allEntities.push({ ...buildEntity(trimmed, type), pseudonym })
+          }
         }
       }
       llmUsed = true
