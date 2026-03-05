@@ -8,6 +8,37 @@ Desktop Electron application for **local pseudonymization** of Italian legal doc
 
 **Tech Stack:** Electron + React 18 + TypeScript (strict mode)
 
+## Session Memory
+
+Before starting any work, read the latest file in `sessioni/` to understand what was done in previous sessions, which decisions were made, and what the current state of the project is. After completing significant work, update or create a new session file in `sessioni/` documenting decisions, files changed, and next steps.
+
+Session files are named: `sessione_NNN_faseN.md` (e.g. `sessione_001_fase1.md`)
+
+## AI Agent Roles
+
+### Claude Code (primary)
+- Writes/modifies all repo files, runs build/test, controlled refactoring, debugging
+- Implements the roadmap phase by phase, stops at end of each phase for user confirmation
+- Updates `sessioni/` files after each significant work session
+
+### Gemini CLI (secondary — research only, does NOT modify files)
+Use Gemini CLI for targeted research when needed. Invoke it from Claude Code via Bash when:
+- Researching a specific library API or finding the correct method signature
+- Evaluating edge cases or alternative implementations
+- Checking model availability on HuggingFace or verifying ONNX compatibility
+
+**How to invoke Gemini CLI from Claude Code:**
+```bash
+gemini -p "Your research question here"
+```
+
+Example use cases:
+- `gemini -p "What is the correct Transformers.js pipeline syntax for token-classification with Italian_NER_XXL_v2 ONNX model?"`
+- `gemini -p "How does adm-zip handle UTF-8 XML content in DOCX files on Windows?"`
+- `gemini -p "What are the OCR confidence thresholds in tesseract.js v5 and how to read them?"`
+
+Gemini CLI findings should be documented in the relevant session file in `sessioni/`.
+
 ## Critical Rules (Non-Negotiable)
 
 Before making any changes, understand these absolute requirements have priority over any other best practices:
@@ -33,9 +64,11 @@ Before making any changes, understand these absolute requirements have priority 
 
 ### Development
 ```bash
-npm start              # Run Electron app in dev mode
+npm start              # Run Electron app in dev mode (electron-vite dev)
 npm run ui:dev         # Run Vite dev server (React UI only)
 npm run ui:build       # Build renderer process with Vite
+npm run typecheck      # TypeScript check without emitting files
+npm test               # Run vitest unit tests
 ```
 
 ### Build
@@ -76,7 +109,7 @@ File dropped → ipcHandlers.ts (Zod validation)
     → Parser (txt/docx/odt/pdf/ocr) → extracts text
       → nerService.ts
         ├─ Regex patterns (CF, P.IVA, IBAN, Email, Tel)
-        └─ Transformers.js NER (PERSONA/LUOGO/ORGANIZZAZIONE)
+        └─ Transformers.js NER (Italian_NER_XXL_v2 ONNX model)
           → sessionManager.ts (enriches with previously assigned roles)
             → IPC: doc:complete
               → Renderer: EntityReview.tsx (user reviews/confirms)
@@ -92,12 +125,15 @@ File dropped → ipcHandlers.ts (Zod validation)
 - `pdfjs-dist` - extract text + coordinates from native PDFs
 - `pdf-lib` - PDF manipulation (create output with white rectangles + pseudonyms)
 - `adm-zip` - parse/rebuild DOCX/ODT (ZIP + XML)
+- `fast-xml-parser` - parse XML content inside DOCX/ODT archives
 - `tesseract.js` - offline OCR with bundled `resources/tessdata/ita.traineddata`
 
 **NER (Named Entity Recognition):**
 - Regex for structured Italian data (Codice Fiscale, Partita IVA, IBAN, Email, Phone)
-- `@huggingface/transformers` (Transformers.js) - local NER model for PERSON/LOCATION/ORGANIZATION
-- Models loaded from `resources/models/` (bundled, no runtime downloads)
+- `@huggingface/transformers` (Transformers.js) - local NER with **`DeepMount00/Italian_NER_XXL_v2`** ONNX model
+  - 52 Italian legal entity categories (AVV_NOTAIO, TRIBUNALE, N_SENTENZA, LEGGE, PERSONA, LUOGO, ORGANIZZAZIONE, etc.)
+  - Model loaded from `resources/models/` (bundled, NO runtime downloads)
+  - Decision rationale: see `sessioni/sessione_001_fase1.md`
 
 **UI:**
 - `tailwindcss` - styling
@@ -115,10 +151,13 @@ File dropped → ipcHandlers.ts (Zod validation)
 ```
 /
 ├── PROJECT_MASTER v2.1.md    # Primary reference doc - read before operating
+├── CLAUDE.md                 # This file
+├── sessioni/                 # Session logs — read latest before starting work
+│   └── sessione_NNN_faseN.md
 ├── package.json
-├── resources/                # Bundled assets
-│   ├── models/               # ONNX quantized NER model
-│   └── tessdata/             # Italian OCR training data
+├── resources/                # Bundled assets (never downloaded at runtime)
+│   ├── models/               # ONNX quantized NER model (Italian_NER_XXL_v2)
+│   └── tessdata/             # Italian OCR training data (ita.traineddata)
 ├── src/
 │   ├── main/                 # Node.js process
 │   │   ├── index.ts
@@ -140,18 +179,20 @@ File dropped → ipcHandlers.ts (Zod validation)
 
 ## Development Workflow
 
-1. **Read PROJECT_MASTER v2.1.md** completely before making changes
-2. Follow the 6-phase roadmap defined in PROJECT_MASTER v2.1.md:
-   - Phase 1: Setup & Scaffolding
+1. **Read latest file in `sessioni/`** to understand current project state
+2. **Read PROJECT_MASTER v2.1.md** for the overall roadmap
+3. Follow the 6-phase roadmap:
+   - Phase 1: Setup & Scaffolding — DONE (see sessione_001_fase1.md)
    - Phase 2: NER Engine + SessionManager
    - Phase 3: Document Parsers (TXT/DOCX/ODT)
    - Phase 4: PDF Native + OCR
    - Phase 5: User Interface
    - Phase 6: Packaging & Auto-update
-3. Implement one phase at a time, stop and wait for confirmation
-4. Read files before modifying them
-5. Commit before significant changes
-6. Run tests after changes: `vitest` (when tests exist)
+4. Implement one phase at a time, stop and wait for confirmation
+5. Read files before modifying them
+6. Commit before significant changes
+7. Run `npm run typecheck` after every change; run `npm test` when tests exist
+8. Update `sessioni/` at end of each session
 
 ## IPC Security Pattern
 
@@ -190,8 +231,8 @@ Located in `src/main/services/nerService.ts`. Uses `\b` word boundaries (NOT `^`
 
 ## Notes
 
-- Current state: Project scaffolded with basic folder structure and package.json
-- No source code files exist yet (awaiting Phase 1 completion)
+- Vite version pinned to ^5.4.x (electron-vite 2.3 does not support Vite 6)
+- NER model changed from generic Xenova to Italian_NER_XXL_v2 (decision: sessione_001_fase1.md)
 - Prefer simplicity over elegance - target users are lawyers, not developers
 - Don't refactor working code without explicit request
 - Don't install libraries not mentioned in PROJECT_MASTER v2.1.md without asking first

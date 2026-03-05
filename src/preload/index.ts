@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC_CHANNELS } from '@shared/types'
 import type { AnonymizeRequest } from '@shared/types'
 
@@ -21,5 +21,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on(IPC_CHANNELS.DOC_PROGRESS, (_event, data) => callback(data))
     // Restituisce una funzione per rimuovere il listener (evita memory leak)
     return () => ipcRenderer.removeAllListeners(IPC_CHANNELS.DOC_PROGRESS)
-  }
+  },
+
+  // Apre la cartella del file output nel Finder/Explorer (gestito dal main process)
+  showInFolder: (filePath: string) => ipcRenderer.invoke('shell:showInFolder', filePath),
+
+  // Restituisce il path assoluto di un File droppato (Electron 32+)
+  getPathForFile: (file: File) => webUtils.getPathForFile(file)
 })

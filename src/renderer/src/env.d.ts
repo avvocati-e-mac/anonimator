@@ -10,6 +10,8 @@ interface ElectronAPI {
   onProgress: (
     callback: (progress: { stage: string; percent: number; message: string }) => void
   ) => () => void
+  showInFolder: (filePath: string) => void
+  getPathForFile: (file: File) => string
 }
 
 declare global {
