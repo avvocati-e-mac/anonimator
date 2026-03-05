@@ -1,38 +1,50 @@
 {
   "name": "legal-shield-anonimizzatore",
   "version": "1.0.0",
-  "description": "App desktop per l'anonimizzazione forense di documenti legali (GDPR compliant)",
-  "main": "src/main.js",
+  "description": "App desktop per la pseudoanonimizzazione offline di documenti legali italiani (GDPR compliant)",
+  "main": "out/main/index.js",
   "scripts": {
-    "start": "electron .",
-    "build:electron": "electron-builder",
+    "start": "electron-vite dev",
     "ui:dev": "vite",
-    "ui:build": "vite build"
+    "ui:build": "electron-vite build",
+    "build:electron": "electron-vite build && electron-builder",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
-  "keywords": [
-    "privacy",
-    "gdpr",
-    "legaltech",
-    "redaction",
-    "electron"
-  ],
+  "keywords": ["privacy", "gdpr", "legaltech", "redaction", "electron"],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "axios": "^1.6.0",
-    "electron-log": "^5.0.0",
-    "pdfjs-dist": "^3.11.174",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "lucide-react": "^0.284.0"
+    "@huggingface/transformers": "^3.3.3",
+    "adm-zip": "^0.5.16",
+    "electron-log": "^5.2.4",
+    "electron-updater": "^6.3.9",
+    "fast-xml-parser": "^4.5.1",
+    "lucide-react": "^0.475.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^4.10.38",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-dropzone": "^14.3.8",
+    "tesseract.js": "^5.1.1",
+    "winston": "^3.17.0",
+    "zod": "^3.24.2",
+    "zustand": "^5.0.3"
   },
   "devDependencies": {
-    "electron": "^27.0.0",
-    "electron-builder": "^24.6.4",
-    "vite": "^4.4.11",
-    "@vitejs/plugin-react": "^4.1.0",
-    "autoprefixer": "^10.4.16",
-    "postcss": "^8.4.31",
-    "tailwindcss": "^3.3.5"
+    "@types/adm-zip": "^0.5.7",
+    "@types/node": "^22.13.5",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "electron": "^34.2.0",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3",
+    "vite": "^5.4.14",
+    "vitest": "^3.0.7"
   }
 }
