@@ -20,17 +20,39 @@ interface DropZoneProps {
 export default function DropZone({ onOpenSettings }: DropZoneProps): React.JSX.Element {
   const { setFilePath, setScreen, setProgress, setAnalysisResult, setError } = useSessionStore()
   const [version, setVersion] = useState('')
+  // Salva il path estratto dall'evento drop nativo prima che react-dropzone cloni i File objects
+  const nativeDropPathRef = React.useRef<string>('')
+
   useEffect(() => {
     window.electronAPI.getAppVersion().then(setVersion)
+  }, [])
+
+  // Intercetta il drop nativo (capture phase) per ottenere il path assoluto
+  // tramite webUtils.getPathForFile prima che react-dropzone processi i file
+  useEffect(() => {
+    const handleNativeDrop = (e: DragEvent) => {
+      const file = e.dataTransfer?.files[0]
+      if (file) {
+        const path = window.electronAPI.getPathForFile(file)
+        nativeDropPathRef.current = path || ''
+      }
+    }
+    window.addEventListener('drop', handleNativeDrop, true)
+    return () => window.removeEventListener('drop', handleNativeDrop, true)
   }, [])
 
   const onDrop = useCallback(
     async (accepted: File[]) => {
       if (accepted.length === 0) return
-      const file = accepted[0]
 
-      // In Electron, webUtils.getPathForFile restituisce il path assoluto del file droppato
-      const filePath = window.electronAPI.getPathForFile(file)
+      // Usa il path catturato dall'evento nativo (prima che react-dropzone cloni i File objects)
+      // Fallback a getPathForFile sull'oggetto file di react-dropzone
+      let filePath = nativeDropPathRef.current
+      if (!filePath) {
+        filePath = window.electronAPI.getPathForFile(accepted[0])
+      }
+      nativeDropPathRef.current = ''
+
       if (!filePath) {
         setError('Impossibile leggere il percorso del file. Riprova.')
         return
@@ -40,7 +62,6 @@ export default function DropZone({ onOpenSettings }: DropZoneProps): React.JSX.E
       setScreen('processing')
       setProgress(0, 'Avvio elaborazione...')
 
-      // Ascolta i progressi emessi dal Main process
       const removeListener = window.electronAPI.onProgress(({ percent, message }) => {
         setProgress(percent, message)
       })

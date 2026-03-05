@@ -1,6 +1,6 @@
 {
   "name": "anonimator",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "App desktop per la pseudoanonimizzazione offline di documenti legali italiani (GDPR compliant)",
   "main": "out/main/index.js",
   "scripts": {
@@ -51,13 +51,13 @@
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
-    "electron": "^34.2.0",
-    "electron-builder": "^25.1.8",
-    "electron-vite": "^2.3.0",
+    "electron": "^40.7.0",
+    "electron-builder": "^26.8.1",
+    "electron-vite": "^5.0.0",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.3",
-    "vite": "^5.4.14",
+    "vite": "^7.3.1",
     "vitest": "^3.0.7"
   }
 }
