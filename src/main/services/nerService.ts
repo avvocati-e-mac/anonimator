@@ -18,14 +18,16 @@ env.allowRemoteModels = false
 env.allowLocalModels = true
 
 // ─── Path modello NER ─────────────────────────────────────────────────────────
-// In produzione (app compilata): app.getAppPath() punta DENTRO l'asar
-//   (.../Anonimator.app/Contents/Resources/app.asar) mentre extraResources
-//   copia i modelli in Contents/Resources/resources/ — un livello sopra l'asar.
-// process.resourcesPath = Contents/Resources/ → percorso corretto sia in dev che prod.
-// Fallback: radice progetto (per test unitari fuori da Electron).
+// In produzione: process.resourcesPath = Contents/Resources/ (fuori dall'asar)
+//   ed è lì che electron-builder copia extraResources → path corretto.
+// In dev mode: process.resourcesPath punta a node_modules/electron/dist/.../Resources
+//   (la cartella dell'Electron binario) — NON contiene i modelli.
+//   In quel caso usiamo __dirname (out/main/) risalendo due livelli alla root progetto.
 function getModelPath(): string {
-  const base = process.resourcesPath ?? join(__dirname, '..', '..', '..')
-  return join(base, 'resources', 'models', 'italian-ner-xxl-v2')
+  const prodPath = join(process.resourcesPath, 'resources', 'models', 'italian-ner-xxl-v2')
+  const devPath  = join(__dirname, '..', '..', 'resources', 'models', 'italian-ner-xxl-v2')
+  // Se i modelli esistono in resourcesPath siamo in produzione, altrimenti dev
+  return require('fs').existsSync(prodPath) ? prodPath : devPath
 }
 
 // ─── Regex per dati strutturati italiani ─────────────────────────────────────
