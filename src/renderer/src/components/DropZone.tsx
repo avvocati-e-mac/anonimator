@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { ShieldCheck, Upload, FileText, Settings } from 'lucide-react'
 import { useSessionStore } from '../store/sessionStore'
@@ -19,7 +19,10 @@ interface DropZoneProps {
 
 export default function DropZone({ onOpenSettings }: DropZoneProps): React.JSX.Element {
   const { setFilePath, setScreen, setProgress, setAnalysisResult, setError } = useSessionStore()
-  const version = window.electronAPI.getAppVersion()
+  const [version, setVersion] = useState('')
+  useEffect(() => {
+    window.electronAPI.getAppVersion().then(setVersion)
+  }, [])
 
   const onDrop = useCallback(
     async (accepted: File[]) => {

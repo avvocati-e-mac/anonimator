@@ -16,7 +16,7 @@ interface ElectronAPI {
   setSettings: (settings: { llm: LlmConfig }) => Promise<{ status: string } | { error: string }>
   testLlm: (llm: LlmConfig) => Promise<{ ok: boolean; message: string; models?: string[] }>
   listLlmModels: (baseUrl: string) => Promise<{ models: string[] }>
-  getAppVersion: () => string
+  getAppVersion: () => Promise<string>
 }
 
 declare global {

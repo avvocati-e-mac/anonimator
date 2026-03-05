@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, shell } from 'electron'
+import { ipcMain, BrowserWindow, shell, app } from 'electron'
 import { z } from 'zod'
 import log from 'electron-log'
 import { IPC_CHANNELS } from '@shared/types'
@@ -198,6 +198,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('shell:showInFolder', (_event, filePath: string) => {
     shell.showItemInFolder(filePath)
   })
+
+  // Handler: restituisce la versione dell'app al renderer
+  ipcMain.handle(IPC_CHANNELS.APP_GET_VERSION, () => app.getVersion())
 
   log.info('IPC handlers registrati')
 }
