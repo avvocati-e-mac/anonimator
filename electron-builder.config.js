@@ -70,6 +70,8 @@ module.exports = {
 
   dmg: {
     title: 'Anonimator',
+    // es. Anonimator-1.0.0-arm64.dmg  /  Anonimator-1.0.0-x64.dmg
+    artifactName: '${productName}-${version}-${arch}.${ext}',
     contents: [
       { x: 130, y: 220, type: 'file' },
       { x: 410, y: 220, type: 'link', path: '/Applications' }
@@ -92,7 +94,9 @@ module.exports = {
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
     shortcutName: 'Anonimator',
-    installerHeaderIcon: 'build-resources/icon.ico'
+    installerHeaderIcon: 'build-resources/icon.ico',
+    // es. Anonimator-1.0.0-windows-x64-setup.exe
+    artifactName: '${productName}-${version}-windows-${arch}-setup.${ext}'
   },
 
   // ── Moduli nativi ─────────────────────────────────────────────────────────────
