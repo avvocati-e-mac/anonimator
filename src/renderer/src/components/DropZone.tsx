@@ -19,6 +19,7 @@ interface DropZoneProps {
 
 export default function DropZone({ onOpenSettings }: DropZoneProps): React.JSX.Element {
   const { setFilePath, setScreen, setProgress, setAnalysisResult, setError } = useSessionStore()
+  const version = window.electronAPI.getAppVersion()
 
   const onDrop = useCallback(
     async (accepted: File[]) => {
@@ -78,7 +79,8 @@ export default function DropZone({ onOpenSettings }: DropZoneProps): React.JSX.E
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
       {/* Header */}
-      <div className="w-full max-w-lg flex justify-end mb-2">
+      <div className="w-full max-w-lg flex items-center justify-end gap-2 mb-2">
+        <span className="text-xs text-slate-300 select-none">v{version}</span>
         <button
           onClick={onOpenSettings}
           className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"

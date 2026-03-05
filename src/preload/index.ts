@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { contextBridge, ipcRenderer, webUtils, app } from 'electron'
 import { IPC_CHANNELS } from '@shared/types'
 import type { AnonymizeRequest, LlmConfig } from '@shared/types'
 
@@ -28,6 +28,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Restituisce il path assoluto di un File droppato (Electron 32+)
   getPathForFile: (file: File) => webUtils.getPathForFile(file),
+
+  // Versione app (da package.json, letta dal main process)
+  getAppVersion: () => app.getVersion(),
 
   // Settings: ottieni configurazione corrente
   getSettings: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET),
