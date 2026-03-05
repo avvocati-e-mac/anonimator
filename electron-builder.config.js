@@ -5,23 +5,12 @@
  * Build macOS x64:    npm run dist:mac:x64
  * Build Windows x64:  npm run dist:win  (da Windows o CI)
  *
- * NOTA: sharp usa binari prebuilt (@img/sharp-darwin-arm64 / x64).
- * Prima di ogni build, npm install installa automaticamente i binari
- * per l'arch corrente. Il hook beforePack installa quelli mancanti.
+ * NOTA: gli script dist:mac:* installano i binari sharp corretti per l'arch
+ * prima del packaging e ripristinano quelli locali dopo.
  */
-const { execSync } = require('child_process')
 
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
-  // Hook eseguito prima del packaging: installa i binari sharp per l'arch target
-  beforePack: async (context) => {
-    const arch = context.arch === 3 ? 'arm64' : 'x64'  // 3 = Arch.arm64 in electron-builder
-    const platform = context.electronPlatformName  // 'darwin' | 'win32'
-    if (platform === 'darwin') {
-      console.log(`[beforePack] Installazione binari sharp per darwin-${arch}...`)
-      execSync(`npm install --os=darwin --cpu=${arch} sharp`, { stdio: 'inherit' })
-    }
-  },
   appId: 'it.anonimator.app',
   productName: 'Anonimator',
   copyright: 'Copyright © 2025',
