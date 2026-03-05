@@ -2,8 +2,11 @@ import { ipcMain, BrowserWindow, shell } from 'electron'
 import { z } from 'zod'
 import log from 'electron-log'
 import { IPC_CHANNELS } from '@shared/types'
+import type { LlmConfig } from '@shared/types'
 import { analyzeText } from './services/nerService'
 import { sessionManager } from './services/sessionManager'
+import { settingsManager } from './services/settingsManager'
+import { testLlmConnection, listLlmModels } from './services/llmService'
 import { detectFormat, extractText } from './parsers/index'
 import { generateOutput } from './outputGenerators/index'
 
@@ -36,6 +39,14 @@ const AnonymizeRequestSchema = z.object({
   )
 })
 
+const LlmConfigSchema = z.object({
+  enabled: z.boolean(),
+  baseUrl: z.string().min(1),
+  model: z.string(),
+  maxTokens: z.number().int().min(256).max(32768),
+  timeoutMs: z.number().int().min(5000).max(600000)
+})
+
 // ─── Helper: invia progresso alla finestra attiva ─────────────────────────────
 function sendProgress(stage: string, percent: number, message: string): void {
   const win = BrowserWindow.getAllWindows()[0]
@@ -57,6 +68,7 @@ export function registerIpcHandlers(): void {
     }
 
     const { filePath } = parsed.data
+    const llmConfig = settingsManager.getLlmConfig()
 
     try {
       // Fase 1: rilevamento formato e parsing
@@ -67,12 +79,19 @@ export function registerIpcHandlers(): void {
       sendProgress('parsing', 30, 'Estrazione testo...')
       const { text, pageCount, warnings: parseWarnings } = await extractText(filePath, format)
 
-      // Fase 2: analisi NER
+      // Fase 2: analisi NER (BERT + regex, opzionalmente LLM)
       sendProgress('ner', 50, 'Riconoscimento entità...')
-      const { entities: rawEntities, nerUsed, warnings: nerWarnings } = await analyzeText(text)
+      if (llmConfig.enabled && llmConfig.model) {
+        sendProgress('ner', 50, 'Riconoscimento entità (BERT + LLM)...')
+      }
+      const { entities: rawEntities, nerUsed, llmUsed, warnings: nerWarnings } =
+        await analyzeText(text, llmConfig, (page, total) => {
+          const pct = 50 + Math.round((page / total) * 30)
+          sendProgress('ner', pct, `Analisi LLM: pagina ${page}/${total}...`)
+        })
 
       // Assegna pseudonimi dalla sessione corrente
-      sendProgress('ner', 80, 'Assegnazione pseudonimi...')
+      sendProgress('ner', 85, 'Assegnazione pseudonimi...')
       const enrichedEntities = sessionManager.enrichEntities(rawEntities)
 
       sendProgress('done', 100, 'Analisi completata.')
@@ -80,7 +99,8 @@ export function registerIpcHandlers(): void {
         format,
         pageCount,
         entities: enrichedEntities.length,
-        nerUsed
+        nerUsed,
+        llmUsed
       })
 
       return {
@@ -137,6 +157,41 @@ export function registerIpcHandlers(): void {
     sessionManager.reset()
     log.info('Sessione resettata', sessionManager.getDictionaryStats())
     return { status: 'ok' }
+  })
+
+  // Handler: ottieni configurazione LLM
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_GET, () => {
+    return { llm: settingsManager.getLlmConfig() }
+  })
+
+  // Handler: salva configurazione LLM
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_SET, (_event, payload: unknown) => {
+    const body = payload as { llm?: unknown }
+    const parsed = LlmConfigSchema.safeParse(body?.llm)
+    if (!parsed.success) {
+      log.warn('IPC settings:set — payload non valido', parsed.error.flatten())
+      return { error: 'Configurazione non valida.' }
+    }
+    settingsManager.setLlmConfig(parsed.data as LlmConfig)
+    return { status: 'ok' }
+  })
+
+  // Handler: testa connessione LLM
+  ipcMain.handle(IPC_CHANNELS.LLM_TEST, async (_event, payload: unknown) => {
+    const body = payload as { llm?: unknown }
+    const parsed = LlmConfigSchema.safeParse(body?.llm)
+    if (!parsed.success) {
+      return { ok: false, message: 'Configurazione non valida.' }
+    }
+    return testLlmConnection(parsed.data as LlmConfig)
+  })
+
+  // Handler: lista modelli disponibili sul server LLM
+  ipcMain.handle(IPC_CHANNELS.LLM_LIST_MODELS, async (_event, payload: unknown) => {
+    const body = payload as { baseUrl?: string; timeoutMs?: number }
+    if (!body?.baseUrl) return { models: [] }
+    const models = await listLlmModels({ baseUrl: body.baseUrl, timeoutMs: body.timeoutMs ?? 10000 })
+    return { models }
   })
 
   // Handler: apre la cartella del file nel Finder/Explorer

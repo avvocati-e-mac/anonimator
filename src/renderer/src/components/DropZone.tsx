@@ -1,6 +1,6 @@
 import React, { useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { ShieldCheck, Upload, FileText } from 'lucide-react'
+import { ShieldCheck, Upload, FileText, Settings } from 'lucide-react'
 import { useSessionStore } from '../store/sessionStore'
 
 const ACCEPTED_EXTENSIONS = ['.pdf', '.docx', '.odt', '.txt', '.png', '.jpg', '.jpeg']
@@ -13,7 +13,11 @@ const ACCEPTED_MIME: Record<string, string[]> = {
   'image/jpeg': ['.jpg', '.jpeg'],
 }
 
-export default function DropZone(): React.JSX.Element {
+interface DropZoneProps {
+  onOpenSettings: () => void
+}
+
+export default function DropZone({ onOpenSettings }: DropZoneProps): React.JSX.Element {
   const { setFilePath, setScreen, setProgress, setAnalysisResult, setError } = useSessionStore()
 
   const onDrop = useCallback(
@@ -74,6 +78,16 @@ export default function DropZone(): React.JSX.Element {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
       {/* Header */}
+      <div className="w-full max-w-lg flex justify-end mb-2">
+        <button
+          onClick={onOpenSettings}
+          className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+          aria-label="Impostazioni"
+          title="Impostazioni"
+        >
+          <Settings size={18} />
+        </button>
+      </div>
       <div className="text-center mb-8">
         <div className="flex items-center justify-center gap-2 mb-3">
           <ShieldCheck className="text-blue-600" size={36} />

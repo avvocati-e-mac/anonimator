@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC_CHANNELS } from '@shared/types'
-import type { AnonymizeRequest } from '@shared/types'
+import type { AnonymizeRequest, LlmConfig } from '@shared/types'
 
 // Espone all'interfaccia grafica SOLO le funzioni strettamente necessarie.
 // Il renderer non può fare nient'altro — non vede Node.js, non vede il filesystem.
@@ -27,5 +27,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   showInFolder: (filePath: string) => ipcRenderer.invoke('shell:showInFolder', filePath),
 
   // Restituisce il path assoluto di un File droppato (Electron 32+)
-  getPathForFile: (file: File) => webUtils.getPathForFile(file)
+  getPathForFile: (file: File) => webUtils.getPathForFile(file),
+
+  // Settings: ottieni configurazione corrente
+  getSettings: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET),
+
+  // Settings: salva configurazione
+  setSettings: (settings: { llm: LlmConfig }) =>
+    ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_SET, settings),
+
+  // LLM: testa connessione con la configurazione fornita
+  testLlm: (llm: LlmConfig) =>
+    ipcRenderer.invoke(IPC_CHANNELS.LLM_TEST, { llm }),
+
+  // LLM: elenca modelli disponibili sul server
+  listLlmModels: (baseUrl: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.LLM_LIST_MODELS, { baseUrl, timeoutMs: 10000 })
 })

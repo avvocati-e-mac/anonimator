@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import type { AnonymizeRequest, SaveResult, DocumentAnalysisResult } from '@shared/types'
+import type { AnonymizeRequest, SaveResult, DocumentAnalysisResult, LlmConfig } from '@shared/types'
 
 // Tipizzazione dell'API esposta dal preload via contextBridge
 interface ElectronAPI {
@@ -12,6 +12,10 @@ interface ElectronAPI {
   ) => () => void
   showInFolder: (filePath: string) => void
   getPathForFile: (file: File) => string
+  getSettings: () => Promise<{ llm: LlmConfig }>
+  setSettings: (settings: { llm: LlmConfig }) => Promise<{ status: string } | { error: string }>
+  testLlm: (llm: LlmConfig) => Promise<{ ok: boolean; message: string; models?: string[] }>
+  listLlmModels: (baseUrl: string) => Promise<{ models: string[] }>
 }
 
 declare global {

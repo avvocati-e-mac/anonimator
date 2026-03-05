@@ -11,7 +11,13 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
-  "keywords": ["privacy", "gdpr", "legaltech", "redaction", "electron"],
+  "keywords": [
+    "privacy",
+    "gdpr",
+    "legaltech",
+    "redaction",
+    "electron"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
@@ -21,6 +27,7 @@
     "electron-updater": "^6.3.9",
     "fast-xml-parser": "^4.5.1",
     "lucide-react": "^0.475.0",
+    "mupdf": "^1.27.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^4.10.38",
     "react": "^18.3.1",

@@ -9,7 +9,9 @@ type NerPipelineFn = (text: string) => Promise<TokenClassificationOutput | Token
 import { join } from 'path'
 import { app } from 'electron'
 import log from 'electron-log'
-import type { DetectedEntity, EntityType } from '@shared/types'
+import type { DetectedEntity, EntityType, LlmConfig } from '@shared/types'
+import { detectNamesWithLlm } from './llmService'
+import { sessionManager } from './sessionManager'
 
 // ─── Configurazione Transformers.js ──────────────────────────────────────────
 // Disabilita qualunque tentativo di download dalla rete
@@ -146,14 +148,20 @@ function aggregateBioTokens(items: TokenClassificationSingle[]): AggregatedEntit
 export interface NerAnalysisResult {
   entities: DetectedEntity[]
   nerUsed: boolean
+  llmUsed: boolean
   warnings: string[]
 }
 
-export async function analyzeText(text: string): Promise<NerAnalysisResult> {
+export async function analyzeText(
+  text: string,
+  llmConfig?: LlmConfig,
+  onLlmProgress?: (page: number, total: number) => void
+): Promise<NerAnalysisResult> {
   const warnings: string[] = []
   const foundTexts = new Set<string>()
   let allEntities: DetectedEntity[] = []
   let nerUsed = false
+  let llmUsed = false
 
   // 1. Regex — veloci, deterministiche, sempre eseguite
   for (const { type, pattern } of REGEX_PATTERNS) {
@@ -200,8 +208,41 @@ export async function analyzeText(text: string): Promise<NerAnalysisResult> {
     warnings.push('Modello NER non disponibile. Solo dati strutturati (CF, IBAN, ecc.) rilevati automaticamente.')
   }
 
-  // 3. Cerca varianti maiuscole delle entità NER trovate
-  //    Es. se NER trova "Mario Rossi", cerca anche "MARIO ROSSI" nel testo del PDF
+  // 3. LLM locale (opzionale) — rileva nomi che il BERT può aver mancato
+  if (llmConfig?.enabled && llmConfig.model) {
+    try {
+      // Splitta per pagine (separate da \n\n nel testo estratto da PDF/DOCX)
+      // oppure chunk da 3000 char per documenti senza separatori espliciti
+      const pages = text.split(/\n\n+/).filter((p) => p.trim().length > 50)
+      const chunks = pages.length > 1 ? pages : splitTextIntoLlmChunks(text, 3000)
+      log.info('nerService: avvio analisi LLM', { model: llmConfig.model, chunks: chunks.length })
+
+      for (let ci = 0; ci < chunks.length; ci++) {
+        log.info(`nerService: LLM chunk ${ci + 1}/${chunks.length}`)
+        onLlmProgress?.(ci + 1, chunks.length)
+        const llmNames = await detectNamesWithLlm(chunks[ci], llmConfig)
+        for (const { original, replacement } of llmNames) {
+          const trimmed = original.trim()
+          if (!trimmed || foundTexts.has(trimmed.toLowerCase())) continue
+          // Determina il tipo: iniziali pure (es. "M. R.") → PERSONA, altrimenti ORGANIZZAZIONE
+          const type: EntityType = /^([A-Z]\.\s*)+$/.test(replacement.trim())
+            ? 'PERSONA'
+            : 'ORGANIZZAZIONE'
+          foundTexts.add(trimmed.toLowerCase())
+          const pseudonym = sessionManager.registerLlmPseudonym(trimmed, replacement.trim(), type)
+          allEntities.push({ ...buildEntity(trimmed, type), pseudonym })
+        }
+      }
+      llmUsed = true
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.warn('nerService: errore LLM, continuo senza', { error: message })
+      warnings.push('LLM locale non raggiungibile. Usato solo BERT + regex.')
+    }
+  }
+
+  // 4. Cerca varianti maiuscole delle entità trovate (BERT + LLM)
+  //    Es. se viene trovato "Mario Rossi", cerca anche "MARIO ROSSI" nel testo
   //    (utile per intestazioni in maiuscolo nei documenti legali)
   const nerTypes = new Set<EntityType>(['PERSONA', 'ORGANIZZAZIONE', 'LUOGO'])
   const nerEntities = allEntities.filter((e) => nerTypes.has(e.type))
@@ -216,12 +257,12 @@ export async function analyzeText(text: string): Promise<NerAnalysisResult> {
     }
   }
 
-  // 4. Conta occorrenze
+  // 5. Conta occorrenze
   for (const entity of allEntities) {
     entity.occurrences = countOccurrences(text, entity.originalText)
   }
 
-  // 5. Rimuovi entità NER rumorose: scarta quelle più lunghe che contengono
+  // 6. Rimuovi entità NER rumorose: scarta quelle più lunghe che contengono
   //    come sottostringa un'entità più corta della stessa categoria.
   allEntities = allEntities.filter((entity) => {
     if (entity.occurrences === 0) return false
@@ -235,16 +276,34 @@ export async function analyzeText(text: string): Promise<NerAnalysisResult> {
     return !containsShorter
   })
 
-  // 6. Ordina per occorrenze decrescenti
+  // 7. Ordina per occorrenze decrescenti
   allEntities.sort((a, b) => b.occurrences - a.occurrences)
 
   log.info('Analisi NER completata', {
     totalEntities: allEntities.length,
     nerUsed,
+    llmUsed,
     warnings: warnings.length
   })
 
-  return { entities: allEntities, nerUsed, warnings }
+  return { entities: allEntities, nerUsed, llmUsed, warnings }
+}
+
+/** Divide il testo in chunk da ~maxChars caratteri, spezzando su newline */
+function splitTextIntoLlmChunks(text: string, maxChars: number): string[] {
+  if (text.length <= maxChars) return [text]
+  const chunks: string[] = []
+  let start = 0
+  while (start < text.length) {
+    let end = Math.min(start + maxChars, text.length)
+    if (end < text.length) {
+      const newline = text.lastIndexOf('\n', end)
+      if (newline > start) end = newline
+    }
+    chunks.push(text.slice(start, end))
+    start = end
+  }
+  return chunks
 }
 
 function splitTextIntoChunks(text: string, targetWords: number): string[] {

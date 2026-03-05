@@ -1,150 +1,82 @@
 import fs from 'fs/promises'
 import path from 'path'
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import type { DetectedEntity } from '@shared/types'
-import type { TextToken } from '../parsers/pdfParser'
 
 /**
- * Anonimizza un PDF mantenendo il layout originale.
- * Strategia: per ogni entità confermata, trova i token PDF che la contengono
- * (anche come sottostringa), calcola la posizione x precisa del testo da coprire,
- * disegna un rettangolo bianco e sovrascrive con il pseudonimo.
+ * Anonimizza un PDF rimuovendo fisicamente il testo dai layer PDF.
+ * Usa MuPDF (WASM) con redaction annotations native:
+ *   1. page.search(text) → coordinate di ogni occorrenza
+ *   2. createAnnotation('Redact') + setRect() → aggiunge l'annotazione
+ *   3. page.applyRedactions() → rimuove il testo dal layer PDF (non recuperabile)
  */
 export async function generatePdf(
   filePath: string,
   entities: DetectedEntity[]
 ): Promise<{ outputPath: string; entitiesReplaced: number }> {
-  const { parsePdf } = await import('../parsers/pdfParser')
-  const { tokens } = await parsePdf(filePath)
+  // mupdf è un modulo WASM con top-level await — va importato dinamicamente
+  const mupdf = (await import('mupdf')).default as typeof import('mupdf')
 
   const fileBuffer = await fs.readFile(filePath)
-  const pdfDoc = await PDFDocument.load(fileBuffer)
-  const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica)
+  const doc = new mupdf.PDFDocument(fileBuffer as unknown as ArrayBuffer)
 
-  const confirmedEntities = entities
+  const confirmed = entities
     .filter((e) => e.confirmed)
     .sort((a, b) => b.originalText.length - a.originalText.length)
 
   let entitiesReplaced = 0
+  const pageCount = doc.countPages()
 
-  for (const entity of confirmedEntities) {
-    const matches = findEntityInTokens(tokens, entity.originalText)
-    if (matches.length === 0) continue
+  for (let i = 0; i < pageCount; i++) {
+    const page = doc.loadPage(i) as import('mupdf').PDFPage
+    let pageHasRedactions = false
 
-    entitiesReplaced++
+    for (const entity of confirmed) {
+      const hits = page.search(entity.originalText) as number[][][]
+      if (hits.length === 0) continue
 
-    for (const match of matches) {
-      const pageIndex = match.token.page - 1
-      const page = pdfDoc.getPages()[pageIndex]
-      if (!page) continue
+      if (!pageHasRedactions) pageHasRedactions = true
+      entitiesReplaced++
 
-      const tokenText = match.token.str
-      // Stima larghezza carattere in proporzione alla larghezza del token
-      const charWidth = match.token.width / Math.max(tokenText.length, 1)
-      const matchX = match.token.x + match.startChar * charWidth
-      const matchWidth = Math.max(match.matchText.length * charWidth, 20)
+      for (const quads of hits) {
+        const bbox = quadsToBbox(quads)
+        const annot = page.createAnnotation('Redact')
+        annot.setRect(bbox)
+        annot.setContents(entity.pseudonym)
+        annot.update()
+      }
+    }
 
-      const tokenHeight = match.token.height
-      // Padding generoso per coprire completamente il testo originale
-      const padX = 1
-      const padYBottom = tokenHeight * 0.25
-      const padYTop = tokenHeight * 0.35
-
-      const rectX = matchX - padX
-      const rectY = match.token.y - padYBottom
-      const rectW = matchWidth + padX * 2
-      const rectH = tokenHeight + padYBottom + padYTop
-
-      // 1. Rettangolo bianco solido che copre il testo originale
-      page.drawRectangle({
-        x: rectX,
-        y: rectY,
-        width: rectW,
-        height: rectH,
-        color: rgb(1, 1, 1),
-        borderWidth: 0
-      })
-
-      // 2. Bordo grigio chiaro per delimitare visivamente la redazione
-      page.drawRectangle({
-        x: rectX,
-        y: rectY,
-        width: rectW,
-        height: rectH,
-        color: rgb(0.95, 0.95, 0.95),
-        borderColor: rgb(0.75, 0.75, 0.75),
-        borderWidth: 0.5
-      })
-
-      // 3. Pseudonimo centrato verticalmente nel rettangolo
-      const fontSize = Math.max(tokenHeight * 0.80, 5)
-      page.drawText(entity.pseudonym, {
-        x: rectX + 1,
-        y: rectY + (rectH - fontSize) / 2,
-        size: fontSize,
-        font: helvetica,
-        color: rgb(0.3, 0.3, 0.3)
-      })
+    if (pageHasRedactions) {
+      // 0 = REDACT_IMAGE_NONE: non tocca le immagini embedded
+      page.applyRedactions(true, 0)
+      page.update()
     }
   }
 
-  const pdfBytes = await pdfDoc.save()
+  const outBuffer = doc.saveToBuffer('garbage=compact,incremental=no')
 
   const dir = path.dirname(filePath)
   const base = path.basename(filePath, path.extname(filePath))
   const outputPath = path.join(dir, `${base}_anonimizzato.pdf`)
 
-  await fs.writeFile(outputPath, pdfBytes)
+  await fs.writeFile(outputPath, Buffer.from(outBuffer.asUint8Array()))
   return { outputPath, entitiesReplaced }
 }
 
-interface TokenMatch {
-  token: TextToken
-  startChar: number   // indice del primo carattere del match nel token
-  matchText: string   // testo effettivo trovato (preserva case originale)
-}
-
 /**
- * Trova tutte le occorrenze dell'entità nei token PDF.
- * Cerca sia match esatti del token che substring all'interno di token più lunghi.
- * Gestisce anche token spezzati a fine riga (es. "Stroz-" + "zi").
+ * Converte un array di quad in bounding box [x0, y0, x1, y1].
+ * page.search() restituisce array di hit, ogni hit è array di quad,
+ * ogni quad è array piatto di 8 numeri [x0,y0, x1,y1, x2,y2, x3,y3].
  */
-function findEntityInTokens(tokens: TextToken[], entityText: string): TokenMatch[] {
-  const results: TokenMatch[] = []
-  const target = entityText.toLowerCase()
-
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i]
-    const tokenLower = token.str.toLowerCase()
-
-    // Cerca il target all'interno di questo token
-    let searchStart = 0
-    while (true) {
-      const idx = tokenLower.indexOf(target, searchStart)
-      if (idx === -1) break
-      results.push({ token, startChar: idx, matchText: token.str.slice(idx, idx + target.length) })
-      searchStart = idx + 1
-    }
-
-    // Cerca match su token contigui (stesso y ± 2pt, stessa pagina) per testi spezzati
-    // es. "Stroz-" sulla riga e "zi" all'inizio della riga successiva
-    if (i + 1 < tokens.length) {
-      const next = tokens[i + 1]
-      if (next.page === token.page) {
-        const combined = (token.str + next.str).toLowerCase()
-        const idx = combined.indexOf(target)
-        if (idx !== -1 && idx < token.str.length) {
-          // Il match inizia nel token corrente e finisce nel successivo
-          // Copriamo entrambi i token separatamente
-          const inFirst = token.str.length - idx
-          if (inFirst > 0 && inFirst < target.length) {
-            results.push({ token, startChar: idx, matchText: token.str.slice(idx) })
-            results.push({ token: next, startChar: 0, matchText: next.str.slice(0, target.length - inFirst) })
-          }
-        }
-      }
+function quadsToBbox(quads: number[][]): [number, number, number, number] {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+  for (const q of quads) {
+    for (let i = 0; i < 8; i += 2) {
+      x0 = Math.min(x0, q[i])
+      x1 = Math.max(x1, q[i])
+      y0 = Math.min(y0, q[i + 1])
+      y1 = Math.max(y1, q[i + 1])
     }
   }
-
-  return results
+  return [x0, y0, x1, y1]
 }
