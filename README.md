@@ -14,6 +14,34 @@ Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a se
 - Elaborazione batch di piu' file contemporaneamente
 - 100% offline — nessuna connessione di rete durante l'elaborazione (GDPR compliant)
 
+## Installazione rapida (DMG)
+
+Scarica il DMG dalla pagina [Releases](https://github.com/avvocati-e-mac/anonimator/releases):
+- `Anonimator-x.x.x-arm64.dmg` → Mac Apple Silicon (M1/M2/M3/M4)
+- `Anonimator-x.x.x-x64.dmg` → Mac Intel
+
+Trascina `Anonimator.app` nella cartella Applicazioni.
+
+### L'app non è firmata né notarizzata — passaggi obbligatori
+
+Poiché l'app non è distribuita tramite il Mac App Store né firmata con un certificato Apple Developer, macOS la blocca all'apertura. Esegui questi due comandi nel Terminale **una sola volta** dopo l'installazione:
+
+**1. Disabilita il blocco Gatekeeper:**
+```bash
+spctl --master-disable
+```
+Poi apri **Impostazioni di Sistema → Privacy e Sicurezza** e dal menu a tendina seleziona **Dovunque**.
+
+**2. Rimuovi l'app dalla quarantena:**
+```bash
+sudo xattr -cr /Applications/Anonimator.app
+```
+> Il comando presume che l'app sia nella cartella Applicazioni. Se l'hai installata altrove, sostituisci il percorso di conseguenza.
+
+Dopo questi passaggi l'app si apre normalmente.
+
+---
+
 ## Requisiti
 
 - macOS 12+ (arm64 / Apple Silicon o x64 / Intel)
@@ -46,6 +74,7 @@ npm start
 | `npm run typecheck` | Verifica TypeScript senza compilare |
 | `npm run dist:mac:arm64` | Crea il DMG per macOS Apple Silicon |
 | `npm run dist:mac:x64` | Crea il DMG per macOS Intel |
+| `npm run dist:mac:both` | Crea entrambi i DMG (arm64 + x64) in sequenza |
 
 ## Architettura
 
