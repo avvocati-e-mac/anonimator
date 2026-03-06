@@ -2,4 +2,16 @@ node_modules/
 out/
 dist/
 .DS_Store
+**/.DS_Store
 *.log
+
+# Materiale interno
+materiale studio app/
+PDF test/
+sessioni/
+
+# Modello NER e tessdata (scaricabili separatamente via scripts/download-models.sh)
+resources/models/*
+resources/tessdata/*
+!resources/models/.gitkeep
+!resources/tessdata/.gitkeep

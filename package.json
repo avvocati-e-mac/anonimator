@@ -23,7 +23,7 @@
     "redaction",
     "electron"
   ],
-  "author": "",
+  "author": "avvocati-e-mac",
   "license": "MIT",
   "dependencies": {
     "@huggingface/transformers": "^3.3.3",
