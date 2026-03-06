@@ -11,6 +11,7 @@
 
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
+  beforePack: './beforePack.js',
   afterPack: './afterPack.js',
 
   appId: 'it.anonimator.app',
@@ -66,6 +67,7 @@ module.exports = {
     // e notarization dal workflow CI. Per distribuzione interna va bene così.
     hardenedRuntime: false,
     gatekeeperAssess: false,
+    identity: null,
     // Icona: metti un file build-resources/icon.icns (1024x1024 consigliato)
     icon: 'build-resources/icon.icns'
   },

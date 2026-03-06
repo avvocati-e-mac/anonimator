@@ -10,7 +10,7 @@
     "build:electron": "npx electron-vite build && npx electron-builder",
     "dist": "npx electron-vite build && npx electron-builder --config electron-builder.config.js",
     "dist:mac": "npx electron-vite build && npx electron-builder --mac --config electron-builder.config.js",
-    "dist:mac:arm64": "npx electron-vite build && npm install --os=darwin --cpu=arm64 sharp && npx electron-builder --mac --arm64 --config electron-builder.config.js && npm install",
+    "dist:mac:arm64": "npx electron-vite build && npx electron-builder --mac --arm64 --config electron-builder.config.js",
     "dist:mac:x64": "npx electron-vite build && npm install --os=darwin --cpu=x64 sharp && npx electron-builder --mac --x64 --config electron-builder.config.js && npm install",
     "dist:win": "npx electron-vite build && npx electron-builder --win --config electron-builder.config.js",
     "test": "vitest run",
