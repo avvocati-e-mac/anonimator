@@ -6,7 +6,7 @@ import type { BatchFileStatus } from '@shared/types'
 function StatusIcon({ status }: { status: BatchFileStatus }): React.JSX.Element {
   switch (status) {
     case 'pending':
-      return <Clock size={14} className="text-slate-300" />
+      return <Clock size={14} className="text-slate-300 dark:text-slate-600" />
     case 'analyzing':
       return <Loader2 size={14} className="text-blue-500 animate-spin" />
     case 'done':
@@ -17,19 +17,19 @@ function StatusIcon({ status }: { status: BatchFileStatus }): React.JSX.Element 
 }
 
 export default function BatchProcessingScreen(): React.JSX.Element {
-  const { batchFiles, batchCurrentFileIndex, progressPercent, progressMessage } = useSessionStore()
+  const { batchFiles, batchCurrentFileIndex, progressPercent, progressMessage, reset } = useSessionStore()
 
   const total = batchFiles.length
   const currentFile = batchFiles[batchCurrentFileIndex - 1]
 
   return (
-    <div className="min-h-screen bg-slate-50 flex">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex">
       {/* Pannello laterale: lista file */}
-      <aside className="w-64 flex-shrink-0 bg-white border-r border-slate-200 flex flex-col">
-        <div className="px-4 py-4 border-b border-slate-100">
+      <aside className="w-64 flex-shrink-0 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col">
+        <div className="px-4 py-4 border-b border-slate-100 dark:border-slate-700">
           <div className="flex items-center gap-2">
             <ShieldCheck size={18} className="text-blue-600" />
-            <span className="font-semibold text-slate-800 text-sm">Anonimator</span>
+            <span className="font-semibold text-slate-800 dark:text-slate-100 text-sm">Anonimator</span>
           </div>
         </div>
         <ul className="flex-1 overflow-y-auto py-2">
@@ -38,15 +38,15 @@ export default function BatchProcessingScreen(): React.JSX.Element {
               key={file.filePath}
               className={`
                 flex items-center gap-2.5 px-4 py-2.5
-                ${idx + 1 === batchCurrentFileIndex ? 'bg-blue-50' : ''}
+                ${idx + 1 === batchCurrentFileIndex ? 'bg-blue-50 dark:bg-blue-950/30' : ''}
               `}
             >
               <StatusIcon status={file.status} />
               <span
                 className={`text-xs truncate flex-1 ${
                   file.status === 'error' ? 'text-red-500' :
-                  idx + 1 === batchCurrentFileIndex ? 'text-blue-700 font-medium' :
-                  file.status === 'done' ? 'text-slate-500' : 'text-slate-400'
+                  idx + 1 === batchCurrentFileIndex ? 'text-blue-700 dark:text-blue-300 font-medium' :
+                  file.status === 'done' ? 'text-slate-500 dark:text-slate-500' : 'text-slate-400 dark:text-slate-600'
                 }`}
                 title={file.fileName}
               >
@@ -72,14 +72,14 @@ export default function BatchProcessingScreen(): React.JSX.Element {
           </div>
 
           <div>
-            <h2 className="text-xl font-semibold text-slate-800 mb-1">
+            <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100 mb-1">
               Analisi in corso
             </h2>
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-slate-500 dark:text-slate-400">
               File {batchCurrentFileIndex} di {total}
             </p>
             {currentFile && (
-              <p className="text-sm text-slate-600 font-medium mt-1 truncate max-w-xs mx-auto" title={currentFile.fileName}>
+              <p className="text-sm text-slate-600 dark:text-slate-300 font-medium mt-1 truncate max-w-xs mx-auto" title={currentFile.fileName}>
                 {currentFile.fileName}
               </p>
             )}
@@ -87,31 +87,38 @@ export default function BatchProcessingScreen(): React.JSX.Element {
 
           {/* Barra progresso file corrente */}
           <div className="space-y-2">
-            <div className="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
+            <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2.5 overflow-hidden">
               <div
                 className="h-2.5 bg-blue-500 rounded-full transition-all duration-500 ease-out"
                 style={{ width: `${progressPercent}%` }}
               />
             </div>
-            <p className="text-sm text-slate-500 min-h-[1.25rem]">
+            <p className="text-sm text-slate-500 dark:text-slate-400 min-h-[1.25rem]">
               {progressMessage}
             </p>
           </div>
 
           {/* Progresso globale */}
-          <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+          <div className="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden">
             <div
-              className="h-1.5 bg-slate-400 rounded-full transition-all duration-300"
+              className="h-1.5 bg-slate-400 dark:bg-slate-500 rounded-full transition-all duration-300"
               style={{ width: `${((batchCurrentFileIndex - 1) / total) * 100}%` }}
             />
           </div>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-slate-400 dark:text-slate-500">
             {batchFiles.filter((f) => f.status === 'done').length} di {total} completati
           </p>
 
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-slate-400 dark:text-slate-500">
             Il documento non lascia mai questo computer.
           </p>
+
+          <button
+            onClick={reset}
+            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            Annulla
+          </button>
         </div>
       </main>
     </div>

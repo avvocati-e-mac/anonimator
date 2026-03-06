@@ -55,13 +55,14 @@ module.exports = {
   // ── macOS ────────────────────────────────────────────────────────────────────
   mac: {
     category: 'public.app-category.productivity',
-    // Costruiamo separatamente arm64 e x64 per evitare problemi
-    // con i binari prebuilt di sharp che sono arch-specific.
-    // Usa: npm run dist:mac:arm64  oppure  npm run dist:mac:x64
-    // arch viene sovrascritta da --arm64 / --x64 passati da CLI
-    // Default: solo arch nativa per evitare conflitti con binari sharp
+    // arch viene passata da CLI (--arm64 / --x64).
+    // Usa: npm run dist:mac:arm64  (solo arm64)
+    //      npm run dist:mac:x64   (solo x64)
+    //      npm run dist:mac:both  (entrambi, script automatico)
+    // Universal binary NON supportato: sharp usa .dylib arch-specific
+    // non mergeable con lipo (lovell/sharp#3622).
     target: [
-      { target: 'dmg', arch: ['arm64'] }
+      { target: 'dmg' }
     ],
     // Per distribuire senza firma Apple Developer: rimuovere hardenedRuntime
     // e notarization dal workflow CI. Per distribuzione interna va bene così.
