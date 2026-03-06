@@ -231,6 +231,38 @@ Located in `src/main/services/nerService.ts`. Uses `\b` word boundaries (NOT `^`
 - Corrupt DOCX → catch exception, suggest re-saving
 - Write permission error → log and show specific error
 
+## Known Build Issues
+
+### sharp darwin-arm64 crash (building arm64 DMG from x64 machine)
+
+**Symptom:** App crashes on launch with `Error: Could not load the "sharp" module using the darwin-arm64 runtime`.
+
+**Cause:** `@huggingface/transformers` imports `sharp` at top-level. When building the arm64 DMG from an x64 machine, npm installs x64 binaries (`@img/sharp-darwin-x64`) but not arm64 ones.
+
+**Fix:** Install arm64 binaries before packaging (already in `dist:mac:arm64` script):
+```bash
+npm install @img/sharp-darwin-arm64@0.34.5 @img/sharp-libvips-darwin-arm64@1.2.4 --force --no-save
+```
+Use `--force` to bypass npm's platform check. Use `--no-save` to avoid modifying `package.json`.
+If sharp version changes, find the correct versions with:
+```bash
+cat node_modules/@img/sharp-darwin-x64/package.json | python3 -m json.tool | grep '"version"'
+cat node_modules/@img/sharp-libvips-darwin-x64/package.json | python3 -m json.tool | grep '"version"'
+```
+
+### hdiutil fails on iCloud Drive
+
+**Symptom:** `hdiutil: create failed - Risorsa momentaneamente non disponibile` during DMG creation.
+
+**Cause:** `hdiutil` cannot create DMG files inside iCloud Drive-synced folders.
+
+**Fix:** The `dist:mac:arm64` script has an automatic fallback that creates the DMG on `~/Desktop/` when electron-builder fails. Alternatively:
+```bash
+hdiutil create -volname "Anonimator" -srcfolder dist/mac-arm64/Anonimator.app -ov -format UDZO ~/Desktop/Anonimator-arm64.dmg
+```
+
+Full details: `sessioni/sessione_019_sharp_arm64_fix.md`
+
 ## Notes
 
 - Vite version pinned to ^5.4.x (electron-vite 2.3 does not support Vite 6)
