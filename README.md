@@ -4,21 +4,32 @@ App desktop per la **pseudoanonimizzazione offline** di documenti legali italian
 
 Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a server esterni. Tutto il processing avviene localmente sul tuo Mac.
 
-**L’app Electron è stata creata in vibe coding e non sono un esperto programmatore quindi procedi con cautela nell’utilizzo.**
+**Versione attuale: 1.0.7**
 
-## Funzionalita'
+> **L'app è stata creata in vibe coding e non sono un esperto programmatore — procedi con cautela nell'utilizzo.**
+
+<!-- TODO: aggiungere screenshot dell'app (DropZone, revisione entità, dark mode) -->
+
+---
+
+## Funzionalità
 
 - Riconosce automaticamente nomi di persone, luoghi, organizzazioni, codici fiscali, P.IVA, IBAN, email e numeri di telefono
-- Sostituisce le entita' con pseudonimi coerenti in tutto il documento (es. "Mario Rossi" → "M. R." ovunque appaia)
+- Sostituisce le entità con pseudonimi coerenti in tutto il documento (es. "Mario Rossi" → "M. R." ovunque appaia)
+- **Pseudonimi editabili**: nella schermata di revisione puoi modificare manualmente ogni pseudonimo prima di procedere
 - Supporta PDF (nativi e scansionati via OCR), DOCX, ODT e TXT
-- Elaborazione batch di piu' file contemporaneamente
+- Elaborazione **batch** di più file contemporaneamente con revisione unificata delle entità
+- **LLM locale opzionale**: connetti Ollama o LM Studio per migliorare il riconoscimento dei nomi (i dati non escono mai dalla tua macchina)
+- **Dark mode**: toggle luna/sole nell'interfaccia, preferenza salvata automaticamente
 - 100% offline — nessuna connessione di rete durante l'elaborazione (GDPR compliant)
+
+---
 
 ## Installazione rapida (DMG)
 
 Scarica il DMG dalla pagina [Releases](https://github.com/avvocati-e-mac/anonimator/releases):
-- `Anonimator-x.x.x-arm64.dmg` → Mac Apple Silicon (M1/M2/M3/M4)
-- `Anonimator-x.x.x-x64.dmg` → Mac Intel
+- `Anonimator-1.0.7-arm64.dmg` → Mac Apple Silicon (M1/M2/M3/M4)
+- `Anonimator-1.0.7-x64.dmg` → Mac Intel
 
 Trascina `Anonimator.app` nella cartella Applicazioni.
 
@@ -42,13 +53,15 @@ Dopo questi passaggi l'app si apre normalmente.
 
 ---
 
-## Requisiti
+## Per sviluppatori — Installazione da sorgente
 
-- macOS 12+ (arm64 / Apple Silicon o x64 / Intel)
+### Requisiti
+
+- macOS 12+
 - Node.js 20+ e npm 10+
 - Circa 200 MB di spazio per il modello NER e i dati OCR
 
-## Installazione
+### Setup
 
 ```bash
 # 1. Clona il repository
@@ -61,20 +74,22 @@ npm install
 # 3. Scarica il modello NER e il file tessdata per OCR
 bash scripts/download-models.sh
 
-# 4. Avvia l'app in modalita' sviluppo
+# 4. Avvia l'app in modalità sviluppo
 npm start
 ```
 
-## Comandi disponibili
+### Comandi disponibili
 
 | Comando | Descrizione |
 |---|---|
-| `npm start` | Avvia l'app in modalita' sviluppo |
+| `npm start` | Avvia l'app in modalità sviluppo |
 | `npm test` | Esegue i test unitari (vitest) |
 | `npm run typecheck` | Verifica TypeScript senza compilare |
 | `npm run dist:mac:arm64` | Crea il DMG per macOS Apple Silicon |
 | `npm run dist:mac:x64` | Crea il DMG per macOS Intel |
 | `npm run dist:mac:both` | Crea entrambi i DMG (arm64 + x64) in sequenza |
+
+---
 
 ## Architettura
 
@@ -99,6 +114,7 @@ resources/
   tessdata/     # Dati OCR italiano (scaricato da download-models.sh)
 scripts/
   download-models.sh  # Script di setup modelli
+  build-mac.sh        # Script build DMG arm64 + x64
 tests/          # Test unitari
 ```
 
