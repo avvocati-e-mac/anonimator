@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { ShieldCheck, Upload, FileText, Settings } from 'lucide-react'
+import { ShieldCheck, Upload, FileText, Settings, Moon, Sun } from 'lucide-react'
 import { useSessionStore } from '../store/sessionStore'
 import { useBatchOrchestrator } from '../hooks/useBatchOrchestrator'
 import type { BatchFileItem } from '@shared/types'
@@ -17,9 +17,11 @@ const ACCEPTED_MIME: Record<string, string[]> = {
 
 interface DropZoneProps {
   onOpenSettings: () => void
+  isDark: boolean
+  onToggleDark: () => void
 }
 
-export default function DropZone({ onOpenSettings }: DropZoneProps): React.JSX.Element {
+export default function DropZone({ onOpenSettings, isDark, onToggleDark }: DropZoneProps): React.JSX.Element {
   const { setFilePath, setScreen, setProgress, setAnalysisResult, setError } = useSessionStore()
   const { startBatchAnalysis, errorDialog, resolveErrorDialog } = useBatchOrchestrator()
   const [version, setVersion] = useState('')
@@ -112,31 +114,41 @@ export default function DropZone({ onOpenSettings }: DropZoneProps): React.JSX.E
   })
 
   const borderColor = isDragReject
-    ? 'border-red-400 bg-red-50'
+    ? 'border-red-400 bg-red-50 dark:bg-red-950/30'
     : isDragActive
-      ? 'border-blue-400 bg-blue-50'
-      : 'border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50'
+      ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/30'
+      : 'border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50 dark:border-slate-600 dark:bg-slate-800 dark:hover:border-blue-500 dark:hover:bg-blue-950/30'
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col items-center justify-center p-6">
       {/* Header */}
       <div className="w-full max-w-lg flex items-center justify-between mb-2">
-        <span className="text-xs text-slate-300 select-none">v. {version}</span>
-        <button
-          onClick={onOpenSettings}
-          className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-          aria-label="Impostazioni"
-          title="Impostazioni"
-        >
-          <Settings size={18} />
-        </button>
+        <span className="text-xs text-slate-300 dark:text-slate-600 select-none">v. {version}</span>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onToggleDark}
+            className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:text-slate-500 dark:hover:text-slate-300 dark:hover:bg-slate-800 transition-colors"
+            aria-label={isDark ? 'Passa a tema chiaro' : 'Passa a tema scuro'}
+            title={isDark ? 'Tema chiaro' : 'Tema scuro'}
+          >
+            {isDark ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+          <button
+            onClick={onOpenSettings}
+            className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:text-slate-500 dark:hover:text-slate-300 dark:hover:bg-slate-800 transition-colors"
+            aria-label="Impostazioni"
+            title="Impostazioni"
+          >
+            <Settings size={18} />
+          </button>
+        </div>
       </div>
       <div className="text-center mb-8">
         <div className="flex items-center justify-center gap-2 mb-3">
           <ShieldCheck className="text-blue-600" size={36} />
-          <h1 className="text-2xl font-bold text-slate-800">Anonimator</h1>
+          <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Anonimator</h1>
         </div>
-        <p className="text-slate-500">Anonimizzatore di documenti legali — elaborazione locale</p>
+        <p className="text-slate-500 dark:text-slate-400">Anonimizzatore di documenti legali — elaborazione locale</p>
       </div>
 
       {/* Drop area */}
@@ -152,7 +164,7 @@ export default function DropZone({ onOpenSettings }: DropZoneProps): React.JSX.E
         <input {...getInputProps()} />
         <Upload
           size={48}
-          className={isDragActive ? 'text-blue-500' : 'text-slate-400'}
+          className={isDragActive ? 'text-blue-500' : 'text-slate-400 dark:text-slate-500'}
         />
         {isDragReject ? (
           <p className="text-red-600 font-medium text-center">
@@ -164,10 +176,10 @@ export default function DropZone({ onOpenSettings }: DropZoneProps): React.JSX.E
           </p>
         ) : (
           <>
-            <p className="text-slate-700 font-medium text-center">
+            <p className="text-slate-700 dark:text-slate-300 font-medium text-center">
               Trascina uno o più documenti qui, oppure clicca per selezionarli
             </p>
-            <p className="text-slate-400 text-sm text-center">
+            <p className="text-slate-400 dark:text-slate-500 text-sm text-center">
               {ACCEPTED_EXTENSIONS.join('  ')}
             </p>
           </>
@@ -183,16 +195,16 @@ export default function DropZone({ onOpenSettings }: DropZoneProps): React.JSX.E
           { label: 'Testo', desc: '.txt' },
           { label: 'Immagini', desc: 'PNG, JPG' },
         ].map(({ label, desc }) => (
-          <div key={label} className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-3 py-1.5">
-            <FileText size={14} className="text-slate-400" />
-            <span className="text-xs text-slate-600 font-medium">{label}</span>
-            <span className="text-xs text-slate-400">{desc}</span>
+          <div key={label} className="flex items-center gap-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5">
+            <FileText size={14} className="text-slate-400 dark:text-slate-500" />
+            <span className="text-xs text-slate-600 dark:text-slate-300 font-medium">{label}</span>
+            <span className="text-xs text-slate-400 dark:text-slate-500">{desc}</span>
           </div>
         ))}
       </div>
 
       {/* Privacy badge */}
-      <p className="mt-8 text-xs text-slate-400 flex items-center gap-1.5">
+      <p className="mt-8 text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1.5">
         <ShieldCheck size={13} className="text-green-500" />
         Nessun dato inviato in rete — elaborazione completamente locale
       </p>
@@ -200,9 +212,9 @@ export default function DropZone({ onOpenSettings }: DropZoneProps): React.JSX.E
       {/* Dialog errore batch (retry / skip) */}
       {errorDialog && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4 space-y-4">
-            <h3 className="font-semibold text-slate-800">Errore elaborazione</h3>
-            <p className="text-sm text-slate-600 truncate" title={errorDialog.file.fileName}>
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl p-6 max-w-sm w-full mx-4 space-y-4">
+            <h3 className="font-semibold text-slate-800 dark:text-slate-100">Errore elaborazione</h3>
+            <p className="text-sm text-slate-600 dark:text-slate-300 truncate" title={errorDialog.file.fileName}>
               {errorDialog.file.fileName}
             </p>
             {errorDialog.file.error && (
@@ -211,7 +223,7 @@ export default function DropZone({ onOpenSettings }: DropZoneProps): React.JSX.E
             <div className="flex gap-3 justify-end">
               <button
                 onClick={() => resolveErrorDialog('skip')}
-                className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800"
+                className="px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
               >
                 Salta
               </button>

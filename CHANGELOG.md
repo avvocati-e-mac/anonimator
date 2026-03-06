@@ -5,6 +5,18 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.0.7] - 2026-03-06
+
+### Novità
+- **Dark mode**: aggiunta modalità scura con toggle luna/sole nella DropZone (e nella schermata Impostazioni). Preferenza persistita in `localStorage`. Script anti-FOUC per evitare il flash al riavvio.
+
+### Bug Fix
+- **Impostazioni LLM — campo Host**: il campo "Host" non mostra più la porta (`192.168.1.125:1234`) quando si ricarica una configurazione salvata con IP non-localhost. Ora mostra correttamente solo l'indirizzo IP.
+- **Annulla in ProcessingScreen**: aggiunto pulsante "Annulla" durante l'analisi del documento. Permette di tornare alla dropzone se l'analisi si blocca o richiede troppo tempo.
+- **Annulla in EntityReview**: il pulsante "Annulla" ora esegue un reset completo dello store (in precedenza `filePath` ed `entities` rimanevano nello stato sporco causando comportamenti anomali al drop successivo). Stesso fix applicato in BatchReview.
+
+---
+
 ## [1.0.6] - 2026-03-06
 
 ### Bug Fix

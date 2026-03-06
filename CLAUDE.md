@@ -256,12 +256,80 @@ cat node_modules/@img/sharp-libvips-darwin-x64/package.json | python3 -m json.to
 
 **Cause:** `hdiutil` cannot create DMG files inside iCloud Drive-synced folders.
 
-**Fix:** The `dist:mac:arm64` script has an automatic fallback that creates the DMG on `~/Desktop/` when electron-builder fails. Alternatively:
+**Fix:** The `dist:mac:arm64` script has an automatic fallback that creates the DMG on `~/Desktop/` when electron-builder fails. Same fallback is in `scripts/build-mac.sh` for both architectures. Alternatively:
 ```bash
 hdiutil create -volname "Anonimator" -srcfolder dist/mac-arm64/Anonimator.app -ov -format UDZO ~/Desktop/Anonimator-arm64.dmg
 ```
 
 Full details: `sessioni/sessione_019_sharp_arm64_fix.md`
+
+### Build arm64 + x64 automatica (script unificato)
+
+```bash
+npm run dist:mac:both
+# oppure direttamente:
+bash scripts/build-mac.sh
+```
+
+Lo script `scripts/build-mac.sh`:
+1. Fa una sola build vite
+2. Installa binari sharp arm64 → pacchetta DMG arm64
+3. Installa binari sharp x64 → pacchetta DMG x64
+4. Fallback hdiutil su Desktop per entrambi se iCloud Drive blocca
+5. Ripristina binari arm64 (macchina di build)
+
+**Universal binary NON è supportato** (lovell/sharp#3622): i `.dylib` libvips sono arch-specific e non mergeable con `lipo`. Si distribuiscono due DMG separati.
+
+## Performance & Ottimizzazioni
+
+Le linee guida seguono un approccio a tre livelli: applica prima il Livello 1 (impatto immediato, zero rischio), poi il Livello 2 (ottimizzazioni mirate), poi il Livello 3 solo se ci sono problemi documentati.
+
+### Livello 1 — Regole base (sempre valide, impatto immediato)
+
+- **BrowserWindow startup percepito:** creare la finestra con `show: false` e mostrarla solo all'evento `ready-to-show`. Evita il flash di finestra bianca.
+  ```typescript
+  win.once('ready-to-show', () => win.show());
+  ```
+- **API Node.js asincrone:** usare sempre `fs.promises.*` nel main process. Mai `fs.readFileSync`, `fs.writeFileSync` nel percorso critico — bloccano il main thread e congelano l'intera app.
+- **Cleanup listener React:** ogni `useEffect` che registra un listener IPC o un timer deve restituire una funzione di cleanup. I memory leak si accumulano in app desktop long-running (gli utenti non chiudono mai l'app).
+  ```typescript
+  useEffect(() => {
+    const unsub = window.electronAPI.onProgress(handler);
+    return () => unsub(); // cleanup obbligatorio
+  }, []);
+  ```
+- **`ipcRenderer.invoke` sempre (mai `sendSync`):** `sendSync` blocca il renderer fino alla risposta del main. Già usato correttamente nel progetto — mantenere questo pattern.
+- **Escludere file non necessari dalla build:** nella config `electron-builder`, il campo `files` deve escludere `tests/`, `.git/`, documentazione, file `.md` non necessari a runtime.
+
+### Livello 2 — Ottimizzazioni mirate (applicare quando si toccano le aree interessate)
+
+- **Lazy loading moduli pesanti nel main:** caricare `mupdf`, `tesseract.js` e altri moduli pesanti solo quando servono con `import()` dinamico, non al top-level. Riduce il tempo di avvio.
+  ```typescript
+  // Invece di: import mupdf from 'mupdf' in cima al file
+  const mupdf = (await import('mupdf')).default; // dentro la funzione che lo usa
+  ```
+- **React.lazy() per componenti pesanti:** componenti non mostrati allo startup (es. SettingsScreen, BatchReview) possono essere caricati con `React.lazy()` + `Suspense`.
+- **Audit dipendenze:** prima di aggiungere una nuova libreria, verificare con `npx depcheck` se ci sono dipendenze inutilizzate da rimuovere. Preferire alternative leggere (es. `crypto.randomUUID()` invece di `uuid`).
+- **Compressione build:** in `electron-builder.yml` impostare `compression: maximum`. Per eseguibili Windows, valutare UPX (riduce dimensione ma alcuni antivirus segnalano falsi positivi).
+- **Immagini:** usare WebP invece di PNG/JPG per asset UI (30% più piccoli). Font in WOFF2 con subset dei soli caratteri italiani necessari.
+
+### Livello 3 — Avanzate (solo se ci sono problemi documentati e misurati)
+
+- **Worker threads per operazioni CPU-intensive:** se NER o OCR bloccano il main process in modo misurabile, spostare in un `worker_thread`. Attualmente il singleton `_nerQueue` con concurrency=1 mitiga il problema.
+- **Bundle analysis:** usare `vite-bundle-visualizer` (`npx vite-bundle-visualizer`) per identificare dipendenze pesanti nel renderer bundle.
+- **Memory profiling:** aprire Chrome DevTools nel renderer (`Ctrl+Shift+I` in dev) → tab Memory → heap snapshot. Nel main process usare `--inspect` e connettersi da `chrome://inspect`. Cercare listener IPC non rimossi e closure che trattengono oggetti.
+- **Universal Binary macOS:** per distribuire un unico DMG per Intel + Apple Silicon usare `arch: ["universal"]` in electron-builder. Raddoppia la dimensione del file ma elimina la gestione di due canali separati. Attualmente si usano build separati — cambiare solo se la distribuzione diventa un problema.
+
+### Strumenti di misura (prima di ottimizzare, misurare)
+
+```bash
+npx depcheck                    # dipendenze inutilizzate
+npx vite-bundle-visualizer      # analisi bundle renderer
+# Chrome DevTools > Performance tab: profiling runtime
+# Chrome DevTools > Memory tab: heap snapshot per memory leak
+```
+
+---
 
 ## Notes
 

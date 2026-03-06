@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import {
   ShieldCheck, ArrowLeft, Cpu, CheckCircle2, XCircle,
-  Loader2, RefreshCw, ChevronDown
+  Loader2, RefreshCw, ChevronDown, Moon, Sun
 } from 'lucide-react'
 import type { LlmConfig } from '@shared/types'
 import { DEFAULT_LLM_CONFIG } from '@shared/types'
 
 interface SettingsScreenProps {
   onBack: () => void
+  isDark: boolean
+  onToggleDark: () => void
 }
 
 type TestState = 'idle' | 'loading' | 'ok' | 'error'
@@ -35,13 +37,13 @@ function detectPresetFromUrl(url: string): PresetKey {
 function extractHostFromUrl(url: string): string {
   try {
     const u = new URL(url)
-    return u.hostname + (u.port ? `:${u.port}` : '')
+    return u.hostname
   } catch {
     return 'localhost'
   }
 }
 
-export default function SettingsScreen({ onBack }: SettingsScreenProps): React.JSX.Element {
+export default function SettingsScreen({ onBack, isDark, onToggleDark }: SettingsScreenProps): React.JSX.Element {
   const [llm, setLlm] = useState<LlmConfig>(DEFAULT_LLM_CONFIG)
   const [preset, setPreset] = useState<PresetKey>('ollama')
   const [host, setHost] = useState('localhost')
@@ -107,23 +109,32 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps): React.J
   }
 
   const inputClass =
-    'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+    'w-full border border-slate-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col">
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center gap-3 flex-shrink-0">
+      <header className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-6 py-4 flex items-center gap-3 flex-shrink-0">
         <button
           onClick={onBack}
-          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors"
+          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-700 transition-colors"
           aria-label="Indietro"
         >
           <ArrowLeft size={18} />
         </button>
         <div className="flex items-center gap-2">
           <ShieldCheck size={20} className="text-blue-600" />
-          <span className="font-semibold text-slate-800">Impostazioni</span>
+          <span className="font-semibold text-slate-800 dark:text-slate-100">Impostazioni</span>
         </div>
+        <div className="flex-1" />
+        <button
+          onClick={onToggleDark}
+          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:text-slate-500 dark:hover:text-slate-300 dark:hover:bg-slate-700 transition-colors"
+          aria-label={isDark ? 'Passa a tema chiaro' : 'Passa a tema scuro'}
+          title={isDark ? 'Tema chiaro' : 'Tema scuro'}
+        >
+          {isDark ? <Sun size={16} /> : <Moon size={16} />}
+        </button>
       </header>
 
       {/* Corpo */}
@@ -131,12 +142,12 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps): React.J
         <div className="max-w-xl mx-auto space-y-6">
 
           {/* Sezione LLM */}
-          <section className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+          <section className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 space-y-4">
             <div className="flex items-center gap-2">
               <Cpu size={18} className="text-blue-600" />
-              <h2 className="font-semibold text-slate-800">LLM locale (opzionale)</h2>
+              <h2 className="font-semibold text-slate-800 dark:text-slate-100">LLM locale (opzionale)</h2>
             </div>
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-slate-500 dark:text-slate-400">
               Connetti un server LLM locale per migliorare il riconoscimento dei nomi.
               I dati non escono mai dalla tua macchina.
             </p>
@@ -147,7 +158,7 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps): React.J
                 onClick={() => setLlm((prev) => ({ ...prev, enabled: !prev.enabled }))}
                 className={`
                   relative w-11 h-6 rounded-full transition-colors flex-shrink-0 cursor-pointer
-                  ${llm.enabled ? 'bg-blue-600' : 'bg-slate-300'}
+                  ${llm.enabled ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-600'}
                 `}
               >
                 <span
@@ -157,7 +168,7 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps): React.J
                   `}
                 />
               </div>
-              <span className="text-sm font-medium text-slate-700">
+              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
                 {llm.enabled ? 'Abilitato' : 'Disabilitato'}
               </span>
             </label>
@@ -167,7 +178,7 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps): React.J
 
                 {/* Scelta preset: Ollama / LM Studio */}
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-2">Software</label>
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">Software</label>
                   <div className="flex gap-2">
                     {(Object.keys(LLM_PRESETS) as PresetKey[]).map((p) => (
                       <button
@@ -177,7 +188,7 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps): React.J
                           flex-1 py-2 px-3 text-sm font-medium rounded-lg border transition-colors
                           ${preset === p
                             ? 'bg-blue-600 text-white border-blue-600'
-                            : 'bg-white text-slate-700 border-slate-300 hover:border-blue-400'}
+                            : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:border-blue-400'}
                         `}
                       >
                         {LLM_PRESETS[p].label}
@@ -188,7 +199,7 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps): React.J
 
                 {/* Host / IP */}
                 <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                     Host (IP o localhost)
                   </label>
                   <input
@@ -203,15 +214,15 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps): React.J
                 </div>
 
                 {/* URL completo (sola lettura, per verifica) */}
-                <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 flex items-center gap-2">
-                  <span className="text-xs text-slate-400 flex-shrink-0">URL:</span>
-                  <code className="text-xs text-slate-600 break-all">{llm.baseUrl}</code>
+                <div className="bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 flex items-center gap-2">
+                  <span className="text-xs text-slate-400 dark:text-slate-500 flex-shrink-0">URL:</span>
+                  <code className="text-xs text-slate-600 dark:text-slate-300 break-all">{llm.baseUrl}</code>
                 </div>
 
                 {/* Selezione modello */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-medium text-slate-600">Modello</label>
+                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Modello</label>
                     <button
                       onClick={() => loadModels(llm.baseUrl)}
                       disabled={loadingModels || !llm.baseUrl}
@@ -250,13 +261,13 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps): React.J
 
                 {/* Impostazioni avanzate */}
                 <details className="group">
-                  <summary className="text-xs font-medium text-slate-500 cursor-pointer hover:text-slate-700 list-none flex items-center gap-1">
+                  <summary className="text-xs font-medium text-slate-500 dark:text-slate-400 cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 list-none flex items-center gap-1">
                     <ChevronDown size={12} className="group-open:rotate-180 transition-transform" />
                     Impostazioni avanzate
                   </summary>
                   <div className="mt-3 space-y-3">
                     <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">
+                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                         Max token risposta
                       </label>
                       <input
@@ -271,7 +282,7 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps): React.J
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">
+                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                         Timeout (secondi)
                       </label>
                       <input
@@ -291,7 +302,7 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps): React.J
 
                     {/* Richieste parallele */}
                     <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">
+                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
                         Velocità analisi
                       </label>
                       <div className="flex items-center gap-3">
@@ -306,15 +317,15 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps): React.J
                           }
                           className="flex-1 accent-blue-600"
                         />
-                        <span className="text-sm font-semibold text-slate-700 w-4 text-right">
+                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300 w-4 text-right">
                           {llm.parallelRequests ?? 1}
                         </span>
                       </div>
-                      <div className="flex justify-between text-xs text-slate-400 mt-0.5 px-0.5">
+                      <div className="flex justify-between text-xs text-slate-400 dark:text-slate-500 mt-0.5 px-0.5">
                         <span>Prudente</span>
                         <span>Veloce</span>
                       </div>
-                      <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
                         Controlla quante sezioni del documento vengono inviate all'assistente AI contemporaneamente.
                         Con <strong>1</strong> (predefinito) le sezioni vengono analizzate una alla volta: più lento ma stabile su qualsiasi computer.
                         Valori più alti (<strong>2–4</strong>) velocizzano l'analisi di documenti lunghi, ma richiedono un computer con GPU dedicata o molti core; su macchine meno potenti potrebbero causare errori di timeout.
@@ -329,7 +340,8 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps): React.J
                   disabled={testState === 'loading' || !llm.baseUrl}
                   className="
                     flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border
-                    border-slate-300 text-slate-700 hover:bg-slate-50
+                    border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300
+                    hover:bg-slate-50 dark:hover:bg-slate-700
                     disabled:opacity-40 disabled:cursor-not-allowed transition-colors
                   "
                 >
@@ -345,8 +357,8 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps): React.J
                     className={`
                       flex items-start gap-2 px-3 py-2 rounded-lg text-sm
                       ${testState === 'ok'
-                        ? 'bg-green-50 text-green-800 border border-green-200'
-                        : 'bg-red-50 text-red-800 border border-red-200'}
+                        ? 'bg-green-50 dark:bg-green-950/30 text-green-800 dark:text-green-300 border border-green-200 dark:border-green-800'
+                        : 'bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-800'}
                     `}
                   >
                     {testState === 'ok'
@@ -363,10 +375,10 @@ export default function SettingsScreen({ onBack }: SettingsScreenProps): React.J
       </main>
 
       {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 px-6 py-4 flex items-center gap-3 flex-shrink-0">
+      <footer className="bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 px-6 py-4 flex items-center gap-3 flex-shrink-0">
         <button
           onClick={onBack}
-          className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800"
+          className="px-4 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
         >
           Annulla
         </button>

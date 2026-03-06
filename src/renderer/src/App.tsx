@@ -13,6 +13,19 @@ import SettingsScreen from './components/SettingsScreen'
 export default function App(): React.JSX.Element {
   const { screen, setProgress } = useSessionStore()
   const [showSettings, setShowSettings] = useState(false)
+  const [isDark, setIsDark] = useState(() => localStorage.getItem('theme') === 'dark')
+
+  function toggleDark(): void {
+    const next = !isDark
+    setIsDark(next)
+    if (next) {
+      document.documentElement.classList.add('dark')
+      localStorage.setItem('theme', 'dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+      localStorage.setItem('theme', 'light')
+    }
+  }
 
   // Registra il listener globale per i progressi una sola volta al mount
   useEffect(() => {
@@ -23,12 +36,12 @@ export default function App(): React.JSX.Element {
   }, [setProgress])
 
   if (showSettings) {
-    return <SettingsScreen onBack={() => setShowSettings(false)} />
+    return <SettingsScreen onBack={() => setShowSettings(false)} isDark={isDark} onToggleDark={toggleDark} />
   }
 
   return (
     <>
-      {screen === 'dropzone'         && <DropZone onOpenSettings={() => setShowSettings(true)} />}
+      {screen === 'dropzone'         && <DropZone onOpenSettings={() => setShowSettings(true)} isDark={isDark} onToggleDark={toggleDark} />}
       {screen === 'processing'       && <ProcessingScreen />}
       {screen === 'review'           && <EntityReview />}
       {screen === 'success'          && <SuccessScreen />}
