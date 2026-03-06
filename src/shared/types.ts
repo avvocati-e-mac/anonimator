@@ -10,6 +10,7 @@ export const IPC_CHANNELS = {
   DOC_SAVED: 'doc:saved',
   DOC_ERROR: 'doc:error',
   DOC_PROGRESS: 'doc:progress',
+  BATCH_ANONYMIZE: 'batch:anonymize',
   SESSION_RESET: 'session:reset',
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
@@ -42,6 +43,7 @@ export interface DetectedEntity {
   pseudonym: string
   occurrences: number
   confirmed: boolean // l'utente ha confermato l'anonimizzazione
+  fileCount?: number // numero di file in cui appare (usato nel batch review)
 }
 
 // Stato di avanzamento durante il processing
@@ -70,6 +72,39 @@ export interface AnonymizeRequest {
 export interface SaveResult {
   outputPath: string
   entitiesReplaced: number
+}
+
+// ─── Batch processing ────────────────────────────────────────────────────────
+
+export type BatchFileStatus = 'pending' | 'analyzing' | 'done' | 'error'
+
+export interface BatchFileItem {
+  filePath: string
+  fileName: string
+  status: BatchFileStatus
+  analysisResult?: DocumentAnalysisResult
+  error?: string
+}
+
+export interface BatchAnonymizeRequest {
+  filePath: string
+  entities: DetectedEntity[]
+}
+
+export interface BatchResultItem {
+  filePath: string
+  fileName: string
+  outputPath?: string
+  entitiesReplaced?: number
+  error?: string
+}
+
+export interface BatchSettings {
+  maxConcurrency: number // 1–8, default 2
+}
+
+export const DEFAULT_BATCH_SETTINGS: BatchSettings = {
+  maxConcurrency: 2,
 }
 
 // ─── Configurazione LLM locale ───────────────────────────────────────────────

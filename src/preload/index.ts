@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC_CHANNELS } from '@shared/types'
-import type { AnonymizeRequest, LlmConfig } from '@shared/types'
+import type { AnonymizeRequest, LlmConfig, BatchAnonymizeRequest } from '@shared/types'
 
 // Espone all'interfaccia grafica SOLO le funzioni strettamente necessarie.
 // Il renderer non può fare nient'altro — non vede Node.js, non vede il filesystem.
@@ -12,6 +12,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Invia le entità confermate per l'anonimizzazione
   anonymizeDocument: (request: AnonymizeRequest) =>
     ipcRenderer.invoke(IPC_CHANNELS.DOC_ANONYMIZE, request),
+
+  // Anonimizza N file in batch
+  batchAnonymize: (requests: BatchAnonymizeRequest[]) =>
+    ipcRenderer.invoke(IPC_CHANNELS.BATCH_ANONYMIZE, requests),
 
   // Resetta il dizionario pseudonimi della sessione corrente
   resetSession: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_RESET),

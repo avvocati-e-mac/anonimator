@@ -4,6 +4,9 @@ import DropZone from './components/DropZone'
 import ProcessingScreen from './components/ProcessingScreen'
 import EntityReview from './components/EntityReview'
 import SuccessScreen from './components/SuccessScreen'
+import BatchProcessingScreen from './components/BatchProcessingScreen'
+import BatchReview from './components/BatchReview'
+import BatchSuccessScreen from './components/BatchSuccessScreen'
 import ErrorOverlay from './components/ErrorOverlay'
 import SettingsScreen from './components/SettingsScreen'
 
@@ -25,10 +28,13 @@ export default function App(): React.JSX.Element {
 
   return (
     <>
-      {screen === 'dropzone'   && <DropZone onOpenSettings={() => setShowSettings(true)} />}
-      {screen === 'processing' && <ProcessingScreen />}
-      {screen === 'review'     && <EntityReview />}
-      {screen === 'success'    && <SuccessScreen />}
+      {screen === 'dropzone'         && <DropZone onOpenSettings={() => setShowSettings(true)} />}
+      {screen === 'processing'       && <ProcessingScreen />}
+      {screen === 'review'           && <EntityReview />}
+      {screen === 'success'          && <SuccessScreen />}
+      {screen === 'batch-processing' && <BatchProcessingScreen />}
+      {screen === 'batch-review'     && <BatchReview />}
+      {screen === 'batch-success'    && <BatchSuccessScreen />}
       <ErrorOverlay />
     </>
   )

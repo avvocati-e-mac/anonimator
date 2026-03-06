@@ -152,6 +152,44 @@ export function registerIpcHandlers(): void {
     }
   })
 
+  // Handler: anonimizzazione batch (N file in sequenza)
+  ipcMain.handle(IPC_CHANNELS.BATCH_ANONYMIZE, async (_event, payload: unknown) => {
+    const RequestSchema = z.array(AnonymizeRequestSchema)
+    const parsed = RequestSchema.safeParse(payload)
+    if (!parsed.success) {
+      log.warn('IPC batch:anonymize — payload non valido', parsed.error.flatten())
+      return []
+    }
+
+    const results: import('@shared/types').BatchResultItem[] = []
+
+    for (const req of parsed.data) {
+      const { filePath, entities } = req
+      const format = detectFormat(filePath)
+      const fileName = filePath.split('/').pop() ?? filePath
+
+      try {
+        sendProgress('parsing', 0, `Anonimizzazione: ${fileName}...`)
+        const typedEntities = entities as import('@shared/types').DetectedEntity[]
+        const { outputPath, entitiesReplaced } = await generateOutput(filePath, format, typedEntities)
+
+        for (const entity of typedEntities.filter((e) => e.confirmed)) {
+          sessionManager.getOrCreatePseudonym(entity.originalText, entity.type)
+        }
+
+        log.info('Batch: documento anonimizzato', { fileName, outputPath, entitiesReplaced })
+        results.push({ filePath, fileName, outputPath, entitiesReplaced })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        log.error('Batch: errore anonimizzazione', { fileName, error: message })
+        results.push({ filePath, fileName, error: message })
+      }
+    }
+
+    sendProgress('done', 100, 'Batch completato.')
+    return results
+  })
+
   // Handler: reset sessione
   ipcMain.handle(IPC_CHANNELS.SESSION_RESET, async () => {
     sessionManager.reset()

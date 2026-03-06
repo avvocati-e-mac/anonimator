@@ -11,6 +11,8 @@
 
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
+  afterPack: './afterPack.js',
+
   appId: 'it.anonimator.app',
   productName: 'Anonimator',
   copyright: 'Copyright © 2025',

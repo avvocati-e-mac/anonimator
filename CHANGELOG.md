@@ -5,6 +5,19 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.0.5] - 2026-03-06
+
+### Bug Fix
+- **Caricamento multiplo**: ripristinato il supporto al drop/selezione di più file contemporaneamente (batch processing). Il reset del repo per la pubblicazione GitHub aveva lasciato `App.tsx`, `sessionStore.ts` e `DropZone.tsx` alla versione pre-batch.
+- **Versione app**: corretta la versione mostrata nell'interfaccia (era bloccata a 1.0.2).
+
+### Tecnico
+- Aggiunti tipi batch mancanti in `types.ts` (`BatchFileItem`, `BatchResultItem`, `BatchSettings`, ecc.)
+- Aggiunto canale IPC `BATCH_ANONYMIZE` e relativo handler nel main process
+- Aggiunta funzione `batchAnonymize` nel preload e nella tipizzazione `ElectronAPI`
+
+---
+
 ## [1.0.2] - 2026-03-05
 
 ### Bug Fix
