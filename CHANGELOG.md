@@ -5,6 +5,13 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.0.6] - 2026-03-06
+
+### Bug Fix
+- **Build macOS arm64**: risolto crash all'avvio "Could not load the sharp module using the darwin-arm64 runtime". I binari nativi `@img/sharp-darwin-arm64` non venivano inclusi nel DMG perché la macchina di build è x64. Lo script `dist:mac:arm64` ora installa esplicitamente i binari arm64 con `--force` prima del packaging.
+
+---
+
 ## [1.0.5] - 2026-03-06
 
 ### Bug Fix
