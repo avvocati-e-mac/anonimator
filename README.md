@@ -4,6 +4,8 @@ App desktop per la **pseudoanonimizzazione offline** di documenti legali italian
 
 Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a server esterni. Tutto il processing avviene localmente sul tuo Mac.
 
+**L’app Electron è stata creata in vibe coding e non sono un esperto programmatore quindi procedi con cautela nell’utilizzo.**
+
 ## Funzionalita'
 
 - Riconosce automaticamente nomi di persone, luoghi, organizzazioni, codici fiscali, P.IVA, IBAN, email e numeri di telefono
