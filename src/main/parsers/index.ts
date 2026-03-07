@@ -4,6 +4,7 @@ import { parseDocx } from './docxParser'
 import { parseOdt } from './odtParser'
 import { parsePdf } from './pdfParser'
 import { parseImage, parsePdfWithOcr } from './ocrParser'
+import { parseMarkdown } from './markdownParser'
 
 export interface ParseResult {
   text: string
@@ -21,6 +22,7 @@ export function detectFormat(filePath: string): DocumentFormat {
     docx: 'docx',
     odt: 'odt',
     txt: 'txt',
+    md: 'markdown',
     png: 'image',
     jpg: 'image',
     jpeg: 'image'
@@ -55,6 +57,9 @@ export async function extractText(filePath: string, format: DocumentFormat): Pro
 
     case 'image':
       return parseImage(filePath)
+
+    case 'markdown':
+      return parseMarkdown(filePath)
 
     default: {
       const _exhaustive: never = format

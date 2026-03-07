@@ -3,6 +3,7 @@ import { generateTxt } from './txtGenerator'
 import { generateDocx } from './docxGenerator'
 import { generateOdt } from './odtGenerator'
 import { generatePdf } from './pdfGenerator'
+import { generateMarkdown } from './markdownGenerator'
 
 /**
  * Genera il file anonimizzato nel formato appropriato.
@@ -26,6 +27,9 @@ export async function generateOutput(
     case 'pdf':
     case 'image': // le immagini sono già state OCR-izzate → output come PDF
       return generatePdf(filePath, entities)
+
+    case 'markdown':
+      return generateMarkdown(filePath, entities)
 
     default: {
       const _exhaustive: never = format

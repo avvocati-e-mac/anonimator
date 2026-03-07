@@ -17,7 +17,7 @@ const ProcessDocumentSchema = z.object({
     .min(1)
     .refine(
       (p) =>
-        ['.pdf', '.docx', '.odt', '.txt', '.png', '.jpg', '.jpeg'].some((ext) =>
+        ['.pdf', '.docx', '.odt', '.txt', '.md', '.png', '.jpg', '.jpeg'].some((ext) =>
           p.toLowerCase().endsWith(ext)
         ),
       { message: 'Formato file non supportato' }

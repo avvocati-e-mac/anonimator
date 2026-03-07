@@ -5,6 +5,18 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.1.0] - 2026-03-07
+
+### Correzioni
+- **Fix critico DOCX/ODT — run-split**: il generator sostituisce ora correttamente le entità anche quando il testo è spezzato in più run XML (`<w:r>` / `<text:span>`). In precedenza le entità venivano rilevate correttamente ma non sostituite nel file di output.
+- **Fix apostrofi tipografici TXT**: normalizzazione `'` (U+2019) e simili prima della ricerca; consente il match tra entità con apostrofo dritto e testo del documento con apostrofo curvo.
+- **Fix encoding TXT**: fallback automatico a `latin1` se la lettura UTF-8 del file sorgente fallisce.
+
+### Novità
+- **Supporto file Markdown (`.md`)**: i file Markdown vengono ora accettati, analizzati (con strip della sintassi MD per il NER) e anonimizzati preservando intestazioni, grassetto, link e tutto il markup originale.
+
+---
+
 ## [1.0.9] - 2026-03-07
 
 ### Correzioni
