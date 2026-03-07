@@ -24,7 +24,7 @@ jobs:
         run: npx electron-vite build
 
       - name: Package Windows installer
-        run: npx electron-builder --win --x64
+        run: npx electron-builder --win --x64 --config electron-builder.config.js
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -58,7 +58,7 @@ jobs:
         run: npx electron-vite build
 
       - name: Package macOS arm64 DMG
-        run: npx electron-builder --mac --arm64
+        run: npx electron-builder --mac --arm64 --config electron-builder.config.js
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -92,7 +92,7 @@ jobs:
         run: npx electron-vite build
 
       - name: Package macOS x64 DMG
-        run: npx electron-builder --mac --x64
+        run: npx electron-builder --mac --x64 --config electron-builder.config.js
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
