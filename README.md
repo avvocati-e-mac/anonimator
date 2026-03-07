@@ -118,6 +118,31 @@ scripts/
 tests/          # Test unitari
 ```
 
+## TODO — Cose da fare
+
+### Bug da correggere
+
+- [ ] **PDF: pseudonimi brevi spezzati su due righe** — "F. S." viene diviso quando il testo originale è vicino al margine destro (`pdfGenerator.ts`)
+- [ ] **PDF: footer "1 di ??" invece del totale pagine** — `pdf-lib` non legge il numero totale di pagine dal PDF originale; richiede lettura da MuPDF
+
+### Miglioramenti
+
+- [ ] **Screenshot nel README** — aggiungere immagini di DropZone, revisione entità e dark mode
+- [ ] **Supporto formato `.md` (Markdown)** — aggiungere tra i formati supportati (parser + validazione Zod IPC)
+- [ ] **Testare DMG x64 su Mac Intel** — il DMG è prodotto ma non ancora testato su hardware Intel reale
+
+### Funzionalità future
+
+- [ ] **Auto-update** — check aggiornamenti opzionale (fuori dal flusso di elaborazione)
+- [ ] **Build Windows (.exe)** — da fare in CI/CD
+- [ ] **Statistiche di elaborazione** — tempi per pagina, modello LLM utilizzato, performance worker NER/LLM, throughput prompt
+- [ ] **Aggiunta manuale di entità** — possibilità di aggiungere entità non rilevate da NER/LLM direttamente dalla schermata di revisione
+- [ ] **Salvataggio e importazione entità** — esportare/importare il dizionario di sostituzione per riutilizzarlo su documenti della stessa pratica con i medesimi soggetti
+- [ ] **Ottimizzazione prompt per modelli piccoli** — prompt specializzato per LLM <9B (es. Phi-3, Gemma 2B) che non gestiscono bene prompt generici lunghi
+- [ ] **Ottimizzazione rilevamento entità NER** — valutare alternative/integrazioni a Transformers.js (es. SpaCy via servizio locale, modelli ONNX diversi); richiede approfondimento e studio
+
+---
+
 ## Licenza
 
 MIT — vedi [LICENSE](LICENSE)
