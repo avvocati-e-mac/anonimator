@@ -35,7 +35,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-installer
-          path: dist/*-setup.exe
+          path: |
+            dist/*-setup.exe
+            dist/*.exe
+          if-no-files-found: warn
           retention-days: 3
 
   build-mac-arm64:
