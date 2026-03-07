@@ -137,6 +137,9 @@ tests/          # Test unitari
 
 ### Bug da correggere
 
+- [ ] **TXT: verificare anonimizzazione** — test manuale ha mostrato che i file .txt potrebbero non venire anonimizzati correttamente; verificare parser e output generator TXT
+- [ ] **DOCX: verificare anonimizzazione** — verificare che le sostituzioni vengano applicate correttamente su file .docx reali
+- [ ] **ODT: verificare anonimizzazione** — verificare che le sostituzioni vengano applicate correttamente su file .odt reali
 - [ ] **PDF: pseudonimi brevi spezzati su due righe** — "F. S." viene diviso quando il testo originale è vicino al margine destro (`pdfGenerator.ts`)
 - [ ] **PDF: footer "1 di ??" invece del totale pagine** — `pdf-lib` non legge il numero totale di pagine dal PDF originale; richiede lettura da MuPDF
 
