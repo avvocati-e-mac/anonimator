@@ -4,7 +4,7 @@ App desktop per la **pseudoanonimizzazione offline** di documenti legali italian
 
 Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a server esterni. Tutto il processing avviene localmente sul tuo Mac o PC Windows.
 
-**Versione attuale: 1.0.8**
+**Versione attuale: 1.1.2**
 
 > **L'app è stata creata in vibe coding e non sono un esperto programmatore — procedi con cautela nell'utilizzo.**
 
@@ -15,9 +15,10 @@ Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a se
 ## Funzionalità
 
 - Riconosce automaticamente nomi di persone, luoghi, organizzazioni, codici fiscali, P.IVA, IBAN, email e numeri di telefono
+- Pattern regex specializzati per documenti legali: parti processuali, difensori, indirizzi, date di nascita, numeri documento, firme digitali
 - Sostituisce le entità con pseudonimi coerenti in tutto il documento (es. "Mario Rossi" → "M. R." ovunque appaia)
 - **Pseudonimi editabili**: nella schermata di revisione puoi modificare manualmente ogni pseudonimo prima di procedere
-- Supporta PDF (nativi e scansionati via OCR), DOCX, ODT e TXT
+- Supporta PDF (nativi e scansionati via OCR), DOCX, ODT, TXT e Markdown
 - Elaborazione **batch** di più file contemporaneamente con revisione unificata delle entità
 - **LLM locale opzionale**: connetti Ollama o LM Studio per migliorare il riconoscimento dei nomi (i dati non escono mai dalla tua macchina)
 - **Dark mode**: toggle luna/sole nell'interfaccia, preferenza salvata automaticamente
@@ -31,9 +32,9 @@ Scarica il file per il tuo sistema dalla pagina [Releases](https://github.com/av
 
 | File | Sistema |
 |---|---|
-| `Anonimator-1.0.8-arm64.dmg` | Mac Apple Silicon (M1/M2/M3/M4) |
-| `Anonimator-1.0.8-x64.dmg` | Mac Intel |
-| `Anonimator-1.0.8-windows-x64-setup.exe` | Windows 10/11 a 64 bit |
+| `Anonimator-1.1.2-arm64.dmg` | Mac Apple Silicon (M1/M2/M3/M4) |
+| `Anonimator-1.1.2-x64.dmg` | Mac Intel |
+| `Anonimator-1.1.2-windows-x64-setup.exe` | Windows 10/11 a 64 bit |
 
 ### macOS — passaggi obbligatori
 
@@ -57,7 +58,7 @@ Dopo questi passaggi l'app si apre normalmente.
 
 ### Windows — passaggi obbligatori
 
-Esegui il file `Anonimator-1.0.8-windows-x64-setup.exe` per installare l'app.
+Esegui il file `Anonimator-1.1.2-windows-x64-setup.exe` per installare l'app.
 
 Poiché l'app non è firmata con un certificato Microsoft, Windows Defender SmartScreen mostrerà un avviso. Per procedere:
 
@@ -137,18 +138,15 @@ tests/          # Test unitari
 
 ### Bug da correggere
 
-- [ ] **TXT: verificare anonimizzazione** — test manuale ha mostrato che i file .txt potrebbero non venire anonimizzati correttamente; verificare parser e output generator TXT
-- [ ] **DOCX: verificare anonimizzazione** — verificare che le sostituzioni vengano applicate correttamente su file .docx reali
-- [ ] **ODT: verificare anonimizzazione** — verificare che le sostituzioni vengano applicate correttamente su file .odt reali
+- [ ] **DOCX: problemi di estrazione delle entità** — alcune entità non vengono rilevate correttamente su file .docx reali; verificare parser e pipeline NER su documenti complessi
 - [ ] **PDF: pseudonimi brevi spezzati su due righe** — "F. S." viene diviso quando il testo originale è vicino al margine destro (`pdfGenerator.ts`)
 - [ ] **PDF: footer "1 di ??" invece del totale pagine** — `pdf-lib` non legge il numero totale di pagine dal PDF originale; richiede lettura da MuPDF
+- [ ] **PDF: redaction su token con apostrofo** — es. "D'Angiolino" viene spezzato sull'apostrofo durante la redaction, il testo non viene oscurato completamente
 
 ### Miglioramenti
 
 - [ ] **Screenshot nel README** — aggiungere immagini di DropZone, revisione entità e dark mode
-- [ ] **Supporto formato `.md` (Markdown)** — aggiungere tra i formati supportati (parser + validazione Zod IPC)
 - [ ] **Testare DMG x64 su Mac Intel** — il DMG è prodotto ma non ancora testato su hardware Intel reale
-- [ ] **Testare installer Windows** — verificare avvio e caricamento modello NER su Windows 10/11
 
 ### Funzionalità future
 
