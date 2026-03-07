@@ -148,6 +148,10 @@ tests/          # Test unitari
 - [ ] **Screenshot nel README** — aggiungere immagini di DropZone, revisione entità e dark mode
 - [ ] **Testare DMG x64 su Mac Intel** — il DMG è prodotto ma non ancora testato su hardware Intel reale
 
+### Piattaforme
+
+- [ ] **Supporto Linux** — build e packaging per distribuzioni Linux (`.AppImage` o `.deb`)
+
 ### Funzionalità future
 
 - [ ] **Auto-update** — check aggiornamenti opzionale (fuori dal flusso di elaborazione)
