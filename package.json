@@ -13,6 +13,7 @@
     "dist:mac:arm64": "npx electron-vite build && npm install @img/sharp-darwin-arm64@0.34.5 @img/sharp-libvips-darwin-arm64@1.2.4 --force --no-save && (npx electron-builder --mac --arm64 --config electron-builder.config.js || (echo 'DMG fallback su Desktop...' && hdiutil create -volname Anonimator -srcfolder dist/mac-arm64/Anonimator.app -ov -format UDZO ~/Desktop/Anonimator-arm64.dmg))",
     "dist:mac:x64": "npm install @img/sharp-darwin-x64@0.34.5 @img/sharp-libvips-darwin-x64@1.2.4 --force --no-save && npx electron-builder --mac --x64 --config electron-builder.config.js && npm install @img/sharp-darwin-arm64@0.34.5 @img/sharp-libvips-darwin-arm64@1.2.4 --force --no-save",
     "dist:mac:both": "bash scripts/build-mac.sh",
+    "dist:linux": "npx electron-vite build && npx electron-builder --linux --config electron-builder.config.js",
     "dist:win": "npx electron-vite build && npx electron-builder --win --config electron-builder.config.js",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
