@@ -2,9 +2,9 @@
 
 App desktop per la **pseudoanonimizzazione offline** di documenti legali italiani.
 
-Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a server esterni. Tutto il processing avviene localmente sul tuo Mac o PC Windows.
+Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a server esterni. Tutto il processing avviene localmente sul tuo Mac, PC Windows o Linux.
 
-**Versione attuale: 1.1.2**
+**Versione attuale: 1.1.3**
 
 > **L'app è stata creata in vibe coding e non sono un esperto programmatore — procedi con cautela nell'utilizzo.**
 
@@ -32,9 +32,10 @@ Scarica il file per il tuo sistema dalla pagina [Releases](https://github.com/av
 
 | File | Sistema |
 |---|---|
-| `Anonimator-1.1.2-arm64.dmg` | Mac Apple Silicon (M1/M2/M3/M4) |
-| `Anonimator-1.1.2-x64.dmg` | Mac Intel |
-| `Anonimator-1.1.2-windows-x64-setup.exe` | Windows 10/11 a 64 bit |
+| `Anonimator-1.1.3-arm64.dmg` | Mac Apple Silicon (M1/M2/M3/M4) |
+| `Anonimator-1.1.3-x64.dmg` | Mac Intel |
+| `Anonimator-1.1.3-windows-x64-setup.exe` | Windows 10/11 a 64 bit |
+| `Anonimator-1.1.3-linux-x64.AppImage` | Linux a 64 bit |
 
 ### macOS — passaggi obbligatori
 
@@ -58,7 +59,7 @@ Dopo questi passaggi l'app si apre normalmente.
 
 ### Windows — passaggi obbligatori
 
-Esegui il file `Anonimator-1.1.2-windows-x64-setup.exe` per installare l'app.
+Esegui il file `Anonimator-1.1.3-windows-x64-setup.exe` per installare l'app.
 
 Poiché l'app non è firmata con un certificato Microsoft, Windows Defender SmartScreen mostrerà un avviso. Per procedere:
 
@@ -67,13 +68,24 @@ Poiché l'app non è firmata con un certificato Microsoft, Windows Defender Smar
 
 L'installer crea un collegamento nel menu Start e sul Desktop. L'app si disinstalla normalmente da **Impostazioni → App**.
 
+### Linux — installazione
+
+Scarica il file `.AppImage`, rendilo eseguibile e avvialo:
+
+```bash
+chmod +x Anonimator-1.1.3-linux-x64.AppImage
+./Anonimator-1.1.3-linux-x64.AppImage
+```
+
+> Su alcune distribuzioni potrebbe essere necessario installare `libfuse2` (`sudo apt install libfuse2` su Ubuntu/Debian).
+
 ---
 
 ## Per sviluppatori — Installazione da sorgente
 
 ### Requisiti
 
-- macOS 12+ o Windows 10/11
+- macOS 12+, Windows 10/11 o Linux (x64)
 - Node.js 20+ e npm 10+
 - Circa 200 MB di spazio per il modello NER e i dati OCR
 
@@ -104,6 +116,7 @@ npm start
 | `npm run dist:mac:arm64` | Crea il DMG per macOS Apple Silicon |
 | `npm run dist:mac:x64` | Crea il DMG per macOS Intel |
 | `npm run dist:mac:both` | Crea entrambi i DMG (arm64 + x64) in sequenza |
+| `npm run dist:linux` | Crea l'AppImage per Linux x64 |
 
 ---
 
@@ -150,7 +163,7 @@ tests/          # Test unitari
 
 ### Piattaforme
 
-- [ ] **Supporto Linux** — build e packaging per distribuzioni Linux (`.AppImage` o `.deb`)
+- [x] **Supporto Linux** — build AppImage x64 disponibile dalla v1.1.3
 
 ### Funzionalità future
 
