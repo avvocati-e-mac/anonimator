@@ -23,7 +23,7 @@ jobs:
         run: npx electron-vite build
 
       - name: Package Windows installer
-        run: npx electron-builder --win --x64 --config electron-builder.config.js
+        run: npx electron-builder --win --x64 --config electron-builder.config.js --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
@@ -54,7 +54,7 @@ jobs:
         run: npx electron-vite build
 
       - name: Package macOS arm64 DMG
-        run: npx electron-builder --mac --arm64 --config electron-builder.config.js
+        run: npx electron-builder --mac --arm64 --config electron-builder.config.js --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
@@ -86,7 +86,7 @@ jobs:
         run: npx electron-vite build
 
       - name: Package macOS x64 DMG
-        run: npx electron-builder --mac --x64 --config electron-builder.config.js
+        run: npx electron-builder --mac --x64 --config electron-builder.config.js --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
