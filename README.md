@@ -2,9 +2,9 @@
 
 App desktop per la **pseudoanonimizzazione offline** di documenti legali italiani.
 
-Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a server esterni. Tutto il processing avviene localmente sul tuo Mac.
+Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a server esterni. Tutto il processing avviene localmente sul tuo Mac o PC Windows.
 
-**Versione attuale: 1.0.7**
+**Versione attuale: 1.0.8**
 
 > **L'app è stata creata in vibe coding e non sono un esperto programmatore — procedi con cautela nell'utilizzo.**
 
@@ -25,17 +25,21 @@ Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a se
 
 ---
 
-## Installazione rapida (DMG)
+## Installazione
 
-Scarica il DMG dalla pagina [Releases](https://github.com/avvocati-e-mac/anonimator/releases):
-- `Anonimator-1.0.7-arm64.dmg` → Mac Apple Silicon (M1/M2/M3/M4)
-- `Anonimator-1.0.7-x64.dmg` → Mac Intel
+Scarica il file per il tuo sistema dalla pagina [Releases](https://github.com/avvocati-e-mac/anonimator/releases):
+
+| File | Sistema |
+|---|---|
+| `Anonimator-1.0.8-arm64.dmg` | Mac Apple Silicon (M1/M2/M3/M4) |
+| `Anonimator-1.0.8-x64.dmg` | Mac Intel |
+| `Anonimator-1.0.8-windows-x64-setup.exe` | Windows 10/11 a 64 bit |
+
+### macOS — passaggi obbligatori
 
 Trascina `Anonimator.app` nella cartella Applicazioni.
 
-### L'app non è firmata né notarizzata — passaggi obbligatori
-
-Poiché l'app non è distribuita tramite il Mac App Store né firmata con un certificato Apple Developer, macOS la blocca all'apertura. Esegui questi due comandi nel Terminale **una sola volta** dopo l'installazione:
+Poiché l'app non è firmata né notarizzata, macOS la blocca all'apertura. Esegui questi due comandi nel Terminale **una sola volta** dopo l'installazione:
 
 **1. Disabilita il blocco Gatekeeper:**
 ```bash
@@ -51,13 +55,24 @@ sudo xattr -cr /Applications/Anonimator.app
 
 Dopo questi passaggi l'app si apre normalmente.
 
+### Windows — passaggi obbligatori
+
+Esegui il file `Anonimator-1.0.8-windows-x64-setup.exe` per installare l'app.
+
+Poiché l'app non è firmata con un certificato Microsoft, Windows Defender SmartScreen mostrerà un avviso. Per procedere:
+
+1. Clicca su **"Ulteriori informazioni"** (o "More info")
+2. Clicca su **"Esegui comunque"** (o "Run anyway")
+
+L'installer crea un collegamento nel menu Start e sul Desktop. L'app si disinstalla normalmente da **Impostazioni → App**.
+
 ---
 
 ## Per sviluppatori — Installazione da sorgente
 
 ### Requisiti
 
-- macOS 12+
+- macOS 12+ o Windows 10/11
 - Node.js 20+ e npm 10+
 - Circa 200 MB di spazio per il modello NER e i dati OCR
 
@@ -130,11 +145,11 @@ tests/          # Test unitari
 - [ ] **Screenshot nel README** — aggiungere immagini di DropZone, revisione entità e dark mode
 - [ ] **Supporto formato `.md` (Markdown)** — aggiungere tra i formati supportati (parser + validazione Zod IPC)
 - [ ] **Testare DMG x64 su Mac Intel** — il DMG è prodotto ma non ancora testato su hardware Intel reale
+- [ ] **Testare installer Windows** — verificare avvio e caricamento modello NER su Windows 10/11
 
 ### Funzionalità future
 
 - [ ] **Auto-update** — check aggiornamenti opzionale (fuori dal flusso di elaborazione)
-- [ ] **Build Windows (.exe)** — da fare in CI/CD
 - [ ] **Statistiche di elaborazione** — tempi per pagina, modello LLM utilizzato, performance worker NER/LLM, throughput prompt
 - [ ] **Aggiunta manuale di entità** — possibilità di aggiungere entità non rilevate da NER/LLM direttamente dalla schermata di revisione
 - [ ] **Salvataggio e importazione entità** — esportare/importare il dizionario di sostituzione per riutilizzarlo su documenti della stessa pratica con i medesimi soggetti
