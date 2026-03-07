@@ -5,6 +5,15 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.1.4] - 2026-03-07
+
+### Correzioni
+- **Fix Windows 10 — crash onnxruntime (tentativo v2)**: doppio fix per il crash `Impossibile trovare il modulo specificato` su Windows 10:
+  1. `electron-builder.config.js`: pattern `asarUnpack` per `onnxruntime-node` esteso con `node_modules/onnxruntime-node/**` (senza `/*` finale) e pattern esplicito `node_modules/onnxruntime-node/dist/**` per garantire che `dist/binding.js` finisca in `app.asar.unpacked`. Su Win10, Electron non fa il fallover automatico da asar verso asar.unpacked per i file JS: `binding.js` deve essere fisicamente fuori dall'asar.
+  2. `nerService.ts`: l'import di `@huggingface/transformers` è ora dinamico (`await import(...)`) con try/catch. Se onnxruntime non è caricabile per qualunque motivo, l'app non crasha ma continua con solo le regex (CF, P.IVA, IBAN, email, telefono, pattern legali strutturati). Il warning viene loggato in `electron-log`.
+
+---
+
 ## [1.1.3] - 2026-03-07
 
 ### Novità

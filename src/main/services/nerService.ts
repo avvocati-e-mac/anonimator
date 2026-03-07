@@ -1,4 +1,3 @@
-import { pipeline, env } from '@huggingface/transformers'
 import type {
   TokenClassificationSingle,
   TokenClassificationOutput
@@ -6,16 +5,38 @@ import type {
 
 // Tipo funzionale del pipeline NER — evita la union type troppo complessa di Transformers.js
 type NerPipelineFn = (text: string) => Promise<TokenClassificationOutput | TokenClassificationOutput[]>
+// Tipo della funzione pipeline di Transformers.js (caricata dinamicamente)
+type TransformersPipelineFn = typeof import('@huggingface/transformers').pipeline
 import { join } from 'path'
 import log from 'electron-log'
 import type { DetectedEntity, EntityType, LlmConfig } from '@shared/types'
 import { detectNamesWithLlm } from './llmService'
 import { sessionManager } from './sessionManager'
 
-// ─── Configurazione Transformers.js ──────────────────────────────────────────
-// Disabilita qualunque tentativo di download dalla rete
-env.allowRemoteModels = false
-env.allowLocalModels = true
+// ─── Lazy load Transformers.js (import dinamico con try/catch) ───────────────
+// L'import statico causerebbe il crash del main process all'avvio se
+// onnxruntime-node non è caricabile (es. Win10 con asarUnpack incompleto).
+// Con il dynamic import, il crash è contenuto nella funzione di init
+// e l'app sopravvive con solo regex.
+let _pipelineFactory: TransformersPipelineFn | null = null
+let _transformersLoadAttempted = false
+
+async function tryLoadTransformers(): Promise<TransformersPipelineFn | null> {
+  if (_transformersLoadAttempted) return _pipelineFactory
+  _transformersLoadAttempted = true
+  try {
+    const mod = await import('@huggingface/transformers')
+    mod.env.allowRemoteModels = false
+    mod.env.allowLocalModels = true
+    _pipelineFactory = mod.pipeline as TransformersPipelineFn
+    return _pipelineFactory
+  } catch (err) {
+    log.error('onnxruntime non disponibile — NER BERT disabilitato, solo regex attive', {
+      error: String(err)
+    })
+    return null
+  }
+}
 
 // ─── Path modello NER ─────────────────────────────────────────────────────────
 // In produzione: process.resourcesPath = Contents/Resources/ (fuori dall'asar)
@@ -202,6 +223,13 @@ async function getNerPipeline(): Promise<NerPipelineFn | null> {
   if (nerPipeline) return nerPipeline
   if (modelLoadFailed) return null
 
+  // Carica Transformers.js dinamicamente (fallback se onnxruntime non disponibile)
+  const pipelineFactory = await tryLoadTransformers()
+  if (!pipelineFactory) {
+    modelLoadFailed = true
+    return null
+  }
+
   try {
     const modelPath = getModelPath()
     log.info('Caricamento modello NER...', { path: modelPath })
@@ -210,7 +238,7 @@ async function getNerPipeline(): Promise<NerPipelineFn | null> {
     // Usa fino a 4 thread per l'inferenza ORT (senza overhead eccessivo su ARM)
     const numThreads = Math.min(4, require('os').cpus().length)
 
-    nerPipeline = await pipeline('token-classification', modelPath, {
+    nerPipeline = await pipelineFactory('token-classification', modelPath, {
       local_files_only: true,
       model_file_name: 'model_quantized',
       session_options: {

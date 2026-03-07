@@ -120,11 +120,20 @@ module.exports = {
   // in @img/sharp-*: devono stare fuori dall'asar insieme a sharp stesso.
   // onnxruntime-node usa require('../bin/napi-v3/darwin/arm64/onnxruntime_binding.node')
   // — i file .node e .dylib non possono essere dlopen() dall'interno di un asar.
+  //
+  // NOTA FIX WIN10: su Windows 10, Electron non fa il fallover automatico
+  // da app.asar verso app.asar.unpacked per i file JS (solo per i .node).
+  // binding.js di onnxruntime-node fa require('../bin/...onnxruntime_binding.node')
+  // usando __dirname — se binding.js è dentro asar, __dirname punta dentro asar
+  // e dlopen() fallisce. Per garantire che TUTTI i file (JS + .node) di
+  // onnxruntime-node finiscano in app.asar.unpacked usiamo il pattern senza '/*'
+  // finale che è il glob più ampio supportato da electron-builder.
   asar: true,
   asarUnpack: [
     'node_modules/mupdf/**/*',
     'node_modules/@huggingface/transformers/**/*',
-    'node_modules/onnxruntime-node/**/*',
+    'node_modules/onnxruntime-node/**',
+    'node_modules/onnxruntime-node/dist/**',
     'node_modules/onnxruntime-common/**/*',
     'node_modules/sharp/**/*',
     'node_modules/@img/**/*',

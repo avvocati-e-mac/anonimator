@@ -331,6 +331,21 @@ npx vite-bundle-visualizer      # analisi bundle renderer
 
 ---
 
+## Build — Istruzione utente
+
+Quando l'utente dice **"fai la build"** o **"fai il build"** intende sempre:
+**pubblicare un nuovo tag su GitHub per triggerare la CI/CD** (`git tag vX.Y.Z && git push origin vX.Y.Z`).
+
+NON avviare build locali (`npm run dist:mac:arm64`, ecc.) a meno che non sia esplicitamente richiesto.
+
+Passaggi standard per una release:
+1. Verificare che `package.json` abbia la versione aggiornata
+2. `git tag vX.Y.Z`
+3. `git push origin master --tags`
+4. La CI (`.github/workflows/release.yml`) produce automaticamente DMG arm64, DMG x64, .exe Windows
+
+---
+
 ## Notes
 
 - Vite version pinned to ^5.4.x (electron-vite 2.3 does not support Vite 6)
