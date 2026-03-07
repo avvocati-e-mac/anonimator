@@ -19,6 +19,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Rebuild native modules for Electron
+        run: npx @electron/rebuild --force
+
       - name: Download NER model and tessdata
         run: bash scripts/download-models.sh
 

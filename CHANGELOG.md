@@ -5,6 +5,14 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.1.1] - 2026-03-07
+
+### Correzioni
+- **Fix Windows — PDF worker URL**: il path del worker pdfjs-dist viene ora convertito in `file://` URL tramite `pathToFileURL()`. In precedenza su Windows il path assoluto `C:\...` causava l'errore "Only URLs with a scheme in: file, data, node, and electron are supported" e nessun PDF poteva essere aperto.
+- **Fix Windows — onnxruntime_binding.node**: aggiunto `npx @electron/rebuild --force` nel job CI `build-windows` per ricompilare i moduli nativi con l'ABI di Electron corretto. Risolve il crash all'avvio "Impossibile trovare il modulo specificato" su Windows 10/11.
+
+---
+
 ## [1.1.0] - 2026-03-07
 
 ### Correzioni
