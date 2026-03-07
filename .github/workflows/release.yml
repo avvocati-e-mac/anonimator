@@ -73,7 +73,7 @@ jobs:
           retention-days: 3
 
   build-mac-x64:
-    runs-on: macos-12       # Intel x64 — npm installa sharp-darwin-x64 automaticamente
+    runs-on: macos-13-large  # Intel x64 — npm installa sharp-darwin-x64 automaticamente
     steps:
       - uses: actions/checkout@v4
 
