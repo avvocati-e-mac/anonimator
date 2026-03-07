@@ -97,10 +97,10 @@ function extractTextSegments(paraXml: string): TextSegment[] {
   const segments: TextSegment[] = []
   let concatPos = 0
 
-  // Regex che matcha sia testo diretto tra tag che contenuto di text:span
-  // Cattura il testo tra la fine di un tag e l'inizio del successivo (testo diretto)
-  // oppure il contenuto di <text:span ...>TESTO</text:span>
-  const tokenRegex = /(<text:span(?:\s[^>]*)?>([^<]*)<\/text:span>)|>([^<]+)</g
+  // Regex che matcha sia testo diretto tra tag che contenuto di text:span.
+  // Per il testo diretto usiamo lookbehind/lookahead (non consumano i delimitatori >/<)
+  // così il testo che segue </text:span> senza un > esplicito viene comunque catturato.
+  const tokenRegex = /(<text:span(?:\s[^>]*)?>([^<]*)<\/text:span>)|(?<=>)([^<]+)(?=<)/g
   let match: RegExpExecArray | null
 
   while ((match = tokenRegex.exec(paraXml)) !== null) {
@@ -169,6 +169,14 @@ function findReplacements(paraText: string, entities: DetectedEntity[]): Replace
 
 /**
  * Applica le sostituzioni a un singolo paragrafo ODT.
+ *
+ * Strategia: per ogni sostituzione, calcoliamo quali segmenti sono coinvolti e
+ * quale porzione del loro testo va rimpiazzata (offset relativi dentro il segmento).
+ * Questo gestisce sia il caso in cui l'entità coincide esattamente con un segmento,
+ * sia il caso in cui l'entità è una sottostringa di uno span (es. "Mario Rossi" dentro
+ * "avv. Mario Rossi"), sia il caso multi-segmento (run-split).
+ *
+ * Lavoriamo dall'ultimo segmento al primo per non invalidare gli offset XML.
  */
 function processSingleParagraph(paraXml: string, entities: DetectedEntity[]): { xml: string; count: number } {
   const segments = extractTextSegments(paraXml)
@@ -178,6 +186,16 @@ function processSingleParagraph(paraXml: string, entities: DetectedEntity[]): { 
   const replacements = findReplacements(paraText, entities)
   if (replacements.length === 0) return { xml: paraXml, count: 0 }
 
+  // Convertiamo l'XML in array di caratteri per fare sostituzioni per offset
+  // senza invalidare gli indici. Usiamo un approccio basato sulle posizioni XML
+  // dei segmenti (tagStart/tagEnd per span, posizione diretta per testo diretto).
+  //
+  // Per ogni sostituzione (start, end nel testo concatenato):
+  //   - troviamo i segmenti coinvolti
+  //   - per il primo segmento: sostituiamo la porzione del suo testo con il pseudonimo
+  //   - per i segmenti successivi: svuotiamo la porzione del loro testo
+  //   - lavoriamo in ordine INVERSO di posizione XML per non invalidare gli offset
+
   let result = paraXml
   let count = 0
 
@@ -185,49 +203,84 @@ function processSingleParagraph(paraXml: string, entities: DetectedEntity[]): { 
     const involved = segments.filter((s) => s.start < rep.end && s.end > rep.start)
     if (involved.length === 0) continue
 
-    const toModify = [...involved].reverse()
-    let xmlCursor = result
+    // Calcola le modifiche da fare, dall'ultimo segmento al primo
+    interface SegmentMod {
+      seg: TextSegment
+      newText: string  // nuovo testo del segmento (può essere parziale)
+    }
+    const mods: SegmentMod[] = []
 
-    for (let i = 0; i < toModify.length; i++) {
-      const seg = toModify[i]
-      const isFirst = i === toModify.length - 1
+    for (let i = involved.length - 1; i >= 0; i--) {
+      const seg = involved[i]
+      // Offset della sostituzione relativi a questo segmento
+      const localStart = Math.max(0, rep.start - seg.start)
+      const localEnd = Math.min(seg.text.length, rep.end - seg.start)
+      const before = seg.text.slice(0, localStart)
+      const after = seg.text.slice(localEnd)
+      // Il primo segmento coinvolto riceve il pseudonimo, gli altri vengono svuotati
+      const replacement = i === 0 ? rep.pseudonym : ''
+      mods.push({ seg, newText: before + replacement + after })
+    }
 
+    // Applica le modifiche in ordine inverso di posizione XML (dalla fine)
+    // usando string splice sull'XML corrente
+    let xmlResult = result
+    // Ordina per posizione XML decrescente
+    const sortedMods = [...mods].sort((a, b) => {
+      const posA = a.seg.isSpan ? a.seg.tagStart : a.seg.tagStart
+      const posB = b.seg.isSpan ? b.seg.tagStart : b.seg.tagStart
+      return posB - posA
+    })
+
+    let modified = false
+    for (const mod of sortedMods) {
+      const { seg, newText } = mod
       if (seg.isSpan) {
-        // Sostituisci il contenuto dello span
-        const escapedContent = (seg.spanContent ?? seg.text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-        const spanRegex = new RegExp(`(<text:span(?:\\s[^>]*)?>)${escapedContent}(<\\/text:span>)`, 'g')
+        // Trova l'apertura del tag span e sostituisci il suo contenuto
+        // Usiamo il contenuto attuale dello span come chiave di ricerca
+        const currentContent = escapeXml(seg.text)
+        const escapedContent = currentContent.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
         const allSameSpans = segments.filter((s) => s.isSpan && s.text === seg.text)
         const occIdx = allSameSpans.indexOf(seg)
+        const spanRegex = new RegExp(`(<text:span(?:\\s[^>]*)?>)${escapedContent}(<\\/text:span>)`, 'g')
         let idx = 0
-        xmlCursor = xmlCursor.replace(spanRegex, (full, open, close) => {
+        let replaced = false
+        xmlResult = xmlResult.replace(spanRegex, (full, open, close) => {
           if (idx === occIdx) {
             idx++
-            return isFirst ? `${open}${escapeXml(rep.pseudonym)}${close}` : `${open}${close}`
+            replaced = true
+            return `${open}${escapeXml(newText)}${close}`
           }
           idx++
           return full
         })
+        if (replaced) modified = true
       } else {
-        // Sostituisci il testo diretto: usa offset nel xml
-        // Per il testo diretto usiamo replace string-based con occorrenza
-        const escapedText = escapeXml(seg.text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-        const directRegex = new RegExp(escapedText, 'g')
+        // Testo diretto: sostituisci l'occorrenza corrispondente
+        const currentContent = escapeXml(seg.text)
+        const escapedContent = currentContent.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
         const allSameDirect = segments.filter((s) => !s.isSpan && s.text === seg.text)
         const occIdx = allSameDirect.indexOf(seg)
+        const directRegex = new RegExp(escapedContent, 'g')
         let idx = 0
-        xmlCursor = xmlCursor.replace(directRegex, (full) => {
+        let replaced = false
+        xmlResult = xmlResult.replace(directRegex, (full) => {
           if (idx === occIdx) {
             idx++
-            return isFirst ? escapeXml(rep.pseudonym) : ''
+            replaced = true
+            return escapeXml(newText)
           }
           idx++
           return full
         })
+        if (replaced) modified = true
       }
     }
 
-    result = xmlCursor
-    count++
+    if (modified) {
+      result = xmlResult
+      count++
+    }
   }
 
   return { xml: result, count }
