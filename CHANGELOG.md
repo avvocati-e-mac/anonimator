@@ -5,6 +5,13 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.1.3] - 2026-03-07
+
+### Novità
+- **Supporto Linux**: aggiunto target di build AppImage (x64) per distribuire l'app su Linux. Nuovo script `dist:linux` in package.json.
+
+---
+
 ## [1.1.2] - 2026-03-07
 
 ### Correzioni
