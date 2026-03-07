@@ -585,24 +585,59 @@ export async function analyzeText(
     entity.occurrences = countOccurrences(text, entity.originalText)
   }
 
-  // 6. Rimuovi entità NER rumorose: scarta quelle più lunghe che contengono
-  //    come sottostringa un'entità più corta della stessa categoria.
-  //    L'entità corta viene mantenuta se appare da sola nel testo (standalone),
-  //    cioè ha più occorrenze di quante ne siano contenute nell'entità lunga.
+  // 6. Rimuovi entità NER rumorose: gestisce due casi:
+  //
+  //    A) Entità LUNGA che contiene una CORTA: scarta la lunga se tutte le
+  //       occorrenze del testo corto sono sottostringa di quella lunga.
+  //       Es. "Luca Bianchi Mario Rossi" scartato perché contiene "Luca Bianchi".
+  //
+  //    B) Entità CORTA (1 token, solo cognome) che è sottostringa di una PIÙ LUNGA
+  //       (nome+cognome): scarta la corta. Questo evita che "Bianchi" sopravviva
+  //       accanto a "Luca Bianchi" causando sostituzioni parziali nel testo.
+  //       Eccezione: mantieni la corta se appare molte più volte in modo standalone
+  //       rispetto all'entità lunga (indica che il cognome è usato da solo nel documento).
   allEntities = allEntities.filter((entity) => {
     if (entity.occurrences === 0) return false
     if (!nerTypes.has(entity.type)) return true // mai scartare entità regex
+
+    const longer = allEntities.filter(
+      (e) => e !== entity && e.type === entity.type && e.originalText.length > entity.originalText.length
+    )
     const shorter = allEntities.filter(
       (e) => e !== entity && e.type === entity.type && e.originalText.length < entity.originalText.length
     )
+
+    // Caso B: questa entità è corta (1 token) ed è sottostringa di una più lunga
+    const entityTokens = entity.originalText.trim().split(/\s+/)
+    if (entityTokens.length === 1) {
+      const containedInLonger = longer.some((e) =>
+        e.originalText.toLowerCase().includes(entity.originalText.toLowerCase())
+      )
+      if (containedInLonger) {
+        // Mantieni solo se appare significativamente più spesso standalone
+        // (es. cognome usato da solo nel documento dopo la prima menzione completa)
+        const shortEscaped = entity.originalText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const standaloneOcc = (text.match(new RegExp(`\\b${shortEscaped}\\b`, 'gi')) ?? []).length
+        const longestContainerOcc = Math.max(...longer
+          .filter((e) => e.originalText.toLowerCase().includes(entity.originalText.toLowerCase()))
+          .map((e) => e.occurrences)
+        )
+        // Scarta se le occorrenze standalone non superano di almeno 2x quelle del contenitore
+        if (standaloneOcc <= longestContainerOcc * 2) return false
+      }
+    }
+
+    // Caso A: questa entità è lunga e contiene una più corta.
+    // La corta deve avere almeno 2 token (nome+cognome) per poter essere considerata
+    // una variante "più pulita" — un singolo token (solo cognome) non è mai preferibile
+    // a nome+cognome, ed è gestito dal Caso B sopra.
     const containsShorter = shorter.some((e) => {
+      if (e.originalText.trim().split(/\s+/).length < 2) return false // ignora cognomi soli
       if (!entity.originalText.toLowerCase().includes(e.originalText.toLowerCase())) return false
-      // Conta occorrenze standalone dell'entità corta vs occorrenze nell'entità lunga
       const shortEscaped = e.originalText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       const longEscaped = entity.originalText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       const standaloneOccurrences = (text.match(new RegExp(`\\b${shortEscaped}\\b`, 'gi')) ?? []).length
       const containedOccurrences = (text.match(new RegExp(longEscaped, 'gi')) ?? []).length
-      // Scarta l'entità lunga solo se TUTTE le occorrenze del testo corto sono sottostringa di quella lunga
       return standaloneOccurrences <= containedOccurrences
     })
     return !containsShorter
