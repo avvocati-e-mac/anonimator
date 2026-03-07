@@ -5,6 +5,13 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.1.2] - 2026-03-07
+
+### Correzioni
+- **Fix Windows — crash onnxruntime su Win 10**: aggiunta patch `Module._resolveFilename` all'avvio del main process che reindirizza il caricamento dei file `.node` e di `onnxruntime` da `app.asar` verso `app.asar.unpacked`. Su Windows 10, `dlopen()` non riesce a caricare moduli nativi dall'interno di un archivio asar anche quando correttamente configurato in `asarUnpack`.
+
+---
+
 ## [1.1.1] - 2026-03-07
 
 ### Correzioni
