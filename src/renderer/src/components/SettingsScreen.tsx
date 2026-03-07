@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import {
   ShieldCheck, ArrowLeft, Cpu, CheckCircle2, XCircle,
-  Loader2, RefreshCw, ChevronDown, Moon, Sun
+  Loader2, RefreshCw, ChevronDown, Moon, Sun, Lock, Unlock, RotateCcw
 } from 'lucide-react'
 import type { LlmConfig } from '@shared/types'
 import { DEFAULT_LLM_CONFIG } from '@shared/types'
@@ -13,6 +13,14 @@ interface SettingsScreenProps {
 }
 
 type TestState = 'idle' | 'loading' | 'ok' | 'error'
+
+// Modelli consigliati per CPU/Apple Silicon 8GB
+const SUGGESTED_MODELS = [
+  { id: 'mistral:7b-instruct-q4_K_M', label: 'Mistral 7B — Migliore per NER legale (~5GB RAM)' },
+  { id: 'llama3.2:3b', label: 'Llama 3.2 3B — Leggero e veloce (~4.5GB RAM)' },
+  { id: 'qwen2.5:3b', label: 'Qwen 2.5 3B — Migliore supporto italiano (~4.5GB RAM)' },
+  { id: 'phi3.5:mini', label: 'Phi 3.5 Mini — Leggerissimo, fallback CPU (~3GB RAM)' },
+] as const
 
 // Preset per i due software LLM supportati
 const LLM_PRESETS = {
@@ -52,6 +60,9 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
   const [testMessage, setTestMessage] = useState('')
   const [saving, setSaving] = useState(false)
   const [loadingModels, setLoadingModels] = useState(false)
+  const [defaultPromptText, setDefaultPromptText] = useState('')
+  const [useCustomModel, setUseCustomModel] = useState(false)
+  const [promptUnlocked, setPromptUnlocked] = useState(false)
 
   // Carica la configurazione salvata all'apertura
   useEffect(() => {
@@ -61,8 +72,16 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
       setPreset(detectedPreset)
       setHost(extractHostFromUrl(saved.baseUrl))
       if (saved.baseUrl) loadModels(saved.baseUrl)
+      // Mostra input manuale se il modello salvato non è tra i suggeriti
+      const isSuggested = SUGGESTED_MODELS.some((m) => m.id === saved.model)
+      setUseCustomModel(!isSuggested && saved.model !== '')
     })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Carica il prompt di default quando cambia la lingua
+  useEffect(() => {
+    window.electronAPI.getDefaultPrompt(llm.promptLanguage).then(setDefaultPromptText)
+  }, [llm.promptLanguage])
 
   const loadModels = useCallback(async (baseUrl: string) => {
     if (!baseUrl) return
@@ -233,30 +252,57 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
                     </button>
                   </div>
 
-                  {availableModels.length > 0 ? (
-                    <div className="relative">
-                      <select
-                        className={inputClass + ' appearance-none pr-8'}
+                  {/* Modelli consigliati */}
+                  <div className="relative mb-2">
+                    <select
+                      className={inputClass + ' appearance-none pr-8'}
+                      value={useCustomModel ? '__custom__' : (llm.model || '')}
+                      onChange={(e) => {
+                        if (e.target.value === '__custom__') {
+                          setUseCustomModel(true)
+                          setLlm((prev) => ({ ...prev, model: '' }))
+                        } else {
+                          setUseCustomModel(false)
+                          setLlm((prev) => ({ ...prev, model: e.target.value }))
+                        }
+                      }}
+                    >
+                      <option value="">-- Modelli consigliati --</option>
+                      {SUGGESTED_MODELS.map((m) => (
+                        <option key={m.id} value={m.id}>{m.label}</option>
+                      ))}
+                      <option value="__custom__">Personalizzato...</option>
+                    </select>
+                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+
+                  {/* Input manuale o lista dal server */}
+                  {useCustomModel ? (
+                    availableModels.length > 0 ? (
+                      <div className="relative">
+                        <select
+                          className={inputClass + ' appearance-none pr-8'}
+                          value={llm.model}
+                          onChange={(e) => setLlm((prev) => ({ ...prev, model: e.target.value }))}
+                        >
+                          <option value="">-- Seleziona modello --</option>
+                          {availableModels.map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                      </div>
+                    ) : (
+                      <input
+                        type="text"
+                        className={inputClass}
                         value={llm.model}
                         onChange={(e) => setLlm((prev) => ({ ...prev, model: e.target.value }))}
-                      >
-                        <option value="">-- Seleziona modello --</option>
-                        {availableModels.map((m) => (
-                          <option key={m} value={m}>{m}</option>
-                        ))}
-                      </select>
-                      <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                    </div>
-                  ) : (
-                    <input
-                      type="text"
-                      className={inputClass}
-                      value={llm.model}
-                      onChange={(e) => setLlm((prev) => ({ ...prev, model: e.target.value }))}
-                      placeholder="es. mistral, llama3.2, gemma3..."
-                      spellCheck={false}
-                    />
-                  )}
+                        placeholder="es. mistral, llama3.2, gemma3..."
+                        spellCheck={false}
+                      />
+                    )
+                  ) : null}
                 </div>
 
                 {/* Impostazioni avanzate */}
@@ -330,6 +376,136 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
                         Con <strong>1</strong> (predefinito) le sezioni vengono analizzate una alla volta: più lento ma stabile su qualsiasi computer.
                         Valori più alti (<strong>2–4</strong>) velocizzano l'analisi di documenti lunghi, ma richiedono un computer con GPU dedicata o molti core; su macchine meno potenti potrebbero causare errori di timeout.
                       </p>
+                    </div>
+
+                    {/* Lingua prompt — TODO [A/B-TEST]: rimuovere dopo ottimizzazione */}
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
+                        Lingua prompt AI <span className="text-slate-400 dark:text-slate-500 font-normal">(sperimentale)</span>
+                      </label>
+                      <div className="flex gap-2">
+                        {(['it', 'en'] as const).map((lang) => (
+                          <button
+                            key={lang}
+                            onClick={() => setLlm((prev) => ({ ...prev, promptLanguage: lang, customPrompt: undefined }))}
+                            className={`
+                              flex-1 py-1.5 px-3 text-xs font-medium rounded-lg border transition-colors
+                              ${llm.promptLanguage === lang
+                                ? 'bg-blue-600 text-white border-blue-600'
+                                : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:border-blue-400'}
+                            `}
+                          >
+                            {lang === 'it' ? 'Italiano' : 'English'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Dimensione chunk */}
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                        Dimensione sezione analisi
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="range"
+                          min={1000}
+                          max={8000}
+                          step={500}
+                          value={llm.chunkSize ?? 3000}
+                          onChange={(e) =>
+                            setLlm((prev) => ({ ...prev, chunkSize: parseInt(e.target.value) }))
+                          }
+                          className="flex-1 accent-blue-600"
+                        />
+                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300 w-16 text-right">
+                          {(llm.chunkSize ?? 3000).toLocaleString('it-IT')} car.
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-xs text-slate-400 dark:text-slate-500 mt-0.5 px-0.5">
+                        <span>1.000 (prudente)</span>
+                        <span>8.000 (veloce)</span>
+                      </div>
+                    </div>
+
+                    {/* Prompt personalizzato */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                          Prompt AI (istruzioni al modello)
+                        </label>
+                        <div className="flex items-center gap-2">
+                          {llm.customPrompt && (
+                            <button
+                              onClick={() => {
+                                setLlm((prev) => ({ ...prev, customPrompt: undefined }))
+                                setPromptUnlocked(false)
+                              }}
+                              className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 border border-slate-300 dark:border-slate-600 rounded px-2 py-0.5 transition-colors"
+                              title="Ripristina prompt di default"
+                            >
+                              <RotateCcw size={10} />
+                              Ripristina default
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setPromptUnlocked((v) => !v)}
+                            className={`flex items-center gap-1 text-xs rounded px-2 py-0.5 border transition-colors ${
+                              promptUnlocked
+                                ? 'text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-950/50'
+                                : 'text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-600 hover:text-slate-700 dark:hover:text-slate-200'
+                            }`}
+                            title={promptUnlocked ? 'Blocca modifica prompt' : 'Sblocca modifica prompt'}
+                          >
+                            {promptUnlocked ? <Unlock size={10} /> : <Lock size={10} />}
+                            {promptUnlocked ? 'Modifica attiva' : 'Modifica'}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="relative">
+                        <textarea
+                          className={
+                            inputClass +
+                            ' font-mono text-xs min-h-[140px] max-h-[320px] resize-y transition-colors' +
+                            (promptUnlocked ? '' : ' cursor-not-allowed opacity-60')
+                          }
+                          value={llm.customPrompt ?? defaultPromptText}
+                          placeholder={defaultPromptText || 'Caricamento prompt...'}
+                          readOnly={!promptUnlocked}
+                          onChange={(e) => {
+                            if (!promptUnlocked) return
+                            const val = e.target.value
+                            setLlm((prev) => ({
+                              ...prev,
+                              customPrompt: val === defaultPromptText || val === '' ? undefined : val
+                            }))
+                          }}
+                          spellCheck={false}
+                        />
+                        {!promptUnlocked && (
+                          <div
+                            className="absolute inset-0 flex items-center justify-center cursor-pointer rounded-lg"
+                            onClick={() => setPromptUnlocked(true)}
+                          >
+                            <span className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 bg-white/80 dark:bg-slate-800/80 px-3 py-1.5 rounded-full border border-slate-300 dark:border-slate-600 shadow-sm">
+                              <Lock size={11} />
+                              Clicca "Modifica" per sbloccare
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {llm.customPrompt ? (
+                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5 flex items-center gap-1">
+                          <Unlock size={10} />
+                          Prompt personalizzato attivo — il default è stato sostituito.
+                        </p>
+                      ) : (
+                        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1.5">
+                          Prompt di default attivo.
+                        </p>
+                      )}
                     </div>
                   </div>
                 </details>
