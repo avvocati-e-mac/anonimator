@@ -104,6 +104,15 @@ module.exports = {
     artifactName: '${productName}-${version}-windows-${arch}-setup.${ext}'
   },
 
+  // ── Linux ──────────────────────────────────────────────────────────────────
+  linux: {
+    target: [
+      { target: 'AppImage', arch: ['x64'] }
+    ],
+    category: 'Office',
+    artifactName: '${productName}-${version}-linux-${arch}.${ext}'
+  },
+
   // ── Moduli nativi ─────────────────────────────────────────────────────────────
   // mupdf e @huggingface/transformers contengono WASM/binari che non funzionano
   // dentro asar — vanno estratti a filesystem.
