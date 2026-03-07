@@ -7,6 +7,9 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ## [1.0.9] - 2026-03-07
 
+### Correzioni
+- **Fix critico: modello NER mancante nei DMG rilasciati** — il modello ONNX non era incluso nel pacchetto perché assente al momento della build CI. Il workflow scarica ora automaticamente il modello da HuggingFace prima del packaging.
+
 ### Novità
 - **NER ibrido — 11 nuovi pattern regex per documenti legali**: il motore di riconoscimento aggiunge ora un layer di regex specializzate per tipo documento che operano prima del modello BERT, aumentando significativamente il recall su sentenze, contratti, atti fallimentari, polizze e perizie.
   - Parti processuali: ricorrente, appellante, attore, convenuto, debitore, creditore e altri ruoli
