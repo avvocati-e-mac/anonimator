@@ -16,6 +16,7 @@ export const IPC_CHANNELS = {
   SETTINGS_SET: 'settings:set',
   LLM_TEST: 'llm:test',
   LLM_LIST_MODELS: 'llm:listModels',
+  LLM_GET_DEFAULT_PROMPT: 'llm:getDefaultPrompt',
   APP_GET_VERSION: 'app:getVersion'
 } as const
 
@@ -34,6 +35,9 @@ export type EntityType =
   | 'IBAN'
   | 'EMAIL'
   | 'TELEFONO'
+  | 'DATA_NASCITA'
+  | 'INDIRIZZO'
+  | 'NUMERO_DOCUMENTO'
 
 // Una singola entità trovata nel documento
 export interface DetectedEntity {
@@ -116,6 +120,9 @@ export interface LlmConfig {
   maxTokens: number
   timeoutMs: number
   parallelRequests: number  // quante sezioni del documento analizza l'LLM contemporaneamente (1–4)
+  customPrompt?: string     // se valorizzato, sovrascrive il prompt di default
+  promptLanguage: 'it' | 'en'  // TODO [A/B-TEST]: rimuovere dopo ottimizzazione prompt
+  chunkSize: number         // caratteri per chunk (1000–8000)
 }
 
 export const DEFAULT_LLM_CONFIG: LlmConfig = {
@@ -124,5 +131,7 @@ export const DEFAULT_LLM_CONFIG: LlmConfig = {
   model: '',
   maxTokens: 8192,
   timeoutMs: 120000,
-  parallelRequests: 1
+  parallelRequests: 1,
+  promptLanguage: 'it',  // TODO [A/B-TEST]
+  chunkSize: 3000
 }
