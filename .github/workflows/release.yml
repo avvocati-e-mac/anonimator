@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  workflow_dispatch:   # TEST: avvio manuale dalla UI GitHub Actions
+  # push:
+  #   tags:
+  #     - 'v*'         # PRODUZIONE: attivare al merge su master
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build renderer + main
+        run: npx electron-vite build
+
+      - name: Package Windows installer
+        run: npx electron-builder --win --x64
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List dist directory
+        run: ls dist/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/*-setup.exe
+          retention-days: 3
+
+  build-mac-arm64:
+    runs-on: macos-latest   # Apple Silicon — npm installa sharp-darwin-arm64 automaticamente
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build renderer + main
+        run: npx electron-vite build
+
+      - name: Package macOS arm64 DMG
+        run: npx electron-builder --mac --arm64
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List dist directory
+        run: ls dist/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-arm64-dmg
+          path: dist/*.dmg
+          retention-days: 3
+
+  build-mac-x64:
+    runs-on: macos-13       # Intel x64 — npm installa sharp-darwin-x64 automaticamente
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build renderer + main
+        run: npx electron-vite build
+
+      - name: Package macOS x64 DMG
+        run: npx electron-builder --mac --x64
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List dist directory
+        run: ls dist/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-x64-dmg
+          path: dist/*.dmg
+          retention-days: 3
+
+  # job 'release' assente durante il test — nessuna Release reale viene creata
