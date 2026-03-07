@@ -19,6 +19,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Download NER model and tessdata
+        run: bash scripts/download-models.sh
+
       - name: Build renderer + main
         run: npx electron-vite build
 
@@ -49,6 +52,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Download NER model and tessdata
+        run: bash scripts/download-models.sh
 
       - name: Build renderer + main
         run: npx electron-vite build
@@ -81,6 +87,9 @@ jobs:
 
       - name: Install sharp x64 binaries for cross-compilation
         run: npm install @img/sharp-darwin-x64 @img/sharp-libvips-darwin-x64 --force --no-save
+
+      - name: Download NER model and tessdata
+        run: bash scripts/download-models.sh
 
       - name: Build renderer + main
         run: npx electron-vite build
