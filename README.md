@@ -4,7 +4,7 @@ App desktop per la **pseudoanonimizzazione offline** di documenti legali italian
 
 Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a server esterni. Tutto il processing avviene localmente sul tuo Mac, PC Windows o Linux.
 
-**Versione attuale: 1.1.3**
+**Versione attuale: 1.1.4**
 
 > **L'app è stata creata in vibe coding e non sono un esperto programmatore — procedi con cautela nell'utilizzo.**
 
@@ -32,10 +32,10 @@ Scarica il file per il tuo sistema dalla pagina [Releases](https://github.com/av
 
 | File | Sistema |
 |---|---|
-| `Anonimator-1.1.3-arm64.dmg` | Mac Apple Silicon (M1/M2/M3/M4) |
-| `Anonimator-1.1.3-x64.dmg` | Mac Intel |
-| `Anonimator-1.1.3-windows-x64-setup.exe` | Windows 10/11 a 64 bit |
-| `Anonimator-1.1.3-linux-x64.AppImage` | Linux a 64 bit |
+| `Anonimator-1.1.4-arm64.dmg` | Mac Apple Silicon (M1/M2/M3/M4) |
+| `Anonimator-1.1.4-x64.dmg` | Mac Intel |
+| `Anonimator-1.1.4-windows-x64-setup.exe` | Windows 10/11 a 64 bit |
+| `Anonimator-1.1.4-linux-x64.AppImage` | Linux a 64 bit |
 
 ### macOS — passaggi obbligatori
 
@@ -59,7 +59,7 @@ Dopo questi passaggi l'app si apre normalmente.
 
 ### Windows — passaggi obbligatori
 
-Esegui il file `Anonimator-1.1.3-windows-x64-setup.exe` per installare l'app.
+Esegui il file `Anonimator-1.1.4-windows-x64-setup.exe` per installare l'app.
 
 Poiché l'app non è firmata con un certificato Microsoft, Windows Defender SmartScreen mostrerà un avviso. Per procedere:
 
@@ -73,8 +73,8 @@ L'installer crea un collegamento nel menu Start e sul Desktop. L'app si disinsta
 Scarica il file `.AppImage`, rendilo eseguibile e avvialo:
 
 ```bash
-chmod +x Anonimator-1.1.3-linux-x64.AppImage
-./Anonimator-1.1.3-linux-x64.AppImage
+chmod +x Anonimator-1.1.4-linux-x64.AppImage
+./Anonimator-1.1.4-linux-x64.AppImage
 ```
 
 > Su alcune distribuzioni potrebbe essere necessario installare `libfuse2` (`sudo apt install libfuse2` su Ubuntu/Debian).
@@ -151,6 +151,8 @@ tests/          # Test unitari
 
 ### Bug da correggere
 
+- [ ] **PDF scansionati: output vuoto/corrotto** — quando il PDF è una scansione (immagini raster), il file anonimizzato risulta vuoto o non si apre. Il generatore PDF usa MuPDF per cercare il testo nel layer testuale, ma su PDF scansionati il testo non esiste in quel layer. Fix pianificato: fallback automatico a output TXT con testo OCR anonimizzato.
+- [ ] **NER non disponibile su Windows 10** — il modello NER (BERT) non si avvia su alcune installazioni Windows 10; l'app funziona ma rileva solo dati strutturati (CF, IBAN, email, ecc.) tramite regex. Causa probabile: DLL Visual C++ Redistributable 2022 mancanti. In corso di indagine.
 - [ ] **DOCX: problemi di estrazione delle entità** — alcune entità non vengono rilevate correttamente su file .docx reali; verificare parser e pipeline NER su documenti complessi
 - [ ] **PDF: pseudonimi brevi spezzati su due righe** — "F. S." viene diviso quando il testo originale è vicino al margine destro (`pdfGenerator.ts`)
 - [ ] **PDF: footer "1 di ??" invece del totale pagine** — `pdf-lib` non legge il numero totale di pagine dal PDF originale; richiede lettura da MuPDF
