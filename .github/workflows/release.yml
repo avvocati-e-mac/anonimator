@@ -1,10 +1,9 @@
 name: Release
 
 on:
-  workflow_dispatch:   # TEST: avvio manuale dalla UI GitHub Actions
-  # push:
-  #   tags:
-  #     - 'v*'         # PRODUZIONE: attivare al merge su master
+  push:
+    tags:
+      - 'v*'
 
 jobs:
   build-windows:
@@ -28,9 +27,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: List dist directory
-        run: ls dist/
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -38,11 +34,11 @@ jobs:
           path: |
             dist/*-setup.exe
             dist/*.exe
-          if-no-files-found: warn
-          retention-days: 3
+          if-no-files-found: error
+          retention-days: 1
 
   build-mac-arm64:
-    runs-on: macos-latest   # Apple Silicon — npm installa sharp-darwin-arm64 automaticamente
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -62,15 +58,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: List dist directory
-        run: ls dist/
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: mac-arm64-dmg
           path: dist/*.dmg
-          retention-days: 3
+          if-no-files-found: error
+          retention-days: 1
 
   build-mac-x64:
     runs-on: macos-latest    # ARM runner, cross-compila x64 (macos-13 ritirato dic 2025)
@@ -96,14 +90,59 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: List dist directory
-        run: ls dist/
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: mac-x64-dmg
           path: dist/*.dmg
-          retention-days: 3
+          if-no-files-found: error
+          retention-days: 1
 
-  # job 'release' assente durante il test — nessuna Release reale viene creata
+  release:
+    needs: [build-windows, build-mac-arm64, build-mac-x64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Extract changelog for this version
+        id: changelog
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          NOTES=$(awk "/^## \[$VERSION\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md)
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Anonimator ${{ github.ref_name }}"
+          body: |
+            ## Installazione
+
+            Scarica il file per il tuo Mac:
+            - **Mac Apple Silicon (M1/M2/M3/M4):** `*-arm64.dmg`
+            - **Mac Intel:** `*-x64.dmg`
+            - **Windows:** `*-setup.exe`
+
+            Trascina `Anonimator.app` nella cartella Applicazioni, poi esegui una volta:
+            ```bash
+            sudo xattr -cr /Applications/Anonimator.app
+            ```
+
+            ---
+
+            ${{ steps.changelog.outputs.notes }}
+          files: |
+            artifacts/mac-arm64-dmg/*.dmg
+            artifacts/mac-x64-dmg/*.dmg
+            artifacts/windows-installer/*.exe
+          draft: false
+          prerelease: false

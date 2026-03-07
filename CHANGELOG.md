@@ -5,6 +5,13 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.0.8] - 2026-03-07
+
+### Novità
+- **Release automatica su GitHub Actions**: la build e la pubblicazione dei file di installazione (DMG arm64, DMG x64, .exe Windows) avvengono automaticamente al push di un tag `vX.Y.Z`.
+
+---
+
 ## [1.0.7] - 2026-03-06
 
 ### Novità
