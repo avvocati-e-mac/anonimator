@@ -110,8 +110,38 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download NER model and tessdata
+        run: bash scripts/download-models.sh
+
+      - name: Build renderer + main
+        run: npx electron-vite build
+
+      - name: Package Linux AppImage
+        run: npx electron-builder --linux --x64 --config electron-builder.config.js --publish never
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: dist/*.AppImage
+          if-no-files-found: error
+          retention-days: 1
+
   release:
-    needs: [build-windows, build-mac-arm64, build-mac-x64]
+    needs: [build-windows, build-mac-arm64, build-mac-x64, build-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -139,10 +169,11 @@ jobs:
           body: |
             ## Installazione
 
-            Scarica il file per il tuo Mac:
+            Scarica il file per il tuo sistema operativo:
             - **Mac Apple Silicon (M1/M2/M3/M4):** `*-arm64.dmg`
             - **Mac Intel:** `*-x64.dmg`
             - **Windows:** `*-setup.exe`
+            - **Linux:** `*-linux-x64.AppImage`
 
             Trascina `Anonimator.app` nella cartella Applicazioni, poi esegui una volta:
             ```bash
@@ -156,5 +187,6 @@ jobs:
             artifacts/mac-arm64-dmg/*.dmg
             artifacts/mac-x64-dmg/*.dmg
             artifacts/windows-installer/*.exe
+            artifacts/linux-appimage/*.AppImage
           draft: false
           prerelease: false
