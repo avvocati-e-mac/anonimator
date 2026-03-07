@@ -73,7 +73,7 @@ jobs:
           retention-days: 3
 
   build-mac-x64:
-    runs-on: macos-13        # Intel x64 — npm installa sharp-darwin-x64 automaticamente
+    runs-on: macos-latest    # ARM runner, cross-compila x64 (macos-13 ritirato dic 2025)
     steps:
       - uses: actions/checkout@v4
 
@@ -84,6 +84,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Install sharp x64 binaries for cross-compilation
+        run: npm install @img/sharp-darwin-x64 @img/sharp-libvips-darwin-x64 --force --no-save
 
       - name: Build renderer + main
         run: npx electron-vite build
