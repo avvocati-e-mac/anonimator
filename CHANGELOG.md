@@ -5,6 +5,27 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.0.9] - 2026-03-07
+
+### Novità
+- **NER ibrido — 11 nuovi pattern regex per documenti legali**: il motore di riconoscimento aggiunge ora un layer di regex specializzate per tipo documento che operano prima del modello BERT, aumentando significativamente il recall su sentenze, contratti, atti fallimentari, polizze e perizie.
+  - Parti processuali: ricorrente, appellante, attore, convenuto, debitore, creditore e altri ruoli
+  - Avvocati difensori in formato lista ("avvocati NOME A, NOME B")
+  - Nomi tutto-maiuscolo su riga propria (intestazioni atti)
+  - Data di nascita, indirizzo di residenza/domicilio, numero documento d'identità
+  - Contraente/Assicurato/Beneficiario (polizze), parti contrattuali, Paziente/CTU/Perito
+  - Firmatari digitali (riga "Firmato Da: COGNOME NOME Emesso Da:" nei PDF firmati con ArubaPEC)
+- **Tre nuovi tipi di entità**: Data di nascita (`NASC_001`), Indirizzo (`IND_001`), Numero documento (`DOC_001`), con badge colorati nella schermata di revisione
+- **Ottimizzazione prompt LLM**: prompt IT e EN riscritti (~40% più corti) con bookending, esempi espliciti e lista precisa di esclusioni (istituzioni pubbliche, riferimenti normativi, metadati PKI)
+- **UI Impostazioni LLM avanzate**: dropdown modelli suggeriti (Mistral 7B, Llama 3.2 3B, Qwen 2.5 3B, Phi 3.5 Mini), toggle lingua prompt (IT/EN), slider dimensione chunk, textarea prompt personalizzato
+
+### Bug Fix
+- Filtro post-BERT migliorato: soglie score differenziate per tipo etichetta (PER 0.50, ORG 0.60, LOC 0.65); eliminati falsi positivi da frammenti PKI (NG, CA, G3) e da nomi di istituzioni pubbliche
+- Fix Step 6 deduplicazione: un'entità corta (es. "Strozzi") non viene più eliminata erroneamente quando appare in modo autonomo nel testo, anche se è sottostringa di un'entità più lunga ("Studio Legale Strozzi")
+- Fix `parallelRequests` mancante dallo schema Zod in `ipcHandlers.ts`
+
+---
+
 ## [1.0.8] - 2026-03-07
 
 ### Novità

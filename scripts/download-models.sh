@@ -17,14 +17,14 @@ echo "==> Creazione cartelle..."
 mkdir -p "$MODELS_DIR"
 mkdir -p "$TESSDATA_DIR"
 
-# --- Modello NER ---
-MODEL_FILE="$MODELS_DIR/model.onnx"
-if [ -f "$MODEL_FILE" ]; then
+# --- Modello NER (file reale: model_quantized.onnx) ---
+MODEL_FILE="$MODELS_DIR/model_quantized.onnx"
+if [ -f "$MODEL_FILE" ] && [ "$(wc -c < "$MODEL_FILE")" -gt 1000000 ]; then
   echo "  Modello NER gia' presente, skip."
 else
   echo "==> Download modello NER ONNX (~65 MB)..."
-  curl -L --progress-bar \
-    "${HF_BASE}/onnx/model.onnx" \
+  curl -L --fail --progress-bar \
+    "${HF_BASE}/onnx/model_quantized.onnx" \
     -o "$MODEL_FILE"
   echo "  Modello NER salvato in: $MODEL_FILE"
 fi

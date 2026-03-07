@@ -58,8 +58,10 @@ export const settingsManager = {
     save({ ...current, llm: config })
     log.info('settingsManager: LLM config aggiornata', {
       enabled: config.enabled,
-      baseUrl: config.baseUrl,
-      model: config.model
+      model: config.model,
+      promptLanguage: config.promptLanguage,
+      hasCustomPrompt: !!config.customPrompt,
+      chunkSize: config.chunkSize
     })
   }
 }

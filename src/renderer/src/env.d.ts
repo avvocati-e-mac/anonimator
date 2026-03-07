@@ -17,6 +17,7 @@ interface ElectronAPI {
   setSettings: (settings: { llm: LlmConfig }) => Promise<{ status: string } | { error: string }>
   testLlm: (llm: LlmConfig) => Promise<{ ok: boolean; message: string; models?: string[] }>
   listLlmModels: (baseUrl: string) => Promise<{ models: string[] }>
+  getDefaultPrompt: (lang: 'it' | 'en') => Promise<string>
   getAppVersion: () => Promise<string>
 }
 

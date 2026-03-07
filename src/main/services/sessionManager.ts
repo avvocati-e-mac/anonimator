@@ -7,7 +7,10 @@ const STRUCTURED_PREFIX: Partial<Record<EntityType, string>> = {
   PARTITA_IVA: 'PIVA',
   IBAN: 'IBAN',
   EMAIL: 'EMAIL',
-  TELEFONO: 'TEL'
+  TELEFONO: 'TEL',
+  DATA_NASCITA: 'NASC',
+  INDIRIZZO: 'IND',
+  NUMERO_DOCUMENTO: 'DOC'
 }
 
 interface SessionEntry {

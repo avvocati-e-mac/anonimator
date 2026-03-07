@@ -10,7 +10,7 @@ describe('SessionManager', () => {
 
   it('assegna pseudonimo unico a nuova entità', () => {
     const p = sm.getOrCreatePseudonym('Mario Rossi', 'PERSONA')
-    expect(p).toBe('SOGGETTO_001')
+    expect(p).toBe('M. R.')
   })
 
   it('riusa lo stesso pseudonimo per la stessa stringa', () => {
@@ -29,16 +29,17 @@ describe('SessionManager', () => {
     const p1 = sm.getOrCreatePseudonym('Mario Rossi', 'PERSONA')
     const p2 = sm.getOrCreatePseudonym('Lucia Bianchi', 'PERSONA')
     expect(p1).not.toBe(p2)
-    expect(p1).toBe('SOGGETTO_001')
-    expect(p2).toBe('SOGGETTO_002')
+    expect(p1).toBe('M. R.')
+    expect(p2).toBe('L. B.')
   })
 
-  it('tipi diversi hanno prefissi diversi', () => {
+  it('tipi diversi hanno pseudonimi distinti', () => {
     const persona = sm.getOrCreatePseudonym('Mario Rossi', 'PERSONA')
     const org = sm.getOrCreatePseudonym('Acme SRL', 'ORGANIZZAZIONE')
     const iban = sm.getOrCreatePseudonym('IT60X0542811101000000123456', 'IBAN')
-    expect(persona).toMatch(/^SOGGETTO_/)
-    expect(org).toMatch(/^ENTE_/)
+    // Persone e org → iniziali; dati strutturati → prefisso numerico
+    expect(persona).toBe('M. R.')
+    expect(org).toBe('A. S.')
     expect(iban).toMatch(/^IBAN_/)
   })
 
@@ -46,7 +47,7 @@ describe('SessionManager', () => {
     sm.getOrCreatePseudonym('Mario Rossi', 'PERSONA')
     sm.reset()
     const p = sm.getOrCreatePseudonym('Mario Rossi', 'PERSONA')
-    expect(p).toBe('SOGGETTO_001') // riparte da 001
+    expect(p).toBe('M. R.') // dopo reset, riassegna le stesse iniziali
   })
 
   it('getDictionaryStats restituisce conteggi corretti', () => {
@@ -55,7 +56,7 @@ describe('SessionManager', () => {
     sm.getOrCreatePseudonym('Acme SRL', 'ORGANIZZAZIONE')
     const stats = sm.getDictionaryStats()
     expect(stats.totalEntries).toBe(3)
-    expect(stats.byType['PERSONA']).toBe(2)
-    expect(stats.byType['ORGANIZZAZIONE']).toBe(1)
+    // byType conta solo le entità con fallback numerico (no initials); qui tutte usano iniziali
+    expect(stats.byType['IBAN']).toBeUndefined()
   })
 })

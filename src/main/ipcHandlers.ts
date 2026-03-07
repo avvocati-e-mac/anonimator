@@ -2,11 +2,10 @@ import { ipcMain, BrowserWindow, shell, app } from 'electron'
 import { z } from 'zod'
 import log from 'electron-log'
 import { IPC_CHANNELS } from '@shared/types'
-import type { LlmConfig } from '@shared/types'
 import { analyzeText } from './services/nerService'
 import { sessionManager } from './services/sessionManager'
 import { settingsManager } from './services/settingsManager'
-import { testLlmConnection, listLlmModels } from './services/llmService'
+import { testLlmConnection, listLlmModels, SYSTEM_PROMPT_IT, SYSTEM_PROMPT_EN } from './services/llmService'
 import { detectFormat, extractText } from './parsers/index'
 import { generateOutput } from './outputGenerators/index'
 
@@ -44,7 +43,12 @@ const LlmConfigSchema = z.object({
   baseUrl: z.string().min(1),
   model: z.string(),
   maxTokens: z.number().int().min(256).max(32768),
-  timeoutMs: z.number().int().min(5000).max(600000)
+  timeoutMs: z.number().int().min(5000).max(600000),
+  parallelRequests: z.number().int().min(1).max(4),
+  customPrompt: z.string().optional(),
+  // TODO [A/B-TEST]: rimuovere promptLanguage dopo ottimizzazione prompt
+  promptLanguage: z.enum(['it', 'en']).default('it'),
+  chunkSize: z.number().int().min(1000).max(8000).default(3000)
 })
 
 // ─── Helper: invia progresso alla finestra attiva ─────────────────────────────
@@ -210,7 +214,7 @@ export function registerIpcHandlers(): void {
       log.warn('IPC settings:set — payload non valido', parsed.error.flatten())
       return { error: 'Configurazione non valida.' }
     }
-    settingsManager.setLlmConfig(parsed.data as LlmConfig)
+    settingsManager.setLlmConfig(parsed.data)
     return { status: 'ok' }
   })
 
@@ -221,7 +225,12 @@ export function registerIpcHandlers(): void {
     if (!parsed.success) {
       return { ok: false, message: 'Configurazione non valida.' }
     }
-    return testLlmConnection(parsed.data as LlmConfig)
+    return testLlmConnection(parsed.data)
+  })
+
+  // Handler: restituisce il prompt di default (IT o EN)
+  ipcMain.handle(IPC_CHANNELS.LLM_GET_DEFAULT_PROMPT, (_event, lang: unknown) => {
+    return lang === 'en' ? SYSTEM_PROMPT_EN : SYSTEM_PROMPT_IT
   })
 
   // Handler: lista modelli disponibili sul server LLM
