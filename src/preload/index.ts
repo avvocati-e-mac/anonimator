@@ -53,5 +53,37 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // LLM: restituisce il prompt di default (IT o EN)
   getDefaultPrompt: (lang: 'it' | 'en') =>
-    ipcRenderer.invoke(IPC_CHANNELS.LLM_GET_DEFAULT_PROMPT, lang)
+    ipcRenderer.invoke(IPC_CHANNELS.LLM_GET_DEFAULT_PROMPT, lang),
+
+  // Entità: aggiunge manualmente un'entità al dizionario
+  addEntity: (originalText: string, type: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.ENTITY_ADD, { originalText, type }),
+
+  // Entità: esporta lista su file JSON
+  exportEntities: (entities: Array<{ originalText: string; pseudonym: string; type: string }>) =>
+    ipcRenderer.invoke(IPC_CHANNELS.ENTITY_EXPORT, { entities }),
+
+  // Entità: importa da file JSON
+  importEntities: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.ENTITY_IMPORT),
+
+  // Sessione: salva su disco
+  saveSession: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.SESSION_SAVE),
+
+  // Sessione: carica da disco
+  loadSession: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.SESSION_LOAD),
+
+  // Sessione: verifica se esiste
+  hasSavedSession: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.SESSION_HAS_SAVED),
+
+  // Sessione: elimina da disco
+  deleteSession: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.SESSION_DELETE),
+
+  // Sessione: restituisce il path del file
+  getSessionPath: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_PATH),
 })

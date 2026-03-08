@@ -1,5 +1,7 @@
-import type { EntityType, DetectedEntity } from '@shared/types'
+import type { EntityType, DetectedEntity, EntityDictionaryFile } from '@shared/types'
 import log from 'electron-log'
+import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs'
+import crypto from 'crypto'
 
 // Prefissi leggibili per entità strutturate (regex-based)
 const STRUCTURED_PREFIX: Partial<Record<EntityType, string>> = {
@@ -143,6 +145,126 @@ export class SessionManager {
       byType[type] = count
     }
     return { totalEntries: this.dictionary.size, byType }
+  }
+
+  /**
+   * Serializza il dizionario su disco per ripristino futuro.
+   */
+  saveToDisk(filePath: string): void {
+    try {
+      const data = {
+        version: 1,
+        savedAt: new Date().toISOString(),
+        dictionary: Array.from(this.dictionary.entries()),
+        counters: Array.from(this.counters.entries()),
+      }
+      writeFileSync(filePath, JSON.stringify(data), 'utf-8')
+      log.info('SessionManager: sessione salvata su disco', { entries: this.dictionary.size })
+    } catch (err) {
+      log.error('SessionManager: errore salvataggio sessione', { error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  /**
+   * Carica il dizionario da disco e restituisce le entità ricostruite.
+   * Restituisce null se il file non esiste o è corrotto.
+   */
+  loadFromDisk(filePath: string): DetectedEntity[] | null {
+    try {
+      if (!existsSync(filePath)) return null
+      const raw = readFileSync(filePath, 'utf-8')
+      const data = JSON.parse(raw) as {
+        version: number
+        dictionary: [string, { pseudonym: string; type: EntityType }][]
+        counters: [EntityType, number][]
+      }
+      if (data.version !== 1) return null
+
+      this.dictionary.clear()
+      this.counters.clear()
+
+      for (const [key, entry] of data.dictionary) {
+        this.dictionary.set(key, entry)
+      }
+      for (const [type, count] of data.counters) {
+        this.counters.set(type, count)
+      }
+
+      const entities: DetectedEntity[] = Array.from(this.dictionary.entries()).map(([key, entry]) => ({
+        id: crypto.randomUUID(),
+        type: entry.type,
+        originalText: key,
+        pseudonym: entry.pseudonym,
+        occurrences: 1,
+        confirmed: true,
+      }))
+
+      log.info('SessionManager: sessione caricata da disco', { entries: entities.length })
+      return entities
+    } catch (err) {
+      log.error('SessionManager: errore caricamento sessione', { error: err instanceof Error ? err.message : String(err) })
+      return null
+    }
+  }
+
+  hasSavedSession(filePath: string): boolean {
+    return existsSync(filePath)
+  }
+
+  deleteSavedSession(filePath: string): void {
+    try {
+      unlinkSync(filePath)
+      log.info('SessionManager: sessione eliminata dal disco')
+    } catch (err) {
+      log.error('SessionManager: errore eliminazione sessione', { error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  /**
+   * Importa entries da un file dizionario esportato.
+   * Il pseudonimo importato ha priorità su quello NER.
+   */
+  importEntries(entries: EntityDictionaryFile['entries']): void {
+    for (const entry of entries) {
+      this.dictionary.set(entry.originalText.toLowerCase(), {
+        pseudonym: entry.pseudonym,
+        type: entry.type,
+      })
+    }
+
+    // Ricalcola contatori scansionando i prefissi numerici nel dizionario
+    const prefixToType: Record<string, EntityType> = {
+      CF: 'CODICE_FISCALE',
+      PIVA: 'PARTITA_IVA',
+      IBAN: 'IBAN',
+      EMAIL: 'EMAIL',
+      TEL: 'TELEFONO',
+      NASC: 'DATA_NASCITA',
+      IND: 'INDIRIZZO',
+      DOC: 'NUMERO_DOCUMENTO',
+      SOGGETTO: 'PERSONA',
+      ENTE: 'ORGANIZZAZIONE',
+      LUOGO: 'LUOGO',
+    }
+    const maxCounters = new Map<EntityType, number>()
+    for (const entry of this.dictionary.values()) {
+      const match = /^([A-Z]+)_(\d{3})$/.exec(entry.pseudonym)
+      if (match) {
+        const prefix = match[1]
+        const num = parseInt(match[2], 10)
+        const type = prefixToType[prefix]
+        if (type) {
+          const current = maxCounters.get(type) ?? 0
+          if (num > current) maxCounters.set(type, num)
+        }
+      }
+    }
+    for (const [type, max] of maxCounters.entries()) {
+      const current = this.counters.get(type) ?? 0
+      if (max > current) this.counters.set(type, max)
+    }
+
+    log.info('SessionManager: entries importate', { count: entries.length })
   }
 
   reset(): void {

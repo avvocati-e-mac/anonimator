@@ -703,7 +703,40 @@ Mappa ogni entità chiamando `getOrCreatePseudonym()` per riempire il campo `pse
 
 ### Ciclo di vita
 
-Il dizionario vive **in RAM** per tutta la durata della sessione. Viene cancellato con `reset()` (nuova sessione) o al riavvio dell'app. Non viene persistito su disco.
+Il dizionario vive **in RAM** per tutta la durata della sessione. Al completamento di ogni anonimizzazione (singola o batch) viene **salvato automaticamente su disco** in `<userData>/anonimator-session.json`. All'avvio successivo l'utente può ripristinarlo tramite il pannello "Sessione precedente" in DropZone.
+
+### Persistenza su disco
+
+```typescript
+saveToDisk(filePath: string): void        // serializza dictionary + counters
+loadFromDisk(filePath: string): DetectedEntity[] | null  // carica e restituisce entità ricostruite
+hasSavedSession(filePath: string): boolean
+deleteSavedSession(filePath: string): void
+```
+
+**Formato file** (`anonimator-session.json`):
+```json
+{
+  "version": 1,
+  "savedAt": "2026-03-08T10:00:00.000Z",
+  "dictionary": [["mario rossi", {"pseudonym": "M. R.", "type": "PERSONA"}], ...],
+  "counters": [["CODICE_FISCALE", 2], ...]
+}
+```
+
+> ⚠️ Il file contiene dati personali in chiaro (testi originali → pseudonimi). Eliminarlo quando non serve più tramite il pulsante "Elimina" in DropZone.
+
+### Importazione dizionario esterno
+
+```typescript
+importEntries(entries: EntityDictionaryFile['entries']): void
+```
+
+Popola il dizionario con entries esportate da una sessione precedente (o da un altro documento). Il pseudonimo importato ha priorità assoluta su quello che il NER avrebbe generato. I contatori vengono ricalcolati automaticamente per evitare collisioni.
+
+### Aggiunta manuale entità
+
+L'handler IPC `entity:add` chiama `getOrCreatePseudonym()` con il testo e il tipo forniti dall'utente. Il pseudonimo risultante segue le stesse regole della generazione automatica (iniziali per PERSONA/ORG/LUOGO, codice numerico per strutturati).
 
 ---
 
@@ -987,6 +1020,13 @@ L'app React è strutturata come una macchina a stati con 7 schermate, gestite da
 - Intercetta l'evento `drop` nativo (in fase di capture) per estrarre i path assoluti con `webUtils.getPathForFile()` prima che react-dropzone cloni gli oggetti `File`
 - Mostra: versione app, badge privacy ("Nessun dato inviato in rete"), toggle tema, bottone impostazioni
 - Se 1 file → flusso singolo; se 2+ file → flusso batch
+- **Pannello "Importa dizionario entità"** (sempre visibile): apre dialog file JSON → carica entità → va direttamente a EntityReview senza analisi NER
+- **Pannello "Sessione precedente"**:
+  - Se `hasSavedSession = true`: mostra path file, pulsante "Elimina" (con conferma) + "Carica"
+  - Se `hasSavedSession = false`: testo "Nessuna sessione precedente salvata", pulsante "Carica" disabilitato
+  - "Carica" → `loadSession()` IPC → EntityReview con `filePath = null` (warn: "Trascina un documento per anonimizzare")
+  - "Elimina" → `deleteSession()` IPC → `hasSavedSession = false`
+- Nota privacy: "Il file sessione contiene dati personali in chiaro. Elimina la sessione quando non serve più."
 
 #### `ProcessingScreen.tsx`
 
@@ -1004,7 +1044,12 @@ L'app React è strutturata come una macchina a stati con 7 schermate, gestite da
   - Pseudonimo editabile (click → input inline, Enter/blur per confermare, Esc per annullare)
   - Conteggio occorrenze (×N se > 1)
 - Sezione warning collassabile (se il parser ha generato avvertimenti)
-- Footer fisso: "Annulla" + "Anonimizza N entità" (disabilitato se nessuna entità confermata)
+- Avviso "Sessione ripristinata" (banner blu) se `filePath === null`
+- Footer fisso: "Annulla" + "Aggiungi" + "Esporta" + "Importa" + "Anonimizza N entità"
+  - "Anonimizza" disabilitato se nessuna entità confermata **o** se sessione ripristinata senza documento
+  - "Aggiungi": apre `AddEntityModal` → `entity:add` IPC → pseudonimo generato automaticamente
+  - "Esporta": `entity:export` IPC → dialog salvataggio → file `dizionario-entita.json`
+  - "Importa": `entity:import` IPC → dialog apertura → merge nel dizionario (importato vince)
 - Al click su "Anonimizza": transizione a processing → `anonymizeDocument()` → success
 
 #### `SuccessScreen.tsx`
@@ -1024,6 +1069,7 @@ L'app React è strutturata come una macchina a stati con 7 schermate, gestite da
 
 - Come EntityReview ma con entità deduplicate da più file
 - Badge aggiuntivo "×N file" se un'entità appare in più documenti
+- Footer: stessi pulsanti "Aggiungi" / "Esporta" / "Importa" di EntityReview
 - "Anonimizza N file" → filtra entità per file → `batchAnonymize()`
 
 #### `BatchSuccessScreen.tsx`
@@ -1093,6 +1139,10 @@ Store globale con Zustand (nessun Provider React necessario). Tutte le azioni so
 | `setProgress(percent, message)` | Aggiorna barra di progresso |
 | `toggleEntityConfirmed(id)` | Inverte `confirmed` dell'entità con quell'ID |
 | `updateEntityPseudonym(id, pseudonym)` | Aggiorna lo pseudonimo editato dall'utente |
+| `addEntity(entity)` | Aggiunge un'entità singola alla lista (inserimento manuale) |
+| `addMergedEntity(entity)` | Aggiunge un'entità MergedEntity alla lista batch |
+| `importEntitiesToSingle(imported)` | Merge lista importata in `entities` (importato vince) |
+| `importEntitiesToBatch(imported)` | Merge lista importata in `mergedEntities` (importato vince) |
 | `reset()` | Ripristina tutto allo stato iniziale |
 | `resetBatchOnly()` | Torna a dropzone, mantiene dizionario nel Main |
 

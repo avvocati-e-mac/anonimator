@@ -1,26 +1,13 @@
 import React, { useState } from 'react'
 import {
-  ShieldCheck, User, Building2, MapPin, CreditCard,
-  Mail, Phone, AlertTriangle, ChevronDown, ChevronUp, Check,
-  Calendar, Home, FileText
+  ShieldCheck, Check,
+  AlertTriangle, ChevronDown, ChevronUp,
+  Plus, Download, Upload
 } from 'lucide-react'
 import { useSessionStore } from '../store/sessionStore'
+import { ENTITY_CONFIG } from '../utils/entityConfig'
+import AddEntityModal from './AddEntityModal'
 import type { DetectedEntity, EntityType } from '@shared/types'
-
-// ─── Configurazione visualizzazione per tipo entità ──────────────────────────
-const ENTITY_CONFIG: Record<EntityType, { label: string; color: string; icon: React.ElementType }> = {
-  PERSONA:          { label: 'Persona',        color: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-800',         icon: User },
-  ORGANIZZAZIONE:   { label: 'Organizzazione', color: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:border-purple-800', icon: Building2 },
-  LUOGO:            { label: 'Luogo',          color: 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-800',     icon: MapPin },
-  CODICE_FISCALE:   { label: 'Cod. Fiscale',   color: 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/40 dark:text-orange-300 dark:border-orange-800', icon: CreditCard },
-  PARTITA_IVA:      { label: 'P. IVA',         color: 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/40 dark:text-orange-300 dark:border-orange-800', icon: CreditCard },
-  IBAN:             { label: 'IBAN',           color: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-800',                 icon: CreditCard },
-  EMAIL:            { label: 'Email',          color: 'bg-cyan-100 text-cyan-700 border-cyan-200 dark:bg-cyan-900/40 dark:text-cyan-300 dark:border-cyan-800',           icon: Mail },
-  TELEFONO:         { label: 'Telefono',       color: 'bg-teal-100 text-teal-700 border-teal-200 dark:bg-teal-900/40 dark:text-teal-300 dark:border-teal-800',           icon: Phone },
-  DATA_NASCITA:     { label: 'Data nascita',   color: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-800',     icon: Calendar },
-  INDIRIZZO:        { label: 'Indirizzo',      color: 'bg-lime-100 text-lime-700 border-lime-200 dark:bg-lime-900/40 dark:text-lime-300 dark:border-lime-800',           icon: Home },
-  NUMERO_DOCUMENTO: { label: 'N. Documento',  color: 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-900/40 dark:text-rose-300 dark:border-rose-800',           icon: FileText },
-}
 
 function EntityRow({ entity }: { entity: DetectedEntity }): React.JSX.Element {
   const { toggleEntityConfirmed, updateEntityPseudonym } = useSessionStore()
@@ -116,14 +103,19 @@ function EntityRow({ entity }: { entity: DetectedEntity }): React.JSX.Element {
 export default function EntityReview(): React.JSX.Element {
   const {
     entities, analysisResult, filePath,
-    setScreen, setProgress, setSuccessInfo, setError, reset
+    setScreen, setProgress, setSuccessInfo, setError, reset,
+    addEntity, importEntitiesToSingle,
   } = useSessionStore()
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showWarnings, setShowWarnings] = useState(true)
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [isAddingEntity, setIsAddingEntity] = useState(false)
 
   const confirmedCount = entities.filter((e) => e.confirmed).length
   const warnings = analysisResult?.warnings ?? []
+
+  const isRestoredSession = filePath === null
 
   async function handleAnonymize(): Promise<void> {
     if (!filePath) return
@@ -160,6 +152,48 @@ export default function EntityReview(): React.JSX.Element {
     }
   }
 
+  async function handleAddEntity(originalText: string, type: EntityType): Promise<void> {
+    setIsAddingEntity(true)
+    try {
+      const result = await window.electronAPI.addEntity(originalText, type)
+      if ('error' in result) {
+        setError(result.error)
+        return
+      }
+      addEntity({
+        id: result.id,
+        type,
+        originalText,
+        pseudonym: result.pseudonym,
+        occurrences: 1,
+        confirmed: true,
+      })
+      setShowAddModal(false)
+    } finally {
+      setIsAddingEntity(false)
+    }
+  }
+
+  async function handleExport(): Promise<void> {
+    await window.electronAPI.exportEntities(
+      entities.map((e) => ({ originalText: e.originalText, pseudonym: e.pseudonym, type: e.type }))
+    )
+  }
+
+  async function handleImport(): Promise<void> {
+    const result = await window.electronAPI.importEntities()
+    if ('cancelled' in result || 'error' in result) return
+    const imported: DetectedEntity[] = result.entries.map((e) => ({
+      id: e.id,
+      type: e.type as EntityType,
+      originalText: e.originalText,
+      pseudonym: e.pseudonym,
+      occurrences: 1,
+      confirmed: true,
+    }))
+    importEntitiesToSingle(imported)
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col">
       {/* Header fisso */}
@@ -180,6 +214,15 @@ export default function EntityReview(): React.JSX.Element {
       {/* Corpo scrollabile */}
       <main className="flex-1 overflow-y-auto px-6 py-5">
         <div className="max-w-2xl mx-auto space-y-4">
+
+          {/* Avviso sessione ripristinata */}
+          {isRestoredSession && (
+            <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg px-4 py-3">
+              <p className="text-sm text-blue-700 dark:text-blue-300">
+                Sessione ripristinata — trascina un documento per anonimizzare.
+              </p>
+            </div>
+          )}
 
           {/* Titolo e contatori */}
           <div>
@@ -234,7 +277,7 @@ export default function EntityReview(): React.JSX.Element {
 
       {/* Footer con azioni — fisso in basso */}
       <footer className="bg-white dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700 px-6 py-4 flex-shrink-0">
-        <div className="max-w-2xl mx-auto flex items-center gap-3">
+        <div className="max-w-2xl mx-auto flex items-center gap-2">
           <button
             onClick={reset}
             disabled={isSubmitting}
@@ -242,22 +285,61 @@ export default function EntityReview(): React.JSX.Element {
           >
             Annulla
           </button>
+          <button
+            onClick={() => setShowAddModal(true)}
+            disabled={isSubmitting}
+            title="Aggiungi entità manualmente"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg disabled:opacity-40 transition-colors"
+          >
+            <Plus size={15} />
+            Aggiungi
+          </button>
+          <button
+            onClick={() => void handleExport()}
+            disabled={isSubmitting}
+            title="Esporta entità come file JSON"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg disabled:opacity-40 transition-colors"
+          >
+            <Download size={15} />
+            Esporta
+          </button>
+          <button
+            onClick={() => void handleImport()}
+            disabled={isSubmitting}
+            title="Importa entità da file JSON"
+            className="flex items-center gap-1.5 px-3 py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg disabled:opacity-40 transition-colors"
+          >
+            <Upload size={15} />
+            Importa
+          </button>
           <div className="flex-1" />
           <button
-            onClick={handleAnonymize}
-            disabled={isSubmitting || confirmedCount === 0}
+            onClick={() => void handleAnonymize()}
+            disabled={isSubmitting || confirmedCount === 0 || isRestoredSession}
+            title={isRestoredSession ? 'Trascina un documento per anonimizzare' : undefined}
             className="
               px-6 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg
               hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed
               transition-colors
             "
           >
-            {confirmedCount === 0
-              ? 'Seleziona almeno un\'entità'
-              : `Anonimizza ${confirmedCount} entit${confirmedCount === 1 ? 'à' : 'à'}`}
+            {isRestoredSession
+              ? 'Trascina un documento'
+              : confirmedCount === 0
+                ? 'Seleziona almeno un\'entità'
+                : `Anonimizza ${confirmedCount} entità`}
           </button>
         </div>
       </footer>
+
+      {/* Modal aggiunta entità */}
+      {showAddModal && (
+        <AddEntityModal
+          onConfirm={handleAddEntity}
+          onClose={() => setShowAddModal(false)}
+          isLoading={isAddingEntity}
+        />
+      )}
     </div>
   )
 }

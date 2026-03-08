@@ -5,6 +5,18 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.1.5] - 2026-03-08
+
+### Novità
+- **Inserimento manuale entità**: in EntityReview e BatchReview è ora possibile aggiungere entità che il NER non ha rilevato (pulsante "Aggiungi"). Il pseudonimo viene generato automaticamente con le stesse regole della sessione.
+- **Esporta dizionario**: il pulsante "Esporta" in EntityReview/BatchReview salva tutte le entità rilevate in un file JSON riutilizzabile (`dizionario-entita.json`).
+- **Importa dizionario**: il pulsante "Importa" in EntityReview/BatchReview carica un JSON precedentemente esportato. In caso di conflitto il pseudonimo importato ha priorità su quello NER.
+- **Sessione persistente**: dopo ogni anonimizzazione il dizionario pseudonimi viene salvato automaticamente su disco (`~/Library/Application Support/Anonimator/anonimator-session.json`). Al prossimo avvio è possibile ripristinarlo senza rianalizzare i documenti.
+- **Carica sessione precedente**: nuovo pannello in DropZone con bottone "Carica" (visibile solo se esiste il file) e bottone "Elimina" (con conferma) per cancellare i dati personali in chiaro dal file sessione.
+- **Importa da DropZone**: nuovo pannello "Importa dizionario entità" in DropZone per caricare un file JSON e passare direttamente alla schermata di revisione senza analisi NER.
+
+---
+
 ## [1.1.4] - 2026-03-07
 
 ### Correzioni

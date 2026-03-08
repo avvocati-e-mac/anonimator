@@ -1,13 +1,21 @@
-import { ipcMain, BrowserWindow, shell, app } from 'electron'
+import { ipcMain, BrowserWindow, shell, app, dialog } from 'electron'
 import { z } from 'zod'
 import log from 'electron-log'
+import { join } from 'path'
+import { readFileSync, writeFileSync } from 'fs'
+import crypto from 'crypto'
 import { IPC_CHANNELS } from '@shared/types'
+import type { EntityDictionaryFile } from '@shared/types'
 import { analyzeText } from './services/nerService'
 import { sessionManager } from './services/sessionManager'
 import { settingsManager } from './services/settingsManager'
 import { testLlmConnection, listLlmModels, SYSTEM_PROMPT_IT, SYSTEM_PROMPT_EN } from './services/llmService'
 import { detectFormat, extractText } from './parsers/index'
 import { generateOutput } from './outputGenerators/index'
+
+function getSessionDictPath(): string {
+  return join(app.getPath('userData'), 'anonimator-session.json')
+}
 
 // ─── Schemi di validazione Zod ────────────────────────────────────────────────
 
@@ -37,6 +45,11 @@ const AnonymizeRequestSchema = z.object({
     })
   )
 })
+
+const EntityTypeEnum = z.enum([
+  'PERSONA', 'ORGANIZZAZIONE', 'LUOGO', 'CODICE_FISCALE',
+  'PARTITA_IVA', 'IBAN', 'EMAIL', 'TELEFONO', 'DATA_NASCITA', 'INDIRIZZO', 'NUMERO_DOCUMENTO'
+])
 
 const LlmConfigSchema = z.object({
   enabled: z.boolean(),
@@ -148,6 +161,10 @@ export function registerIpcHandlers(): void {
 
       sendProgress('done', 100, 'Anonimizzazione completata.')
       log.info('Documento anonimizzato', { outputPath, entitiesReplaced })
+
+      // Auto-save sessione su disco
+      try { sessionManager.saveToDisk(getSessionDictPath()) } catch { /* ignorato */ }
+
       return { outputPath, entitiesReplaced }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -191,6 +208,10 @@ export function registerIpcHandlers(): void {
     }
 
     sendProgress('done', 100, 'Batch completato.')
+
+    // Auto-save sessione su disco
+    try { sessionManager.saveToDisk(getSessionDictPath()) } catch { /* ignorato */ }
+
     return results
   })
 
@@ -239,6 +260,124 @@ export function registerIpcHandlers(): void {
     if (!body?.baseUrl) return { models: [] }
     const models = await listLlmModels({ baseUrl: body.baseUrl, timeoutMs: body.timeoutMs ?? 10000 })
     return { models }
+  })
+
+  // Handler: aggiunge un'entità manualmente al dizionario
+  ipcMain.handle(IPC_CHANNELS.ENTITY_ADD, (_event, payload: unknown) => {
+    const schema = z.object({ originalText: z.string().min(1).max(500), type: EntityTypeEnum })
+    const parsed = schema.safeParse(payload)
+    if (!parsed.success) {
+      log.warn('IPC entity:add — payload non valido', parsed.error.flatten())
+      return { error: 'Dati non validi.' }
+    }
+    const { originalText, type } = parsed.data
+    const pseudonym = sessionManager.getOrCreatePseudonym(originalText, type as import('@shared/types').EntityType)
+    return { pseudonym, id: crypto.randomUUID() }
+  })
+
+  // Handler: esporta lista entità su file JSON
+  ipcMain.handle(IPC_CHANNELS.ENTITY_EXPORT, async (_event, payload: unknown) => {
+    const schema = z.object({
+      entities: z.array(z.object({
+        originalText: z.string(),
+        pseudonym: z.string(),
+        type: z.string(),
+      }))
+    })
+    const parsed = schema.safeParse(payload)
+    if (!parsed.success) return { error: 'Dati non validi.' }
+
+    const win = BrowserWindow.getAllWindows()[0]
+    const result = await dialog.showSaveDialog(win, {
+      defaultPath: 'dizionario-entita.json',
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    })
+    if (result.canceled || !result.filePath) return { cancelled: true }
+
+    const file: EntityDictionaryFile = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      entries: parsed.data.entities as EntityDictionaryFile['entries'],
+    }
+    writeFileSync(result.filePath, JSON.stringify(file, null, 2), 'utf-8')
+    log.info('Dizionario entità esportato', { entries: file.entries.length })
+    return { saved: true }
+  })
+
+  // Handler: importa entità da file JSON
+  ipcMain.handle(IPC_CHANNELS.ENTITY_IMPORT, async () => {
+    const win = BrowserWindow.getAllWindows()[0]
+    const result = await dialog.showOpenDialog(win, {
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+      properties: ['openFile'],
+    })
+    if (result.canceled || result.filePaths.length === 0) return { cancelled: true }
+
+    try {
+      const raw = readFileSync(result.filePaths[0], 'utf-8')
+      const data = JSON.parse(raw) as unknown
+
+      const schema = z.object({
+        version: z.literal(1),
+        entries: z.array(z.object({
+          originalText: z.string().min(1).max(500),
+          pseudonym: z.string().min(1).max(200),
+          type: z.string(),
+        })).max(10000),
+      })
+      const validated = schema.safeParse(data)
+      if (!validated.success) return { error: 'File non valido o formato non riconosciuto.' }
+
+      const validEntries = validated.data.entries.filter((e) => EntityTypeEnum.safeParse(e.type).success)
+      sessionManager.importEntries(validEntries as EntityDictionaryFile['entries'])
+
+      log.info('Dizionario entità importato', { imported: validEntries.length, total: validated.data.entries.length })
+      return {
+        imported: validEntries.length,
+        entries: validEntries.map((e) => ({ ...e, id: crypto.randomUUID() })),
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.error('Errore importazione dizionario', { error: message })
+      return { error: `Errore durante l'importazione: ${message}` }
+    }
+  })
+
+  // Handler: salva sessione su disco manualmente
+  ipcMain.handle(IPC_CHANNELS.SESSION_SAVE, () => {
+    try {
+      sessionManager.saveToDisk(getSessionDictPath())
+      return { status: 'ok' }
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  // Handler: carica sessione da disco
+  ipcMain.handle(IPC_CHANNELS.SESSION_LOAD, () => {
+    const entities = sessionManager.loadFromDisk(getSessionDictPath())
+    if (!entities) return null
+    return { entities }
+  })
+
+  // Handler: verifica se esiste una sessione salvata
+  ipcMain.handle(IPC_CHANNELS.SESSION_HAS_SAVED, () => {
+    return { exists: sessionManager.hasSavedSession(getSessionDictPath()) }
+  })
+
+  // Handler: elimina la sessione salvata su disco
+  ipcMain.handle(IPC_CHANNELS.SESSION_DELETE, () => {
+    try {
+      sessionManager.deleteSavedSession(getSessionDictPath())
+      return { status: 'ok' }
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  // Handler: restituisce il path del file sessione
+  ipcMain.handle(IPC_CHANNELS.SESSION_GET_PATH, () => {
+    return { path: getSessionDictPath() }
   })
 
   // Handler: apre la cartella del file nel Finder/Explorer

@@ -58,6 +58,8 @@ Before making any changes, understand these absolute requirements have priority 
 
 5b. **CHANGELOG.md**: update `CHANGELOG.md` at the root of the repo every time the version is bumped. Add a new `## [x.y.z] - YYYY-MM-DD` section at the top listing bug fixes and new features in Italian. Never delete existing entries.
 
+5c. **GUIDA.md**: update `GUIDA.md` every time new features, services, components, parsers, or output generators are implemented. Keep each relevant section in sync with the actual code. Never delete existing sections — only extend or correct them.
+
 6. **Privacy logging:** NEVER log document content. Only log metadata (sanitized filename, size, format, page count, timing, warnings, error codes).
 
 7. **Temporary files:** Prefer in-memory processing. If temp files needed (OCR rendering): use OS temp directory, random names, immediate cleanup on completion or error.

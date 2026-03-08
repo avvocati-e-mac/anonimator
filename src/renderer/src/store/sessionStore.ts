@@ -62,6 +62,11 @@ interface SessionState {
   updateMergedEntityPseudonym: (id: string, pseudonym: string) => void
   setBatchResults: (results: BatchResultItem[]) => void
 
+  addEntity: (entity: DetectedEntity) => void
+  addMergedEntity: (entity: MergedEntity) => void
+  importEntitiesToSingle: (imported: DetectedEntity[]) => void
+  importEntitiesToBatch: (imported: MergedEntity[]) => void
+
   // ── Reset ─────────────────────────────────────────────────────────────────
   reset: () => void
   resetBatchOnly: () => void
@@ -136,6 +141,38 @@ export const useSessionStore = create<SessionState>((set) => ({
     })),
 
   setBatchResults: (batchResults) => set({ batchResults }),
+
+  addEntity: (entity) => set((state) => ({ entities: [...state.entities, entity] })),
+
+  addMergedEntity: (entity) => set((state) => ({ mergedEntities: [...state.mergedEntities, entity] })),
+
+  importEntitiesToSingle: (imported) =>
+    set((state) => {
+      const map = new Map(state.entities.map((e) => [e.originalText.toLowerCase(), e]))
+      for (const imp of imported) {
+        const key = imp.originalText.toLowerCase()
+        if (map.has(key)) {
+          map.set(key, { ...map.get(key)!, pseudonym: imp.pseudonym })
+        } else {
+          map.set(key, imp)
+        }
+      }
+      return { entities: Array.from(map.values()) }
+    }),
+
+  importEntitiesToBatch: (imported) =>
+    set((state) => {
+      const map = new Map(state.mergedEntities.map((e) => [e.originalText.toLowerCase(), e]))
+      for (const imp of imported) {
+        const key = imp.originalText.toLowerCase()
+        if (map.has(key)) {
+          map.set(key, { ...map.get(key)!, pseudonym: imp.pseudonym })
+        } else {
+          map.set(key, imp)
+        }
+      }
+      return { mergedEntities: Array.from(map.values()) }
+    }),
 
   // ── Reset ─────────────────────────────────────────────────────────────────
   reset: () => set(initialState),

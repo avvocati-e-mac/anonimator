@@ -17,7 +17,15 @@ export const IPC_CHANNELS = {
   LLM_TEST: 'llm:test',
   LLM_LIST_MODELS: 'llm:listModels',
   LLM_GET_DEFAULT_PROMPT: 'llm:getDefaultPrompt',
-  APP_GET_VERSION: 'app:getVersion'
+  APP_GET_VERSION: 'app:getVersion',
+  ENTITY_ADD: 'entity:add',
+  ENTITY_EXPORT: 'entity:export',
+  ENTITY_IMPORT: 'entity:import',
+  SESSION_SAVE: 'session:save',
+  SESSION_LOAD: 'session:load',
+  SESSION_HAS_SAVED: 'session:hasSaved',
+  SESSION_DELETE: 'session:delete',
+  SESSION_GET_PATH: 'session:getPath',
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
@@ -123,6 +131,18 @@ export interface LlmConfig {
   customPrompt?: string     // se valorizzato, sovrascrive il prompt di default
   promptLanguage: 'it' | 'en'  // TODO [A/B-TEST]: rimuovere dopo ottimizzazione prompt
   chunkSize: number         // caratteri per chunk (1000–8000)
+}
+
+// ─── Dizionario entità esportato (file JSON) ──────────────────────────────────
+
+export interface EntityDictionaryFile {
+  version: 1
+  exportedAt: string // ISO 8601
+  entries: Array<{
+    originalText: string
+    pseudonym: string
+    type: EntityType
+  }>
 }
 
 export const DEFAULT_LLM_CONFIG: LlmConfig = {
