@@ -163,8 +163,11 @@ export const DEFAULT_LLM_CONFIG: LlmConfig = {
 // ─── Stato modello NER ────────────────────────────────────────────────────────
 
 export interface ModelStatus {
-  exists: boolean
+  nerExists: boolean
+  tessdataExists: boolean
+  exists: boolean       // true solo se ENTRAMBI presenti
   modelPath: string
+  tessdataPath: string
 }
 
 export interface ModelDownloadProgress {

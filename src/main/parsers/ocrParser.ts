@@ -1,12 +1,12 @@
 import { createWorker } from 'tesseract.js'
 import { join } from 'path'
-import { app } from 'electron'
 import { tmpdir } from 'os'
 import { randomBytes } from 'crypto'
 import { writeFile, unlink } from 'fs/promises'
 import type { PDFDocumentProxy, TextItem, TextMarkedContent } from 'pdfjs-dist/types/src/display/api'
 import type { ParseResult } from './index'
 import log from 'electron-log'
+import { getTessdataPath } from '../services/nerService'
 
 const OCR_CONFIDENCE_THRESHOLD = 60
 
@@ -16,7 +16,7 @@ export interface OcrPageResult {
 }
 
 async function ocrSingleImage(source: string | Buffer, pageLabel: string): Promise<OcrPageResult> {
-  const tessDataDir = join(app.getAppPath(), 'resources', 'tessdata')
+  const tessDataDir = getTessdataPath()
 
   const worker = await createWorker('ita', 1, {
     langPath: tessDataDir,

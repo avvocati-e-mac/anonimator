@@ -7,7 +7,7 @@ import https from 'https'
 import crypto from 'crypto'
 import { IPC_CHANNELS } from '@shared/types'
 import type { EntityDictionaryFile } from '@shared/types'
-import { analyzeText, getModelPath, resetNerPipeline } from './services/nerService'
+import { analyzeText, getModelPath, getModelDownloadPath, getTessdataPath, getTessdataDownloadPath, resetNerPipeline } from './services/nerService'
 import { sessionManager } from './services/sessionManager'
 import { settingsManager } from './services/settingsManager'
 import { testLlmConnection, listLlmModels, SYSTEM_PROMPT_IT, SYSTEM_PROMPT_EN } from './services/llmService'
@@ -433,22 +433,36 @@ export function registerIpcHandlers(): void {
     return diagText
   })
 
-  // Handler: verifica presenza modello NER
+  // Handler: verifica presenza modello NER + tessdata OCR
   ipcMain.handle(IPC_CHANNELS.MODEL_STATUS, () => {
     const modelPath = getModelPath()
-    const exists = existsSync(join(modelPath, 'onnx', 'model_quantized.onnx'))
-    return { exists, modelPath }
+    const tessdataPath = getTessdataPath()
+    const nerExists = existsSync(join(modelPath, 'onnx', 'model_quantized.onnx'))
+    const tessdataExists = existsSync(join(tessdataPath, 'ita.traineddata'))
+    return {
+      nerExists,
+      tessdataExists,
+      exists: nerExists && tessdataExists,
+      modelPath,
+      tessdataPath
+    }
   })
 
-  // Handler: scarica il modello NER da HuggingFace
+  // Handler: scarica modello NER da HuggingFace + tessdata OCR da GitHub
+  // I file vengono salvati in app.getPath('userData') (sempre scrivibile)
   ipcMain.handle(IPC_CHANNELS.MODEL_DOWNLOAD, async (_event) => {
-    const modelPath = getModelPath()
-    const BASE_URL = 'https://huggingface.co/Laibniz/italian-ner-pii-browser-distilbert/resolve/main'
+    const modelPath = getModelDownloadPath()
+    const tessdataPath = getTessdataDownloadPath()
+
+    const HF_BASE = 'https://huggingface.co/Laibniz/italian-ner-pii-browser-distilbert/resolve/main'
+    const TESS_URL = 'https://github.com/tesseract-ocr/tessdata/raw/main/ita.traineddata'
+
     const FILES = [
-      { remote: 'onnx/model_quantized.onnx', local: join(modelPath, 'onnx', 'model_quantized.onnx') },
-      { remote: 'tokenizer.json',            local: join(modelPath, 'tokenizer.json') },
-      { remote: 'tokenizer_config.json',     local: join(modelPath, 'tokenizer_config.json') },
-      { remote: 'config.json',               local: join(modelPath, 'config.json') },
+      { remote: `${HF_BASE}/onnx/model_quantized.onnx`, local: join(modelPath, 'onnx', 'model_quantized.onnx') },
+      { remote: `${HF_BASE}/tokenizer.json`,            local: join(modelPath, 'tokenizer.json') },
+      { remote: `${HF_BASE}/tokenizer_config.json`,     local: join(modelPath, 'tokenizer_config.json') },
+      { remote: `${HF_BASE}/config.json`,               local: join(modelPath, 'config.json') },
+      { remote: TESS_URL,                               local: join(tessdataPath, 'ita.traineddata') },
     ]
 
     function sendProgress(file: string, percent: number, done: boolean, error?: string): void {
@@ -464,10 +478,11 @@ export function registerIpcHandlers(): void {
         const file = createWriteStream(destPath)
         const doGet = (targetUrl: string): void => {
           https.get(targetUrl, (res) => {
-            // Segui redirect (302/301)
-            if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location) {
+            if ([301, 302, 303, 307, 308].includes(res.statusCode ?? 0) && res.headers.location) {
               res.resume()
-              doGet(res.headers.location)
+              // Risolvi redirect relativi (es. HuggingFace restituisce path senza host)
+              const redirectUrl = new URL(res.headers.location, targetUrl).href
+              doGet(redirectUrl)
               return
             }
             if (res.statusCode !== 200) {
@@ -493,23 +508,23 @@ export function registerIpcHandlers(): void {
     try {
       for (let i = 0; i < FILES.length; i++) {
         const { remote, local } = FILES[i]
-        const fileName = remote.split('/').pop() ?? remote
+        const fileName = local.split('/').pop() ?? remote
         const basePercent = Math.round((i / FILES.length) * 100)
         const nextPercent = Math.round(((i + 1) / FILES.length) * 100)
         sendProgress(fileName, basePercent, false)
-        await downloadFile(`${BASE_URL}/${remote}`, local, (filePercent) => {
+        await downloadFile(remote, local, (filePercent) => {
           const global = basePercent + Math.round((filePercent / 100) * (nextPercent - basePercent))
           sendProgress(fileName, global, false)
         })
-        log.info('Modello NER — file scaricato', { file: remote })
+        log.info('Modelli — file scaricato', { file: fileName })
       }
       resetNerPipeline()
       sendProgress('', 100, true)
-      log.info('Modello NER scaricato e pipeline resettata', { modelPath })
+      log.info('Modelli scaricati e pipeline resettata', { modelPath, tessdataPath })
       return { ok: true }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      log.error('Errore download modello NER', { error: message })
+      log.error('Errore download modelli', { error: message })
       sendProgress('', 0, true, message)
       return { ok: false, error: message }
     }

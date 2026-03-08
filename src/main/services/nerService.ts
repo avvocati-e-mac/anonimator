@@ -8,6 +8,8 @@ type NerPipelineFn = (text: string) => Promise<TokenClassificationOutput | Token
 // Tipo della funzione pipeline di Transformers.js (caricata dinamicamente)
 type TransformersPipelineFn = typeof import('@huggingface/transformers').pipeline
 import { join } from 'path'
+import { existsSync } from 'fs'
+import { app } from 'electron'
 import log from 'electron-log'
 import type { DetectedEntity, EntityType, LlmConfig } from '@shared/types'
 import { detectNamesWithLlm } from './llmService'
@@ -46,16 +48,45 @@ export function resetNerPipeline(): void {
 }
 
 // ─── Path modello NER ─────────────────────────────────────────────────────────
-// In produzione: process.resourcesPath = Contents/Resources/ (fuori dall'asar)
-//   ed è lì che electron-builder copia extraResources → path corretto.
-// In dev mode: process.resourcesPath punta a node_modules/electron/dist/.../Resources
-//   (la cartella dell'Electron binario) — NON contiene i modelli.
-//   In quel caso usiamo __dirname (out/main/) risalendo due livelli alla root progetto.
+// Cerca il modello in 3 posizioni (in ordine di priorità):
+//   1. resourcesPath (bundled con electron-builder extraResources)
+//   2. userData (scaricato al primo avvio — sempre scrivibile)
+//   3. dev path (sviluppo locale)
+const NER_MODEL_SUBDIR = 'models/italian-ner-xxl-v2'
+const NER_CHECK_FILE   = 'onnx/model_quantized.onnx'
+
 export function getModelPath(): string {
-  const prodPath = join(process.resourcesPath, 'resources', 'models', 'italian-ner-xxl-v2')
-  const devPath  = join(__dirname, '..', '..', 'resources', 'models', 'italian-ner-xxl-v2')
-  // Se i modelli esistono in resourcesPath siamo in produzione, altrimenti dev
-  return require('fs').existsSync(prodPath) ? prodPath : devPath
+  const bundledPath  = join(process.resourcesPath, 'resources', NER_MODEL_SUBDIR)
+  const userDataPath = join(app.getPath('userData'), NER_MODEL_SUBDIR)
+  const devPath      = join(__dirname, '..', '..', 'resources', NER_MODEL_SUBDIR)
+
+  if (existsSync(join(bundledPath, NER_CHECK_FILE)))  return bundledPath
+  if (existsSync(join(userDataPath, NER_CHECK_FILE))) return userDataPath
+  return devPath
+}
+
+/** Path di destinazione per il download (sempre userData, scrivibile) */
+export function getModelDownloadPath(): string {
+  return join(app.getPath('userData'), NER_MODEL_SUBDIR)
+}
+
+// ─── Path tessdata OCR ────────────────────────────────────────────────────────
+const TESSDATA_SUBDIR  = 'tessdata'
+const TESSDATA_FILE    = 'ita.traineddata'
+
+export function getTessdataPath(): string {
+  const bundledPath  = join(process.resourcesPath, 'resources', TESSDATA_SUBDIR)
+  const userDataPath = join(app.getPath('userData'), TESSDATA_SUBDIR)
+  const devPath      = join(__dirname, '..', '..', 'resources', TESSDATA_SUBDIR)
+
+  if (existsSync(join(bundledPath, TESSDATA_FILE)))  return bundledPath
+  if (existsSync(join(userDataPath, TESSDATA_FILE))) return userDataPath
+  return devPath
+}
+
+/** Path di destinazione per il download tessdata (sempre userData) */
+export function getTessdataDownloadPath(): string {
+  return join(app.getPath('userData'), TESSDATA_SUBDIR)
 }
 
 // ─── Blocklist istituzioni pubbliche (filtro post-BERT) ───────────────────────
