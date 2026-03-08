@@ -86,4 +86,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Sessione: restituisce il path del file
   getSessionPath: () =>
     ipcRenderer.invoke(IPC_CHANNELS.SESSION_GET_PATH),
+
+  // Diagnostica: raccoglie info installazione e le copia negli appunti
+  collectDiagnostics: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.DIAG_COLLECT),
 })

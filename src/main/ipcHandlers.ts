@@ -1,12 +1,12 @@
-import { ipcMain, BrowserWindow, shell, app, dialog } from 'electron'
+import { ipcMain, BrowserWindow, shell, app, dialog, clipboard } from 'electron'
 import { z } from 'zod'
 import log from 'electron-log'
 import { join } from 'path'
-import { readFileSync, writeFileSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync } from 'fs'
 import crypto from 'crypto'
 import { IPC_CHANNELS } from '@shared/types'
 import type { EntityDictionaryFile } from '@shared/types'
-import { analyzeText } from './services/nerService'
+import { analyzeText, getModelPath } from './services/nerService'
 import { sessionManager } from './services/sessionManager'
 import { settingsManager } from './services/settingsManager'
 import { testLlmConnection, listLlmModels, SYSTEM_PROMPT_IT, SYSTEM_PROMPT_EN } from './services/llmService'
@@ -389,6 +389,48 @@ export function registerIpcHandlers(): void {
 
   // Handler: restituisce la versione dell'app al renderer
   ipcMain.handle(IPC_CHANNELS.APP_GET_VERSION, () => app.getVersion())
+
+  // Handler: raccoglie diagnostica installazione e la copia negli appunti
+  ipcMain.handle(IPC_CHANNELS.DIAG_COLLECT, async () => {
+    const modelPath = getModelPath()
+    const platform = process.platform
+    const arch = process.arch
+    const version = app.getVersion()
+
+    // Verifica file critici
+    const modelExists = existsSync(join(modelPath, 'model_quantized.onnx'))
+    const bindingExists = existsSync(join(
+      app.getAppPath(), '..', 'app.asar.unpacked', 'node_modules',
+      'onnxruntime-node', 'bin', 'napi-v3', platform, arch, 'onnxruntime_binding.node'
+    ))
+    const detectLibcExists = existsSync(join(
+      app.getAppPath(), '..', 'app.asar.unpacked', 'node_modules', 'detect-libc'
+    ))
+
+    // Legge ultime 100 righe del log
+    let logTail = '(log non disponibile)'
+    try {
+      const logFile = (log.transports.file as unknown as { getFile(): { path: string } }).getFile()
+      const content = readFileSync(logFile.path, 'utf-8')
+      logTail = content.split('\n').slice(-100).join('\n')
+    } catch { /* ignorato */ }
+
+    const diagText = [
+      `=== Anonimator Diagnostica ===`,
+      `Versione: ${version}`,
+      `Piattaforma: ${platform}/${arch}`,
+      `Modello NER: ${modelExists ? 'OK' : 'MANCANTE'} (${modelPath})`,
+      `ORT binding: ${bindingExists ? 'OK' : 'MANCANTE (o in dev mode)'}`,
+      `detect-libc: ${detectLibcExists ? 'OK' : 'MANCANTE (o in dev mode)'}`,
+      ``,
+      `=== Log (ultime 100 righe) ===`,
+      logTail
+    ].join('\n')
+
+    clipboard.writeText(diagText)
+    log.info('Diagnostica raccolta e copiata negli appunti')
+    return diagText
+  })
 
   log.info('IPC handlers registrati')
 }

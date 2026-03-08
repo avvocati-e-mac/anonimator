@@ -5,6 +5,14 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.2.0] - 2026-03-08
+
+### Novità
+- **Diagnostica installazione — pulsante "Copia diagnostica" nelle Impostazioni**: raccoglie versione, piattaforma, presenza modello NER e binding onnxruntime, e le ultime 100 righe del log. Copia tutto negli appunti con un click, pronto da incollare in un'email allo sviluppatore.
+- **Script `scripts/check-install.sh`**: script bash standalone per verificare l'installazione su qualsiasi Mac. Controlla modello NER, `onnxruntime_binding.node`, `detect-libc`, binari sharp e tessdata. Output colorato con riepilogo OK/FAIL. Eseguibile anche da remoto con un comando Terminale.
+
+---
+
 ## [1.1.9] - 2026-03-08
 
 ### Correzioni

@@ -27,6 +27,7 @@ interface ElectronAPI {
   hasSavedSession: () => Promise<{ exists: boolean }>
   deleteSession: () => Promise<{ status: string } | { error: string }>
   getSessionPath: () => Promise<{ path: string }>
+  collectDiagnostics: () => Promise<string>
 }
 
 declare global {

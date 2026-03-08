@@ -26,6 +26,7 @@ export const IPC_CHANNELS = {
   SESSION_HAS_SAVED: 'session:hasSaved',
   SESSION_DELETE: 'session:delete',
   SESSION_GET_PATH: 'session:getPath',
+  DIAG_COLLECT: 'diag:collect',
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

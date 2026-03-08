@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import {
   ShieldCheck, ArrowLeft, Cpu, CheckCircle2, XCircle,
-  Loader2, RefreshCw, ChevronDown, Moon, Sun, Lock, Unlock, RotateCcw
+  Loader2, RefreshCw, ChevronDown, Moon, Sun, Lock, Unlock, RotateCcw,
+  ClipboardCopy
 } from 'lucide-react'
 import type { LlmConfig } from '@shared/types'
 import { DEFAULT_LLM_CONFIG } from '@shared/types'
@@ -59,6 +60,7 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
   const [testState, setTestState] = useState<TestState>('idle')
   const [testMessage, setTestMessage] = useState('')
   const [saving, setSaving] = useState(false)
+  const [diagState, setDiagState] = useState<'idle' | 'loading' | 'copied'>('idle')
   const [loadingModels, setLoadingModels] = useState(false)
   const [defaultPromptText, setDefaultPromptText] = useState('')
   const [useCustomModel, setUseCustomModel] = useState(false)
@@ -118,6 +120,13 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
     setTestState(result.ok ? 'ok' : 'error')
     setTestMessage(result.message)
     if (result.models) setAvailableModels(result.models)
+  }
+
+  async function handleCollectDiag(): Promise<void> {
+    setDiagState('loading')
+    await window.electronAPI.collectDiagnostics()
+    setDiagState('copied')
+    setTimeout(() => setDiagState('idle'), 3000)
   }
 
   async function handleSave(): Promise<void> {
@@ -545,6 +554,36 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
                 )}
               </div>
             )}
+          </section>
+
+          {/* Sezione Diagnostica */}
+          <section className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 space-y-3">
+            <div className="flex items-center gap-2">
+              <ClipboardCopy size={18} className="text-slate-500 dark:text-slate-400" />
+              <h2 className="font-semibold text-slate-800 dark:text-slate-100">Diagnostica</h2>
+            </div>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Se l'app non funziona correttamente, copia le informazioni di diagnostica e inviamele.
+              Include versione, piattaforma e le ultime righe del log — mai contenuto dei documenti.
+            </p>
+            <button
+              onClick={handleCollectDiag}
+              disabled={diagState === 'loading'}
+              className={`
+                flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border transition-colors
+                ${diagState === 'copied'
+                  ? 'border-green-400 dark:border-green-600 text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-950/30'
+                  : 'border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'}
+                disabled:opacity-40 disabled:cursor-not-allowed
+              `}
+            >
+              {diagState === 'loading'
+                ? <Loader2 size={14} className="animate-spin" />
+                : diagState === 'copied'
+                  ? <CheckCircle2 size={14} />
+                  : <ClipboardCopy size={14} />}
+              {diagState === 'copied' ? 'Copiato negli appunti!' : 'Copia diagnostica'}
+            </button>
           </section>
 
         </div>

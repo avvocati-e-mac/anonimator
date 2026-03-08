@@ -2,7 +2,7 @@
 
 Documentazione tecnica per sviluppatori. Descrive architettura, flussi di dati, logica di anonimizzazione e componenti del software.
 
-**Versione documentata:** 1.1.4
+**Versione documentata:** 1.2.0
 **Stack:** Electron 40 + React 18 + TypeScript (strict mode)
 **Scopo:** Pseudonimizzazione locale di documenti legali italiani (PDF, DOCX, ODT, TXT, immagini). Nessuna connessione di rete durante l'elaborazione.
 
@@ -140,6 +140,7 @@ llm:listModels     │ Lista modelli disponibili sul server LLM
 llm:getDefaultPrompt│ Ottiene prompt di sistema default (it/en)
 app:getVersion     │ Versione app da package.json
 shell:showInFolder │ Apre cartella nel file manager
+diag:collect       │ Raccoglie diagnostica installazione, copia negli appunti
 
 MAIN → RENDERER (send/on)
 ─────────────────────────────────────────────────────────
@@ -1087,14 +1088,15 @@ L'app React è strutturata come una macchina a stati con 7 schermate, gestite da
 
 #### `SettingsScreen.tsx`
 
-Configurazione dell'integrazione LLM locale. Sezioni:
+Configurazione dell'integrazione LLM locale e strumenti di supporto. Sezioni:
 1. Toggle abilitazione LLM
 2. Selezione software (Ollama / LM Studio) → imposta URL base
 3. Hostname/IP del server
 4. Selezione modello (lista suggerita o dropdown dal server)
 5. Impostazioni avanzate (collassabili): maxTokens, timeout, parallelRequests, lingua prompt, chunkSize, prompt personalizzato
 6. Test connessione → `testLlm()`
-7. Salva/Annulla
+7. **Sezione Diagnostica**: pulsante "Copia diagnostica" → `collectDiagnostics()` IPC → raccoglie versione/platform/arch, verifica modello NER + ORT binding + detect-libc, prende ultime 100 righe del log, copia tutto negli appunti. Feedback visivo "Copiato!" per 3 secondi.
+8. Salva/Annulla
 
 #### `ErrorOverlay.tsx`
 
@@ -1264,6 +1266,24 @@ Ogni job di build:
 5. `npx electron-builder --{platform} --{arch}` — pacchettizzazione
 
 Il job `release` scarica tutti gli artefatti e crea una GitHub Release con i 4 installer allegati.
+
+### Script di diagnostica installazione
+
+File: `scripts/check-install.sh` — script bash standalone per supporto utenti.
+
+Verifica su qualsiasi Mac con Anonimator installato:
+- Versione app (da `Info.plist`)
+- `model_quantized.onnx` e `tokenizer.json` in `Contents/Resources/resources/models/`
+- `onnxruntime_binding.node` per l'architettura corrente (`darwin/arm64` o `darwin/x64`)
+- `detect-libc` in `app.asar.unpacked/node_modules/`
+- Binari `@img/sharp-darwin-*`
+- `ita.traineddata` per OCR
+- Ultime 30 righe di `~/Library/Logs/Anonimator/main.log`
+
+Output colorato (✅/❌) con riepilogo finale. Uso remoto:
+```bash
+bash <(curl -s https://raw.githubusercontent.com/avvocati-e-mac/anonimator/master/scripts/check-install.sh)
+```
 
 ### Moduli nativi e asarUnpack
 

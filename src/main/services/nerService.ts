@@ -44,7 +44,7 @@ async function tryLoadTransformers(): Promise<TransformersPipelineFn | null> {
 // In dev mode: process.resourcesPath punta a node_modules/electron/dist/.../Resources
 //   (la cartella dell'Electron binario) — NON contiene i modelli.
 //   In quel caso usiamo __dirname (out/main/) risalendo due livelli alla root progetto.
-function getModelPath(): string {
+export function getModelPath(): string {
   const prodPath = join(process.resourcesPath, 'resources', 'models', 'italian-ner-xxl-v2')
   const devPath  = join(__dirname, '..', '..', 'resources', 'models', 'italian-ner-xxl-v2')
   // Se i modelli esistono in resourcesPath siamo in produzione, altrimenti dev
