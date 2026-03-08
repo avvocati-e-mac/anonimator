@@ -11,7 +11,7 @@ const _origResolve = Module._resolveFilename.bind(Module)
 Module._resolveFilename = function (request: unknown, ...rest: unknown[]): string {
   const resolved: string = _origResolve(request, ...rest)
   if (resolved.includes('app.asar') && !resolved.includes('app.asar.unpacked')) {
-    if (resolved.endsWith('.node') || resolved.includes('onnxruntime')) {
+    if (resolved.endsWith('.node') || resolved.includes('onnxruntime') || resolved.includes('/sharp') || resolved.includes('@img')) {
       return resolved.replace('app.asar', 'app.asar.unpacked')
     }
   }

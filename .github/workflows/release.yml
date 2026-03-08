@@ -33,6 +33,16 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
+      - name: Smoke test — verifica modello NER e binding onnxruntime
+        shell: bash
+        run: |
+          MODEL=$(find dist/win-unpacked -name "model_quantized.onnx" 2>/dev/null | head -1)
+          [ -z "$MODEL" ] && echo "ERROR: model_quantized.onnx non trovato" >&2 && exit 1
+          echo "OK: modello in $MODEL"
+          BINDING=$(find dist/win-unpacked -name "onnxruntime_binding.node" 2>/dev/null | head -1)
+          [ -z "$BINDING" ] && echo "ERROR: onnxruntime_binding.node non trovato" >&2 && exit 1
+          echo "OK: binding in $BINDING"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -56,6 +66,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Rebuild native modules for Electron
+        run: npx @electron/rebuild --force
+
       - name: Download NER model and tessdata
         run: bash scripts/download-models.sh
 
@@ -66,6 +79,15 @@ jobs:
         run: npx electron-builder --mac --arm64 --config electron-builder.config.js --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Smoke test — verifica modello NER e binding onnxruntime
+        run: |
+          MODEL=$(find dist/mac-arm64 -name "model_quantized.onnx" 2>/dev/null | head -1)
+          [ -z "$MODEL" ] && echo "ERROR: model_quantized.onnx non trovato" >&2 && exit 1
+          echo "OK: modello in $MODEL"
+          BINDING=$(find dist/mac-arm64 -name "onnxruntime_binding.node" 2>/dev/null | head -1)
+          [ -z "$BINDING" ] && echo "ERROR: onnxruntime_binding.node non trovato" >&2 && exit 1
+          echo "OK: binding in $BINDING"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -88,6 +110,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Rebuild native modules for Electron
+        run: npx @electron/rebuild --force
+
       - name: Install sharp x64 binaries for cross-compilation
         run: npm install @img/sharp-darwin-x64 @img/sharp-libvips-darwin-x64 --force --no-save
 
@@ -101,6 +126,15 @@ jobs:
         run: npx electron-builder --mac --x64 --config electron-builder.config.js --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Smoke test — verifica modello NER e binding onnxruntime
+        run: |
+          MODEL=$(find dist/mac -name "model_quantized.onnx" 2>/dev/null | head -1)
+          [ -z "$MODEL" ] && echo "ERROR: model_quantized.onnx non trovato" >&2 && exit 1
+          echo "OK: modello in $MODEL"
+          BINDING=$(find dist/mac -name "onnxruntime_binding.node" 2>/dev/null | head -1)
+          [ -z "$BINDING" ] && echo "ERROR: onnxruntime_binding.node non trovato" >&2 && exit 1
+          echo "OK: binding in $BINDING"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -123,6 +157,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Rebuild native modules for Electron
+        run: npx @electron/rebuild --force
+
       - name: Download NER model and tessdata
         run: bash scripts/download-models.sh
 
@@ -131,6 +168,15 @@ jobs:
 
       - name: Package Linux AppImage
         run: npx electron-builder --linux --x64 --config electron-builder.config.js --publish never
+
+      - name: Smoke test — verifica modello NER e binding onnxruntime
+        run: |
+          MODEL=$(find dist/linux-unpacked -name "model_quantized.onnx" 2>/dev/null | head -1)
+          [ -z "$MODEL" ] && echo "ERROR: model_quantized.onnx non trovato" >&2 && exit 1
+          echo "OK: modello in $MODEL"
+          BINDING=$(find dist/linux-unpacked -name "onnxruntime_binding.node" 2>/dev/null | head -1)
+          [ -z "$BINDING" ] && echo "ERROR: onnxruntime_binding.node non trovato" >&2 && exit 1
+          echo "OK: binding in $BINDING"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

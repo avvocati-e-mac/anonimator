@@ -223,6 +223,17 @@ async function getNerPipeline(): Promise<NerPipelineFn | null> {
   if (nerPipeline) return nerPipeline
   if (modelLoadFailed) return null
 
+  // Log diagnostico per debug su ARM64/Windows
+  const modelPath = getModelPath()
+  const modelExists = require('fs').existsSync(require('path').join(modelPath, 'model_quantized.onnx'))
+  log.info('NER diagnostics', {
+    modelPath,
+    modelExists,
+    resourcesPath: process.resourcesPath,
+    platform: process.platform,
+    arch: process.arch
+  })
+
   // Carica Transformers.js dinamicamente (fallback se onnxruntime non disponibile)
   const pipelineFactory = await tryLoadTransformers()
   if (!pipelineFactory) {

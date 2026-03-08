@@ -5,6 +5,16 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.1.7] - 2026-03-08
+
+### Correzioni
+- **Fix NER macOS ARM64**: estesa la patch `Module._resolveFilename` in `src/main/index.ts` per reindirizzare verso `app.asar.unpacked` anche i path di `sharp` e `@img/sharp-darwin-*`. Risolve il caso in cui `@huggingface/transformers` non riusciva a caricare il binario sharp ARM64 dall'interno dell'asar, causando la disabilitazione silenziosa del NER BERT.
+- **CI/CD — rebuild native modules su tutti i job**: aggiunto `npx @electron/rebuild --force` nei job `build-mac-arm64`, `build-mac-x64` e `build-linux` del workflow GitHub Actions (era già presente solo su Windows).
+- **CI/CD — smoke test post-packaging**: aggiunto step di verifica che controlla la presenza di `model_quantized.onnx` e `onnxruntime_binding.node` nel pacchetto prodotto prima dell'upload dell'artefatto, su tutti e 4 i job di build.
+- **Diagnostica NER al caricamento**: aggiunto log `NER diagnostics` in `nerService.ts` con `modelPath`, `modelExists`, `resourcesPath`, `platform` e `arch`. Leggibile da `~/Library/Logs/Anonimator/main.log` per debug immediato senza debugger.
+
+---
+
 ## [1.1.6] - 2026-03-08
 
 ### Correzioni
