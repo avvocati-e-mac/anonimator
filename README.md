@@ -61,6 +61,16 @@ sudo xattr -cr /Applications/Anonimator.app
 
 Dopo questi passaggi l'app si apre normalmente.
 
+### Verifica installazione (macOS)
+
+Se l'app si apre ma il riconoscimento entità non funziona, incolla questo comando nel Terminale per verificare che tutti i componenti siano presenti:
+
+```bash
+bash <(curl -s https://raw.githubusercontent.com/avvocati-e-mac/anonimator/master/scripts/check-install.sh)
+```
+
+Lo script controlla modello NER, binding onnxruntime, librerie dipendenti e log dell'app, e stampa un riepilogo ✅/❌. Copia tutto l'output e invialo allo sviluppatore.
+
 ### Windows — passaggi obbligatori
 
 Esegui il file `Anonimator-1.2.0-windows-x64-setup.exe` per installare l'app.
