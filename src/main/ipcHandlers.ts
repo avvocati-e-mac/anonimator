@@ -5,11 +5,12 @@ import { join } from 'path'
 import { readFileSync, writeFileSync } from 'fs'
 import crypto from 'crypto'
 import { IPC_CHANNELS } from '@shared/types'
-import type { EntityDictionaryFile } from '@shared/types'
+import type { EntityDictionaryFile, DetectedEntity, EntityType, DocumentFormat, NerTiming, ElaborationStats } from '@shared/types'
 import { analyzeText } from './services/nerService'
 import { sessionManager } from './services/sessionManager'
 import { settingsManager } from './services/settingsManager'
 import { testLlmConnection, listLlmModels, SYSTEM_PROMPT_IT, SYSTEM_PROMPT_EN } from './services/llmService'
+import { statsManager } from './services/statsManager'
 import { detectFormat, extractText } from './parsers/index'
 import { generateOutput } from './outputGenerators/index'
 
@@ -72,6 +73,32 @@ function sendProgress(stage: string, percent: number, message: string): void {
   }
 }
 
+// ─── Dati pendenti per stats (tra DOC_PROCESS e DOC_ANONYMIZE) ────────────────
+
+interface PendingStatsData {
+  totalStart: number
+  parsingMs: number
+  timing: NerTiming
+  text: string
+  enrichedEntities: DetectedEntity[]
+  pageCount: number
+  format: DocumentFormat
+  parseWarnings: string[]
+  nerWarnings: string[]
+  nerUsed: boolean
+  llmUsed: boolean
+}
+
+const pendingStats = new Map<string, PendingStatsData>()
+
+function computeByType(entities: DetectedEntity[]): Partial<Record<EntityType, number>> {
+  const result: Partial<Record<EntityType, number>> = {}
+  for (const e of entities) {
+    result[e.type] = (result[e.type] ?? 0) + 1
+  }
+  return result
+}
+
 // ─── Registrazione handler ────────────────────────────────────────────────────
 
 export function registerIpcHandlers(): void {
@@ -87,21 +114,25 @@ export function registerIpcHandlers(): void {
     const { filePath } = parsed.data
     const llmConfig = settingsManager.getLlmConfig()
 
+    const totalStart = performance.now()
+
     try {
       // Fase 1: rilevamento formato e parsing
       sendProgress('parsing', 10, 'Lettura documento...')
       const format = detectFormat(filePath)
       log.info('Inizio elaborazione documento', { format })
 
+      const parsingStart = performance.now()
       sendProgress('parsing', 30, 'Estrazione testo...')
       const { text, pageCount, warnings: parseWarnings } = await extractText(filePath, format)
+      const parsingMs = performance.now() - parsingStart
 
       // Fase 2: analisi NER (BERT + regex, opzionalmente LLM)
       sendProgress('ner', 50, 'Riconoscimento entità...')
       if (llmConfig.enabled && llmConfig.model) {
         sendProgress('ner', 50, 'Riconoscimento entità (BERT + LLM)...')
       }
-      const { entities: rawEntities, nerUsed, llmUsed, warnings: nerWarnings } =
+      const { entities: rawEntities, nerUsed, llmUsed, warnings: nerWarnings, timing } =
         await analyzeText(text, llmConfig, (page, total) => {
           const pct = 50 + Math.round((page / total) * 30)
           sendProgress('ner', pct, `Analisi LLM: pagina ${page}/${total}...`)
@@ -118,6 +149,21 @@ export function registerIpcHandlers(): void {
         entities: enrichedEntities.length,
         nerUsed,
         llmUsed
+      })
+
+      // Salva dati pendenti per calcolo stats in DOC_ANONYMIZE
+      pendingStats.set(filePath, {
+        totalStart,
+        parsingMs,
+        timing,
+        text,
+        enrichedEntities,
+        pageCount,
+        format,
+        parseWarnings,
+        nerWarnings,
+        nerUsed,
+        llmUsed,
       })
 
       return {
@@ -150,9 +196,11 @@ export function registerIpcHandlers(): void {
       sendProgress('parsing', 20, 'Preparazione anonimizzazione...')
       log.info('Anonimizzazione richiesta', { format, entitiesConfirmed: confirmed.length })
 
+      const anonStart = performance.now()
       sendProgress('parsing', 50, 'Sostituzione entità...')
-      const typedEntities = entities as import('@shared/types').DetectedEntity[]
+      const typedEntities = entities as DetectedEntity[]
       const { outputPath, entitiesReplaced } = await generateOutput(filePath, format, typedEntities)
+      const anonMs = performance.now() - anonStart
 
       // Aggiorna il sessionManager con i pseudonimi confermati
       for (const entity of typedEntities.filter((e) => e.confirmed)) {
@@ -164,6 +212,44 @@ export function registerIpcHandlers(): void {
 
       // Auto-save sessione su disco
       try { sessionManager.saveToDisk(getSessionDictPath()) } catch { /* ignorato */ }
+
+      // ── Registra stats ──────────────────────────────────────────────────────
+      const pending = pendingStats.get(filePath)
+      if (pending) {
+        pendingStats.delete(filePath)
+        const totalMs = performance.now() - pending.totalStart
+        const pc = pending.pageCount || 1
+
+        const stats: ElaborationStats = {
+          fileName: filePath.split('/').pop()?.split('\\').pop() ?? filePath,
+          format: pending.format,
+          processedAt: new Date().toISOString(),
+          pageCount: pending.pageCount,
+          textLength: pending.text.length,
+          textLengthPerPage: Math.round(pending.text.length / pc),
+          entitiesFound: pending.enrichedEntities.length,
+          entitiesConfirmed: confirmed.length,
+          entitiesReplaced,
+          entitiesByType: computeByType(pending.enrichedEntities),
+          phases: {
+            parsing:       { durationMs: Math.round(pending.parsingMs) },
+            nerRegex:      { durationMs: pending.timing.regexMs },
+            nerBert:       { durationMs: pending.timing.bertMs },
+            ...(pending.timing.llmMs > 0 ? { llm: { durationMs: pending.timing.llmMs } } : {}),
+            anonymization: { durationMs: Math.round(anonMs) },
+            total:         { durationMs: Math.round(totalMs) },
+          },
+          msPerPage:         Math.round(totalMs / pc),
+          entitiesPerSecond: pending.timing.bertMs > 0
+            ? Math.round(pending.enrichedEntities.length / (pending.timing.bertMs / 1000) * 10) / 10
+            : 0,
+          llm: pending.timing.llm ? { ...pending.timing.llm, durationMs: pending.timing.llmMs } : undefined,
+          nerUsed: pending.nerUsed,
+          llmUsed: pending.llmUsed,
+          warnings: [...pending.parseWarnings, ...pending.nerWarnings],
+        }
+        statsManager.record(stats)
+      }
 
       return { outputPath, entitiesReplaced }
     } catch (err) {
@@ -188,11 +274,15 @@ export function registerIpcHandlers(): void {
       const { filePath, entities } = req
       const format = detectFormat(filePath)
       const fileName = filePath.split('/').pop() ?? filePath
+      const confirmed = entities.filter((e) => e.confirmed)
 
       try {
         sendProgress('parsing', 0, `Anonimizzazione: ${fileName}...`)
-        const typedEntities = entities as import('@shared/types').DetectedEntity[]
+        const typedEntities = entities as DetectedEntity[]
+
+        const anonStart = performance.now()
         const { outputPath, entitiesReplaced } = await generateOutput(filePath, format, typedEntities)
+        const anonMs = performance.now() - anonStart
 
         for (const entity of typedEntities.filter((e) => e.confirmed)) {
           sessionManager.getOrCreatePseudonym(entity.originalText, entity.type)
@@ -200,10 +290,49 @@ export function registerIpcHandlers(): void {
 
         log.info('Batch: documento anonimizzato', { fileName, outputPath, entitiesReplaced })
         results.push({ filePath, fileName, outputPath, entitiesReplaced })
+
+        // ── Registra stats per questo file del batch ──────────────────────────
+        const pending = pendingStats.get(filePath)
+        if (pending) {
+          pendingStats.delete(filePath)
+          const totalMs = performance.now() - pending.totalStart
+          const pc = pending.pageCount || 1
+
+          const stats: ElaborationStats = {
+            fileName: filePath.split('/').pop()?.split('\\').pop() ?? filePath,
+            format: pending.format,
+            processedAt: new Date().toISOString(),
+            pageCount: pending.pageCount,
+            textLength: pending.text.length,
+            textLengthPerPage: Math.round(pending.text.length / pc),
+            entitiesFound: pending.enrichedEntities.length,
+            entitiesConfirmed: confirmed.length,
+            entitiesReplaced,
+            entitiesByType: computeByType(pending.enrichedEntities),
+            phases: {
+              parsing:       { durationMs: Math.round(pending.parsingMs) },
+              nerRegex:      { durationMs: pending.timing.regexMs },
+              nerBert:       { durationMs: pending.timing.bertMs },
+              ...(pending.timing.llmMs > 0 ? { llm: { durationMs: pending.timing.llmMs } } : {}),
+              anonymization: { durationMs: Math.round(anonMs) },
+              total:         { durationMs: Math.round(totalMs) },
+            },
+            msPerPage:         Math.round(totalMs / pc),
+            entitiesPerSecond: pending.timing.bertMs > 0
+              ? Math.round(pending.enrichedEntities.length / (pending.timing.bertMs / 1000) * 10) / 10
+              : 0,
+            llm: pending.timing.llm ? { ...pending.timing.llm, durationMs: pending.timing.llmMs } : undefined,
+            nerUsed: pending.nerUsed,
+            llmUsed: pending.llmUsed,
+            warnings: [...pending.parseWarnings, ...pending.nerWarnings],
+          }
+          statsManager.record(stats)
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
         log.error('Batch: errore anonimizzazione', { fileName, error: message })
         results.push({ filePath, fileName, error: message })
+        pendingStats.delete(filePath) // pulizia
       }
     }
 
@@ -387,6 +516,15 @@ export function registerIpcHandlers(): void {
 
   // Handler: restituisce la versione dell'app al renderer
   ipcMain.handle(IPC_CHANNELS.APP_GET_VERSION, () => app.getVersion())
+
+  // Handler: restituisce tutte le stats di elaborazione
+  ipcMain.handle(IPC_CHANNELS.STATS_GET_ALL, () => statsManager.getAll())
+
+  // Handler: cancella tutte le stats
+  ipcMain.handle(IPC_CHANNELS.STATS_CLEAR, () => {
+    statsManager.clear()
+    return { status: 'ok' }
+  })
 
   log.info('IPC handlers registrati')
 }

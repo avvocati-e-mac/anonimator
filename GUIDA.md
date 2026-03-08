@@ -2,7 +2,7 @@
 
 Documentazione tecnica per sviluppatori. Descrive architettura, flussi di dati, logica di anonimizzazione e componenti del software.
 
-**Versione documentata:** 1.1.4
+**Versione documentata:** 1.2.0
 **Stack:** Electron 40 + React 18 + TypeScript (strict mode)
 **Scopo:** Pseudonimizzazione locale di documenti legali italiani (PDF, DOCX, ODT, TXT, immagini). Nessuna connessione di rete durante l'elaborazione.
 
@@ -22,9 +22,10 @@ Documentazione tecnica per sviluppatori. Descrive architettura, flussi di dati, 
 10. [Interfaccia utente (Renderer)](#10-interfaccia-utente-renderer)
 11. [Store Zustand — gestione stato](#11-store-zustand--gestione-stato)
 12. [Integrazione LLM locale](#12-integrazione-llm-locale)
-13. [Build, CI/CD e distribuzione](#13-build-cicd-e-distribuzione)
-14. [Test](#14-test)
-15. [Problemi noti e soluzioni](#15-problemi-noti-e-soluzioni)
+13. [Statistiche di elaborazione](#13-statistiche-di-elaborazione)
+14. [Build, CI/CD e distribuzione](#14-build-cicd-e-distribuzione)
+15. [Test](#15-test)
+16. [Problemi noti e soluzioni](#16-problemi-noti-e-soluzioni)
 
 ---
 
@@ -83,6 +84,7 @@ Ha accesso completo a Node.js (file system, moduli nativi). Contiene tutta la lo
 | `ipcHandlers.ts` | Hub centralizzato di tutti gli handler IPC. Valida ogni input con Zod prima di processarlo. |
 | `services/nerService.ts` | Motore NER ibrido: regex + BERT (Transformers.js) + LLM opzionale. |
 | `services/sessionManager.ts` | Dizionario in-memoria degli pseudonimi. Genera e mantiene le corrispondenze originale→pseudonimo. |
+| `services/statsManager.ts` | Statistiche di elaborazione persistenti su disco (`{userData}/anonimator-stats.json`). Max 200 voci. |
 | `services/settingsManager.ts` | Configurazione LLM persistente su disco (`{userData}/legalshield-settings.json`). |
 | `services/llmService.ts` | Client per LLM locali (Ollama/LM Studio) via endpoint OpenAI-compatibile. |
 | `parsers/` | Estrattori di testo per ogni formato (txt, docx, odt, pdf, ocr, markdown). |
@@ -107,6 +109,8 @@ window.electronAPI = {
   listLlmModels(baseUrl)            // → Promise<{models[]}>
   getDefaultPrompt(lang)            // → Promise<string>
   getAppVersion()                   // → Promise<string>
+  getStats()                         // → Promise<ElaborationStats[]>
+  clearStats()                       // → Promise<{status}>
 }
 ```
 
@@ -140,6 +144,8 @@ llm:listModels     │ Lista modelli disponibili sul server LLM
 llm:getDefaultPrompt│ Ottiene prompt di sistema default (it/en)
 app:getVersion     │ Versione app da package.json
 shell:showInFolder │ Apre cartella nel file manager
+stats:getAll       │ Restituisce tutte le statistiche di elaborazione
+stats:clear        │ Cancella tutte le statistiche
 
 MAIN → RENDERER (send/on)
 ─────────────────────────────────────────────────────────
@@ -1018,7 +1024,7 @@ L'app React è strutturata come una macchina a stati con 7 schermate, gestite da
 
 - Accetta file tramite drag-and-drop (`react-dropzone`)
 - Intercetta l'evento `drop` nativo (in fase di capture) per estrarre i path assoluti con `webUtils.getPathForFile()` prima che react-dropzone cloni gli oggetti `File`
-- Mostra: versione app, badge privacy ("Nessun dato inviato in rete"), toggle tema, bottone impostazioni
+- Mostra: versione app, badge privacy ("Nessun dato inviato in rete"), toggle tema, bottone statistiche, bottone impostazioni
 - Se 1 file → flusso singolo; se 2+ file → flusso batch
 - **Pannello "Importa dizionario entità"** (sempre visibile): apre dialog file JSON → carica entità → va direttamente a EntityReview senza analisi NER
 - **Pannello "Sessione precedente"**:
@@ -1056,6 +1062,7 @@ L'app React è strutturata come una macchina a stati con 7 schermate, gestite da
 
 - Checkmark verde, conteggio entità sostituite
 - Nome file originale e path del file anonimizzato
+- **Riepilogo statistiche** (`ElaborationSummary`): tempo totale, pagine, ms/pagina, barre fasi, entità per tipo, throughput LLM
 - "Mostra nella cartella" → `showInFolder()`
 - "Anonimizza un altro documento" → `reset()`
 
@@ -1076,6 +1083,7 @@ L'app React è strutturata come una macchina a stati con 7 schermate, gestite da
 
 - Risultati per-file (successo/errore)
 - Conteggio totale entità sostituite
+- **Riepilogo statistiche aggregato** (`ElaborationSummary`): tempo totale batch, pagine totali, ms/pagina medio, barre fasi dell'ultimo file, entità aggregate per tipo
 - "Mostra cartella" → `showInFolder()` del primo file riuscito
 - "Aggiungi altri documenti" → `resetBatchOnly()`
 - "Nuova sessione" → `resetSession()` + `reset()`
@@ -1090,6 +1098,23 @@ Configurazione dell'integrazione LLM locale. Sezioni:
 5. Impostazioni avanzate (collassabili): maxTokens, timeout, parallelRequests, lingua prompt, chunkSize, prompt personalizzato
 6. Test connessione → `testLlm()`
 7. Salva/Annulla
+
+#### `StatsScreen.tsx`
+
+Overlay modale (`z-50`) accessibile dal bottone grafico (icona `BarChart2`) nella DropZone. Non fa parte della navigazione Zustand: è gestito con `useState` in `App.tsx`.
+
+Sezioni:
+1. **Riepilogo** — dati aggregati su tutte le elaborazioni: documenti elaborati, entità totali, tempo medio per documento, tempo medio per pagina
+2. **Ultima elaborazione** — dettaglio del documento più recente:
+   - Nome file, formato, numero pagine, timestamp
+   - Barre di progresso per ogni fase (parsing, NER regex, NER BERT, LLM opzionale, anonimizzazione) con percentuale e durata
+   - Breakdown entità per tipo (top 5)
+   - Throughput LLM (tok/s, token stimati inviati) se `llmUsed = true`
+   - Lunghezza testo estratto (caratteri totali e per pagina)
+3. **Storico** — tabella scrollabile delle ultime 50 elaborazioni (data, file, formato, pagine, entità, tempo totale)
+4. **Cancella tutto** — elimina tutte le statistiche con conferma
+
+Dati caricati via `window.electronAPI.getStats()` al mount del componente.
 
 #### `ErrorOverlay.tsx`
 
@@ -1202,7 +1227,72 @@ Persistita su disco in `{userData}/legalshield-settings.json` tramite `settingsM
 
 ---
 
-## 13. Build, CI/CD e distribuzione
+## 13. Statistiche di elaborazione
+
+File: `src/main/services/statsManager.ts`
+
+Il sistema di statistiche misura i tempi di ogni fase dell'elaborazione e li persiste su disco. I dati sono accessibili dall'utente tramite la schermata `StatsScreen` (overlay modale dalla DropZone).
+
+### Architettura
+
+```
+nerService.ts                   ipcHandlers.ts              statsManager.ts
+─────────────                   ──────────────              ───────────────
+analyzeText() restituisce       DOC_PROCESS:                record(stats)
+timing: NerTiming               - misura parsingMs          getAll()
+  regexMs                       - salva in pendingStats     clear()
+  bertMs                                                    ↓
+  llmMs                         DOC_ANONYMIZE:              anonimator-stats.json
+  llm?: { model, chunks, ... }  - misura anonMs             (max 200 voci)
+                                - costruisce ElaborationStats
+                                - chiama statsManager.record()
+```
+
+### Flusso di raccolta dati
+
+1. **`DOC_PROCESS`**: salva in una `Map<filePath, PendingStatsData>` il timestamp di inizio, il tempo di parsing, il timing NER, il testo estratto e le entità arricchite.
+2. **`DOC_ANONYMIZE`**: recupera i dati pendenti dalla mappa, misura il tempo di anonimizzazione, calcola il totale, costruisce l'oggetto `ElaborationStats` e lo registra con `statsManager.record()`.
+3. Se `DOC_ANONYMIZE` viene chiamato senza un `DOC_PROCESS` precedente (edge case), le stats non vengono registrate e l'operazione prosegue normalmente.
+
+### Timing misurato in `nerService.ts`
+
+Il motore NER restituisce un oggetto `NerTiming` con:
+
+| Campo | Cosa misura |
+|-------|-------------|
+| `regexMs` | Step 0 (intestazioni sentenze), 0b (pattern strutturati), 0c (avvocati/PKI), 1 (CF, IBAN, email, tel) |
+| `bertMs` | Step 2 (caricamento pipeline + inferenza BERT su tutti i chunk) |
+| `llmMs` | Step 3 (tutte le chiamate LLM, incluso batching parallelo). 0 se LLM non abilitato. |
+| `llm` | Dettaglio LLM: modello, chunk processati, token stimati, parallelRequests, chunkSize |
+
+### Struttura dati `ElaborationStats`
+
+Definita in `src/shared/types.ts`. Campi principali:
+
+- **Identificazione**: `fileName` (basename sanitizzato), `format`, `processedAt` (ISO 8601)
+- **Documento**: `pageCount`, `textLength`, `textLengthPerPage`
+- **Entità**: `entitiesFound`, `entitiesConfirmed`, `entitiesReplaced`, `entitiesByType`
+- **Tempi fasi**: `phases.parsing`, `phases.nerRegex`, `phases.nerBert`, `phases.llm?`, `phases.anonymization`, `phases.total`
+- **Throughput**: `msPerPage`, `entitiesPerSecond`
+- **LLM**: `llm?` (modello, chunk, token stimati, tok/s)
+- **Sistema**: `nerUsed`, `llmUsed`, `warnings`
+
+### Persistenza
+
+File: `{userData}/anonimator-stats.json`
+
+- Array JSON di `ElaborationStats`, ordinato dal più recente al più vecchio
+- Massimo 200 voci (le più vecchie vengono scartate)
+- Eliminabile senza impatto funzionale
+- Contiene solo nomi di file (basename) e conteggi — nessun testo del documento, nessuna entità in chiaro
+
+### Inizializzazione
+
+`initStatsManager()` viene chiamato in `src/main/index.ts` subito dopo `app.whenReady()`, prima di `registerIpcHandlers()`.
+
+---
+
+## 14. Build, CI/CD e distribuzione
 
 ### Script di build
 
@@ -1297,7 +1387,7 @@ Module._resolveFilename = function(request, parent, isMain, options) {
 
 ---
 
-## 14. Test
+## 15. Test
 
 File: `tests/` — Framework: Vitest
 
@@ -1316,7 +1406,7 @@ npm run typecheck     # Verifica tipi (senza eseguire)
 
 ---
 
-## 15. Problemi noti e soluzioni
+## 16. Problemi noti e soluzioni
 
 ### Windows 10 — crash onnxruntime
 

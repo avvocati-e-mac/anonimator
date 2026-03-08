@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { ShieldCheck, Upload, FileText, Settings, Moon, Sun, History, Trash2, Lock } from 'lucide-react'
+import { ShieldCheck, Upload, FileText, Settings, Moon, Sun, History, Trash2, Lock, BarChart2 } from 'lucide-react'
 import { useSessionStore } from '../store/sessionStore'
 import { useBatchOrchestrator } from '../hooks/useBatchOrchestrator'
 import type { BatchFileItem, DetectedEntity, EntityType } from '@shared/types'
@@ -17,11 +17,12 @@ const ACCEPTED_MIME: Record<string, string[]> = {
 
 interface DropZoneProps {
   onOpenSettings: () => void
+  onOpenStats: () => void
   isDark: boolean
   onToggleDark: () => void
 }
 
-export default function DropZone({ onOpenSettings, isDark, onToggleDark }: DropZoneProps): React.JSX.Element {
+export default function DropZone({ onOpenSettings, onOpenStats, isDark, onToggleDark }: DropZoneProps): React.JSX.Element {
   const { setFilePath, setScreen, setProgress, setAnalysisResult, setError } = useSessionStore()
   const { startBatchAnalysis, errorDialog, resolveErrorDialog } = useBatchOrchestrator()
   const [version, setVersion] = useState('')
@@ -195,6 +196,14 @@ export default function DropZone({ onOpenSettings, isDark, onToggleDark }: DropZ
             title={isDark ? 'Tema chiaro' : 'Tema scuro'}
           >
             {isDark ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+          <button
+            onClick={onOpenStats}
+            className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:text-slate-500 dark:hover:text-slate-300 dark:hover:bg-slate-800 transition-colors"
+            aria-label="Statistiche"
+            title="Statistiche"
+          >
+            <BarChart2 size={18} />
           </button>
           <button
             onClick={onOpenSettings}

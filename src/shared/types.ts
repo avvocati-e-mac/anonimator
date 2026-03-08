@@ -26,6 +26,8 @@ export const IPC_CHANNELS = {
   SESSION_HAS_SAVED: 'session:hasSaved',
   SESSION_DELETE: 'session:delete',
   SESSION_GET_PATH: 'session:getPath',
+  STATS_GET_ALL: 'stats:getAll',
+  STATS_CLEAR: 'stats:clear',
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
@@ -143,6 +145,73 @@ export interface EntityDictionaryFile {
     pseudonym: string
     type: EntityType
   }>
+}
+
+// ─── Statistiche di elaborazione ─────────────────────────────────────────────
+
+export interface PhaseStats {
+  durationMs: number
+}
+
+export interface LlmStats {
+  model: string
+  chunksProcessed: number
+  estimatedTokensSent: number
+  estimatedTokensReceived: number
+  durationMs: number
+  tokensPerSecond: number
+  parallelRequests: number
+  chunkSize: number
+}
+
+export interface ElaborationStats {
+  fileName: string
+  format: DocumentFormat
+  processedAt: string
+
+  pageCount: number
+  textLength: number
+  textLengthPerPage: number
+
+  entitiesFound: number
+  entitiesConfirmed: number
+  entitiesReplaced: number
+  entitiesByType: Partial<Record<EntityType, number>>
+
+  phases: {
+    parsing: PhaseStats
+    nerRegex: PhaseStats
+    nerBert: PhaseStats
+    llm?: PhaseStats
+    anonymization: PhaseStats
+    total: PhaseStats
+  }
+
+  msPerPage: number
+  entitiesPerSecond: number
+
+  llm?: LlmStats
+
+  nerUsed: boolean
+  llmUsed: boolean
+  warnings: string[]
+}
+
+// ─── Timing NER (restituito da analyzeText) ──────────────────────────────────
+
+export interface NerTiming {
+  regexMs: number
+  bertMs: number
+  llmMs: number
+  llm?: {
+    model: string
+    chunksProcessed: number
+    estimatedTokensSent: number
+    estimatedTokensReceived: number
+    tokensPerSecond: number
+    parallelRequests: number
+    chunkSize: number
+  }
 }
 
 export const DEFAULT_LLM_CONFIG: LlmConfig = {

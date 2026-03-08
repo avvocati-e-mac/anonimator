@@ -22,6 +22,7 @@ Module._resolveFilename = function (request: unknown, ...rest: unknown[]): strin
 import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { registerIpcHandlers } from './ipcHandlers'
+import { initStatsManager } from './services/statsManager'
 import log from 'electron-log'
 
 log.initialize()
@@ -63,6 +64,7 @@ function createWindow(): BrowserWindow {
 }
 
 app.whenReady().then(() => {
+  initStatsManager()
   registerIpcHandlers()
   createWindow()
 

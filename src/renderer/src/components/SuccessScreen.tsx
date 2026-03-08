@@ -1,9 +1,18 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { CheckCircle2, FolderOpen, RotateCcw, ShieldCheck } from 'lucide-react'
 import { useSessionStore } from '../store/sessionStore'
+import ElaborationSummary from './ElaborationSummary'
+import type { ElaborationStats } from '@shared/types'
 
 export default function SuccessScreen(): React.JSX.Element {
   const { successInfo, reset, setError } = useSessionStore()
+  const [latestStats, setLatestStats] = useState<ElaborationStats[]>([])
+
+  useEffect(() => {
+    window.electronAPI.getStats().then((all) => {
+      if (all.length > 0) setLatestStats([all[0]])
+    })
+  }, [])
 
   if (!successInfo) return <></>
 
@@ -51,6 +60,9 @@ export default function SuccessScreen(): React.JSX.Element {
             nella stessa cartella del documento originale
           </p>
         </div>
+
+        {/* Riepilogo statistiche elaborazione */}
+        <ElaborationSummary stats={latestStats} />
 
         {/* Azioni */}
         <div className="flex flex-col gap-3">

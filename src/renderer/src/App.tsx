@@ -9,10 +9,12 @@ import BatchReview from './components/BatchReview'
 import BatchSuccessScreen from './components/BatchSuccessScreen'
 import ErrorOverlay from './components/ErrorOverlay'
 import SettingsScreen from './components/SettingsScreen'
+import StatsScreen from './components/StatsScreen'
 
 export default function App(): React.JSX.Element {
   const { screen, setProgress } = useSessionStore()
   const [showSettings, setShowSettings] = useState(false)
+  const [showStats, setShowStats] = useState(false)
   const [isDark, setIsDark] = useState(() => localStorage.getItem('theme') === 'dark')
 
   function toggleDark(): void {
@@ -41,13 +43,14 @@ export default function App(): React.JSX.Element {
 
   return (
     <>
-      {screen === 'dropzone'         && <DropZone onOpenSettings={() => setShowSettings(true)} isDark={isDark} onToggleDark={toggleDark} />}
+      {screen === 'dropzone'         && <DropZone onOpenSettings={() => setShowSettings(true)} onOpenStats={() => setShowStats(true)} isDark={isDark} onToggleDark={toggleDark} />}
       {screen === 'processing'       && <ProcessingScreen />}
       {screen === 'review'           && <EntityReview />}
       {screen === 'success'          && <SuccessScreen />}
       {screen === 'batch-processing' && <BatchProcessingScreen />}
       {screen === 'batch-review'     && <BatchReview />}
       {screen === 'batch-success'    && <BatchSuccessScreen />}
+      {showStats && <StatsScreen onClose={() => setShowStats(false)} />}
       <ErrorOverlay />
     </>
   )

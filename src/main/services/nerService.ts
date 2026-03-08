@@ -9,7 +9,7 @@ type NerPipelineFn = (text: string) => Promise<TokenClassificationOutput | Token
 type TransformersPipelineFn = typeof import('@huggingface/transformers').pipeline
 import { join } from 'path'
 import log from 'electron-log'
-import type { DetectedEntity, EntityType, LlmConfig } from '@shared/types'
+import type { DetectedEntity, EntityType, LlmConfig, NerTiming } from '@shared/types'
 import { detectNamesWithLlm } from './llmService'
 import { sessionManager } from './sessionManager'
 
@@ -373,6 +373,7 @@ export interface NerAnalysisResult {
   nerUsed: boolean
   llmUsed: boolean
   warnings: string[]
+  timing: NerTiming
 }
 
 export async function analyzeText(
@@ -385,6 +386,13 @@ export async function analyzeText(
   let allEntities: DetectedEntity[] = []
   let nerUsed = false
   let llmUsed = false
+
+  // ─── Timing ────────────────────────────────────────────────────────────────
+  const regexStart = performance.now()
+  let regexMs = 0
+  let bertMs = 0
+  let llmMs = 0
+  let llmTimingDetail: NerTiming['llm'] | undefined
 
   // 0. Parser intestazione sentenze — regex strutturata ad alta precisione
   //    Cattura "COGNOME NOME - Presidente/Consigliere/... -" prima del BERT
@@ -451,7 +459,10 @@ export async function analyzeText(
     }
   }
 
+  regexMs = performance.now() - regexStart
+
   // 2. NER con modello BERT (se disponibile)
+  const bertStart = performance.now()
   const pipe = await getNerPipeline()
   if (pipe) {
     try {
@@ -501,7 +512,10 @@ export async function analyzeText(
     warnings.push('Modello NER non disponibile. Solo dati strutturati (CF, IBAN, ecc.) rilevati automaticamente.')
   }
 
+  bertMs = performance.now() - bertStart
+
   // 3. LLM locale (opzionale) — rileva nomi che il BERT può aver mancato
+  const llmStart = performance.now()
   if (llmConfig?.enabled && llmConfig.model) {
     try {
       // Splitta per pagine (separate da \n\n nel testo estratto da PDF/DOCX)
@@ -540,11 +554,28 @@ export async function analyzeText(
         }
       }
       llmUsed = true
+
+      // Calcola timing LLM
+      const totalTokensSent = chunks.reduce((sum, c) => sum + Math.ceil(c.length / 4), 0)
+      const elapsedLlm = performance.now() - llmStart
+      llmTimingDetail = {
+        model: llmConfig.model,
+        chunksProcessed: chunks.length,
+        estimatedTokensSent: totalTokensSent,
+        estimatedTokensReceived: 0, // non disponibile senza catturare le risposte raw
+        tokensPerSecond: 0,
+        parallelRequests: llmConfig.parallelRequests ?? 1,
+        chunkSize: llmConfig.chunkSize ?? 3000,
+      }
+      llmMs = elapsedLlm
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.warn('nerService: errore LLM, continuo senza', { error: message })
       warnings.push('LLM locale non raggiungibile. Usato solo BERT + regex.')
+      llmMs = performance.now() - llmStart
     }
+  } else {
+    llmMs = 0
   }
 
   // 3b. Deduplicazione varianti nome/cognome e testi che ne contengono altri
@@ -681,7 +712,14 @@ export async function analyzeText(
     warnings: warnings.length
   })
 
-  return { entities: allEntities, nerUsed, llmUsed, warnings }
+  const timing: NerTiming = {
+    regexMs: Math.round(regexMs),
+    bertMs: Math.round(bertMs),
+    llmMs: Math.round(llmMs),
+    llm: llmTimingDetail,
+  }
+
+  return { entities: allEntities, nerUsed, llmUsed, warnings, timing }
 }
 
 /** Divide il testo in chunk da ~maxChars caratteri, spezzando su newline */

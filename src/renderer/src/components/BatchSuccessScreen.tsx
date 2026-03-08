@@ -1,12 +1,22 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { CheckCircle2, XCircle, FolderOpen, RotateCcw, RefreshCw, ShieldCheck } from 'lucide-react'
 import { useSessionStore } from '../store/sessionStore'
+import ElaborationSummary from './ElaborationSummary'
+import type { ElaborationStats } from '@shared/types'
 
 export default function BatchSuccessScreen(): React.JSX.Element {
   const { batchResults, reset, resetBatchOnly, setError } = useSessionStore()
+  const [batchStats, setBatchStats] = useState<ElaborationStats[]>([])
 
   const succeeded = batchResults.filter((r) => !r.error)
   const totalReplaced = succeeded.reduce((sum, r) => sum + (r.entitiesReplaced ?? 0), 0)
+
+  useEffect(() => {
+    window.electronAPI.getStats().then((all) => {
+      // Prendi le ultime N stats corrispondenti ai file del batch
+      setBatchStats(all.slice(0, succeeded.length))
+    })
+  }, [succeeded.length])
 
   const firstSuccess = succeeded[0]
 
@@ -70,6 +80,9 @@ export default function BatchSuccessScreen(): React.JSX.Element {
             ))}
           </ul>
         </div>
+
+        {/* Riepilogo statistiche elaborazione */}
+        <ElaborationSummary stats={batchStats} />
 
         {/* Azioni */}
         <div className="flex flex-col gap-3">
