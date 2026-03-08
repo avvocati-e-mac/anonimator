@@ -9,11 +9,15 @@ import BatchReview from './components/BatchReview'
 import BatchSuccessScreen from './components/BatchSuccessScreen'
 import ErrorOverlay from './components/ErrorOverlay'
 import SettingsScreen from './components/SettingsScreen'
+import ModelDownloadScreen from './components/ModelDownloadScreen'
+
+type ModelCheck = 'checking' | 'ready' | 'need-download'
 
 export default function App(): React.JSX.Element {
   const { screen, setProgress } = useSessionStore()
   const [showSettings, setShowSettings] = useState(false)
   const [isDark, setIsDark] = useState(() => localStorage.getItem('theme') === 'dark')
+  const [modelCheck, setModelCheck] = useState<ModelCheck>('checking')
 
   function toggleDark(): void {
     const next = !isDark
@@ -27,6 +31,15 @@ export default function App(): React.JSX.Element {
     }
   }
 
+  // Al mount: verifica se i modelli NER e tessdata sono presenti
+  useEffect(() => {
+    window.electronAPI.getModelStatus().then((status: { exists: boolean }) => {
+      setModelCheck(status.exists ? 'ready' : 'need-download')
+    }).catch(() => {
+      setModelCheck('need-download')
+    })
+  }, [])
+
   // Registra il listener globale per i progressi una sola volta al mount
   useEffect(() => {
     const remove = window.electronAPI.onProgress(({ percent, message }) => {
@@ -34,6 +47,18 @@ export default function App(): React.JSX.Element {
     })
     return remove
   }, [setProgress])
+
+  // Schermata di download modelli (mostrata se mancano)
+  if (modelCheck === 'checking') {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center">
+        <p className="text-slate-500 dark:text-slate-400 text-sm">Verifica modelli...</p>
+      </div>
+    )
+  }
+  if (modelCheck === 'need-download') {
+    return <ModelDownloadScreen onComplete={() => setModelCheck('ready')} />
+  }
 
   if (showSettings) {
     return <SettingsScreen onBack={() => setShowSettings(false)} isDark={isDark} onToggleDark={toggleDark} />
