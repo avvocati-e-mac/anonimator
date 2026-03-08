@@ -2,7 +2,7 @@
 
 Documentazione tecnica per sviluppatori. Descrive architettura, flussi di dati, logica di anonimizzazione e componenti del software.
 
-**Versione documentata:** 1.2.0
+**Versione documentata:** 1.2.2
 **Stack:** Electron 40 + React 18 + TypeScript (strict mode)
 **Scopo:** Pseudonimizzazione locale di documenti legali italiani (PDF, DOCX, ODT, TXT, immagini). Nessuna connessione di rete durante l'elaborazione.
 
@@ -141,10 +141,13 @@ llm:getDefaultPrompt│ Ottiene prompt di sistema default (it/en)
 app:getVersion     │ Versione app da package.json
 shell:showInFolder │ Apre cartella nel file manager
 diag:collect       │ Raccoglie diagnostica installazione, copia negli appunti
+model:status       │ Verifica presenza modello NER (onnx/model_quantized.onnx)
+model:download     │ Avvia download modello da HuggingFace (~65 MB, 4 file)
 
 MAIN → RENDERER (send/on)
 ─────────────────────────────────────────────────────────
-doc:progress       │ Aggiornamento progresso (stage, percent, message)
+doc:progress              │ Aggiornamento progresso (stage, percent, message)
+model:download:progress   │ Progresso download modello (file, percent, done, error?)
 ```
 
 ### Schema di validazione (esempio)
@@ -1095,8 +1098,9 @@ Configurazione dell'integrazione LLM locale e strumenti di supporto. Sezioni:
 4. Selezione modello (lista suggerita o dropdown dal server)
 5. Impostazioni avanzate (collassabili): maxTokens, timeout, parallelRequests, lingua prompt, chunkSize, prompt personalizzato
 6. Test connessione → `testLlm()`
-7. **Sezione Diagnostica**: pulsante "Copia diagnostica" → `collectDiagnostics()` IPC → raccoglie versione/platform/arch, verifica modello NER + ORT binding + detect-libc, prende ultime 100 righe del log, copia tutto negli appunti. Feedback visivo "Copiato!" per 3 secondi.
-8. Salva/Annulla
+7. **Sezione Modello NER**: verifica al mount se `onnx/model_quantized.onnx` è presente (`getModelStatus()` IPC). Se presente: badge verde. Se assente: badge arancione + pulsante "Scarica modello (~65 MB)" → `downloadModel()` IPC → progress bar con file corrente e percentuale globale. Al termine: badge verde + messaggio "Riavvia l'app". La pipeline NER viene resettata automaticamente (`resetNerPipeline()`) senza riavviare il processo.
+8. **Sezione Diagnostica**: pulsante "Copia diagnostica" → `collectDiagnostics()` IPC → raccoglie versione/platform/arch, verifica modello NER + ORT binding + detect-libc, prende ultime 100 righe del log, copia tutto negli appunti. Feedback visivo "Copiato!" per 3 secondi.
+9. Salva/Annulla
 
 #### `ErrorOverlay.tsx`
 
@@ -1299,27 +1303,33 @@ asarUnpack: [
   'node_modules/sharp/**/*',
   'node_modules/@img/**/*',
   'node_modules/tesseract.js/**/*',
-  'node_modules/tesseract.js-core/**/*'
+  'node_modules/tesseract.js-core/**/*',
+  'node_modules/semver/**/*'                 // richiesto da sharp/libvips.js su ARM64
 ]
 ```
 
 Il pattern `onnxruntime-node/**` (senza `/*` finale) è intenzionale: su Windows 10, `binding.js` deve essere fisicamente nella cartella `asar.unpacked` perché il sistema non fa il fallover automatico da asar per i file `.js` (solo per `.node`).
 
-### Patch `Module._resolveFilename` (Windows)
+`semver` è aggiunto ad `asarUnpack` perché `sharp/libvips.js` lo importa su macOS ARM64. Senza questo, il modulo veniva cercato dentro asar ma non trovato, disabilitando il NER BERT.
 
-In `src/main/index.ts`, una patch al sistema di risoluzione moduli di Node.js reindirizza i file `.node` e i moduli `onnxruntime` da `app.asar` a `app.asar.unpacked`:
+### Patch `Module._resolveFilename` (Windows + macOS ARM64)
+
+In `src/main/index.ts`, una patch al sistema di risoluzione moduli di Node.js reindirizza i file `.node` e i moduli `onnxruntime`/`sharp`/`@img` da `app.asar` a `app.asar.unpacked`:
 
 ```typescript
-const originalResolveFilename = Module._resolveFilename;
-Module._resolveFilename = function(request, parent, isMain, options) {
-  const resolved = originalResolveFilename.call(this, request, parent, isMain, options);
-  if (resolved.includes('app.asar') &&
-      (resolved.endsWith('.node') || resolved.includes('onnxruntime'))) {
-    return resolved.replace('app.asar', 'app.asar.unpacked');
+Module._resolveFilename = function(request, ...rest) {
+  const resolved = _origResolve(request, ...rest);
+  if (resolved.includes('app.asar') && !resolved.includes('app.asar.unpacked')) {
+    if (resolved.endsWith('.node') || resolved.includes('onnxruntime')
+        || resolved.includes('/sharp') || resolved.includes('@img')) {
+      return resolved.replace('app.asar', 'app.asar.unpacked');
+    }
   }
   return resolved;
 };
 ```
+
+**Nota:** `semver` non è nella patch — è estratto correttamente tramite `asarUnpack`. Aggiungere `/semver` alla patch sarebbe sbagliato: reindirizzherebbe verso un path inesistente se semver non è in `asar.unpacked`.
 
 ---
 
