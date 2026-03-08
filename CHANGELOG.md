@@ -5,6 +5,14 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.1.9] - 2026-03-08
+
+### Correzioni
+- **Fix CI — rimosso `@electron/rebuild` da tutti i job**: `onnxruntime-node` usa binari NAPI pre-built per tutte le piattaforme (darwin/arm64, darwin/x64, linux/x64, win32/x64). Il rebuild li sovrascriveva con quelli sbagliati, lasciando nel pacchetto solo il binding della piattaforma del runner CI (es. `linux/x64` nel DMG macOS). Rimosso il rebuild — i binari multi-piattaforma ora vengono inclusi correttamente dall'`asarUnpack`.
+- **Fix smoke test CI — verifica binding piattaforma-specifica**: lo smoke test ora cerca il binding con il path esatto della piattaforma target (`darwin/arm64`, `darwin/x64`, `linux/x64`, `win32/x64`) invece del primo trovato. Questo avrebbe rilevato il problema del rebuild già alla v1.1.7.
+
+---
+
 ## [1.1.8] - 2026-03-08
 
 ### Correzioni

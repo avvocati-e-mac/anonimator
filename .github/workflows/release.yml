@@ -19,9 +19,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Rebuild native modules for Electron
-        run: npx @electron/rebuild --force
-
       - name: Download NER model and tessdata
         run: bash scripts/download-models.sh
 
@@ -39,8 +36,8 @@ jobs:
           MODEL=$(find dist/win-unpacked -name "model_quantized.onnx" 2>/dev/null | head -1)
           [ -z "$MODEL" ] && echo "ERROR: model_quantized.onnx non trovato" >&2 && exit 1
           echo "OK: modello in $MODEL"
-          BINDING=$(find dist/win-unpacked -name "onnxruntime_binding.node" 2>/dev/null | head -1)
-          [ -z "$BINDING" ] && echo "ERROR: onnxruntime_binding.node non trovato" >&2 && exit 1
+          BINDING=$(find dist/win-unpacked -path "*/win32/x64/onnxruntime_binding.node" 2>/dev/null | head -1)
+          [ -z "$BINDING" ] && echo "ERROR: onnxruntime_binding.node win32/x64 non trovato" >&2 && exit 1
           echo "OK: binding in $BINDING"
 
       - name: Upload artifact
@@ -66,9 +63,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Rebuild native modules for Electron
-        run: npx @electron/rebuild --force
-
       - name: Download NER model and tessdata
         run: bash scripts/download-models.sh
 
@@ -85,8 +79,8 @@ jobs:
           MODEL=$(find dist/mac-arm64 -name "model_quantized.onnx" 2>/dev/null | head -1)
           [ -z "$MODEL" ] && echo "ERROR: model_quantized.onnx non trovato" >&2 && exit 1
           echo "OK: modello in $MODEL"
-          BINDING=$(find dist/mac-arm64 -name "onnxruntime_binding.node" 2>/dev/null | head -1)
-          [ -z "$BINDING" ] && echo "ERROR: onnxruntime_binding.node non trovato" >&2 && exit 1
+          BINDING=$(find dist/mac-arm64 -path "*/darwin/arm64/onnxruntime_binding.node" 2>/dev/null | head -1)
+          [ -z "$BINDING" ] && echo "ERROR: onnxruntime_binding.node darwin/arm64 non trovato" >&2 && exit 1
           echo "OK: binding in $BINDING"
 
       - name: Upload artifact
@@ -110,9 +104,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Rebuild native modules for Electron
-        run: npx @electron/rebuild --force
-
       - name: Install sharp x64 binaries for cross-compilation
         run: npm install @img/sharp-darwin-x64 @img/sharp-libvips-darwin-x64 --force --no-save
 
@@ -132,8 +123,8 @@ jobs:
           MODEL=$(find dist/mac -name "model_quantized.onnx" 2>/dev/null | head -1)
           [ -z "$MODEL" ] && echo "ERROR: model_quantized.onnx non trovato" >&2 && exit 1
           echo "OK: modello in $MODEL"
-          BINDING=$(find dist/mac -name "onnxruntime_binding.node" 2>/dev/null | head -1)
-          [ -z "$BINDING" ] && echo "ERROR: onnxruntime_binding.node non trovato" >&2 && exit 1
+          BINDING=$(find dist/mac -path "*/darwin/x64/onnxruntime_binding.node" 2>/dev/null | head -1)
+          [ -z "$BINDING" ] && echo "ERROR: onnxruntime_binding.node darwin/x64 non trovato" >&2 && exit 1
           echo "OK: binding in $BINDING"
 
       - name: Upload artifact
@@ -157,9 +148,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Rebuild native modules for Electron
-        run: npx @electron/rebuild --force
-
       - name: Download NER model and tessdata
         run: bash scripts/download-models.sh
 
@@ -174,8 +162,8 @@ jobs:
           MODEL=$(find dist/linux-unpacked -name "model_quantized.onnx" 2>/dev/null | head -1)
           [ -z "$MODEL" ] && echo "ERROR: model_quantized.onnx non trovato" >&2 && exit 1
           echo "OK: modello in $MODEL"
-          BINDING=$(find dist/linux-unpacked -name "onnxruntime_binding.node" 2>/dev/null | head -1)
-          [ -z "$BINDING" ] && echo "ERROR: onnxruntime_binding.node non trovato" >&2 && exit 1
+          BINDING=$(find dist/linux-unpacked -path "*/linux/x64/onnxruntime_binding.node" 2>/dev/null | head -1)
+          [ -z "$BINDING" ] && echo "ERROR: onnxruntime_binding.node linux/x64 non trovato" >&2 && exit 1
           echo "OK: binding in $BINDING"
 
       - name: Upload artifact

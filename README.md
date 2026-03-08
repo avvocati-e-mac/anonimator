@@ -4,7 +4,7 @@ App desktop per la **pseudoanonimizzazione offline** di documenti legali italian
 
 Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a server esterni. Tutto il processing avviene localmente sul tuo Mac, PC Windows o Linux.
 
-**Versione attuale: 1.1.8**
+**Versione attuale: 1.1.9**
 
 > **L'app è stata creata in vibe coding e non sono un esperto programmatore — procedi con cautela nell'utilizzo.**
 
@@ -35,10 +35,10 @@ Scarica il file per il tuo sistema dalla pagina [Releases](https://github.com/av
 
 | File | Sistema |
 |---|---|
-| `Anonimator-1.1.8-arm64.dmg` | Mac Apple Silicon (M1/M2/M3/M4) |
-| `Anonimator-1.1.8-x64.dmg` | Mac Intel |
-| `Anonimator-1.1.8-windows-x64-setup.exe` | Windows 10/11 a 64 bit |
-| `Anonimator-1.1.8-linux-x64.AppImage` | Linux a 64 bit |
+| `Anonimator-1.1.9-arm64.dmg` | Mac Apple Silicon (M1/M2/M3/M4) |
+| `Anonimator-1.1.9-x64.dmg` | Mac Intel |
+| `Anonimator-1.1.9-windows-x64-setup.exe` | Windows 10/11 a 64 bit |
+| `Anonimator-1.1.9-linux-x64.AppImage` | Linux a 64 bit |
 
 ### macOS — passaggi obbligatori
 
@@ -62,7 +62,7 @@ Dopo questi passaggi l'app si apre normalmente.
 
 ### Windows — passaggi obbligatori
 
-Esegui il file `Anonimator-1.1.8-windows-x64-setup.exe` per installare l'app.
+Esegui il file `Anonimator-1.1.9-windows-x64-setup.exe` per installare l'app.
 
 Poiché l'app non è firmata con un certificato Microsoft, Windows Defender SmartScreen mostrerà un avviso. Per procedere:
 
@@ -76,8 +76,8 @@ L'installer crea un collegamento nel menu Start e sul Desktop. L'app si disinsta
 Scarica il file `.AppImage`, rendilo eseguibile e avvialo:
 
 ```bash
-chmod +x Anonimator-1.1.8-linux-x64.AppImage
-./Anonimator-1.1.8-linux-x64.AppImage
+chmod +x Anonimator-1.1.9-linux-x64.AppImage
+./Anonimator-1.1.9-linux-x64.AppImage
 ```
 
 > Su alcune distribuzioni potrebbe essere necessario installare `libfuse2` (`sudo apt install libfuse2` su Ubuntu/Debian).
