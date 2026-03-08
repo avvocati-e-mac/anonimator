@@ -282,14 +282,16 @@ export function registerIpcHandlers(): void {
         originalText: z.string(),
         pseudonym: z.string(),
         type: z.string(),
-      }))
+      })),
+      defaultFileName: z.string().optional(),
     })
     const parsed = schema.safeParse(payload)
     if (!parsed.success) return { error: 'Dati non validi.' }
 
+    const baseName = parsed.data.defaultFileName ?? 'dizionario-entita'
     const win = BrowserWindow.getAllWindows()[0]
     const result = await dialog.showSaveDialog(win, {
-      defaultPath: 'dizionario-entita.json',
+      defaultPath: `${baseName}.json`,
       filters: [{ name: 'JSON', extensions: ['json'] }],
     })
     if (result.canceled || !result.filePath) return { cancelled: true }

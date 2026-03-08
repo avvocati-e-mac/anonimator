@@ -5,6 +5,13 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.1.6] - 2026-03-08
+
+### Correzioni
+- **Fix workflow importa dizionario → trascina documento**: quando si importa un dizionario JSON (o si ripristina una sessione), in `EntityReview` appare ora una mini drop zone sopra la lista entità. L'utente può trascinare (o selezionare) il documento da anonimizzare senza uscire dalla schermata e senza perdere le entità importate. Le entità rilevate dall'analisi NER vengono mergeate con quelle importate, e il pulsante "Anonimizza" si abilita automaticamente.
+
+---
+
 ## [1.1.5] - 2026-03-08
 
 ### Novità

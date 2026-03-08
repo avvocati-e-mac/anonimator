@@ -1,13 +1,23 @@
-import React, { useState } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import {
   ShieldCheck, Check,
   AlertTriangle, ChevronDown, ChevronUp,
   Plus, Download, Upload
 } from 'lucide-react'
+import { useDropzone } from 'react-dropzone'
 import { useSessionStore } from '../store/sessionStore'
 import { ENTITY_CONFIG } from '../utils/entityConfig'
 import AddEntityModal from './AddEntityModal'
 import type { DetectedEntity, EntityType } from '@shared/types'
+
+const ACCEPTED_MIME: Record<string, string[]> = {
+  'application/pdf': ['.pdf'],
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+  'application/vnd.oasis.opendocument.text': ['.odt'],
+  'text/plain': ['.txt'],
+  'image/png': ['.png'],
+  'image/jpeg': ['.jpg', '.jpeg'],
+}
 
 function EntityRow({ entity }: { entity: DetectedEntity }): React.JSX.Element {
   const { toggleEntityConfirmed, updateEntityPseudonym } = useSessionStore()
@@ -104,18 +114,73 @@ export default function EntityReview(): React.JSX.Element {
   const {
     entities, analysisResult, filePath,
     setScreen, setProgress, setSuccessInfo, setError, reset,
-    addEntity, importEntitiesToSingle,
+    addEntity, importEntitiesToSingle, setFilePathAndMerge,
   } = useSessionStore()
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showWarnings, setShowWarnings] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
   const [isAddingEntity, setIsAddingEntity] = useState(false)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
 
   const confirmedCount = entities.filter((e) => e.confirmed).length
   const warnings = analysisResult?.warnings ?? []
 
   const isRestoredSession = filePath === null
+
+  // ── Mini drop zone per sessione ripristinata ──────────────────────────────
+  const nativeDropPathsRef = useRef<string[]>([])
+
+  useEffect(() => {
+    if (!isRestoredSession) return
+    const handleNativeDrop = (e: DragEvent): void => {
+      const files = e.dataTransfer?.files
+      if (files && files.length > 0) {
+        nativeDropPathsRef.current = Array.from(files)
+          .map((f) => window.electronAPI.getPathForFile(f))
+          .filter(Boolean)
+      }
+    }
+    window.addEventListener('drop', handleNativeDrop, true)
+    return () => window.removeEventListener('drop', handleNativeDrop, true)
+  }, [isRestoredSession])
+
+  const onDropDocument = useCallback(async (accepted: File[]): Promise<void> => {
+    if (accepted.length === 0) return
+    const nativePaths = nativeDropPathsRef.current
+    nativeDropPathsRef.current = []
+    const resolvedPath = nativePaths[0] || window.electronAPI.getPathForFile(accepted[0]) || ''
+    if (!resolvedPath) return
+
+    setIsAnalyzing(true)
+    setProgress(0, 'Analisi documento...')
+
+    const removeListener = window.electronAPI.onProgress(({ percent, message }) => {
+      setProgress(percent, message)
+    })
+    try {
+      const result = await window.electronAPI.processDocument(resolvedPath)
+      if ('error' in result && result.error) {
+        setError(String(result.error))
+        return
+      }
+      const analysisResult = result as import('@shared/types').DocumentAnalysisResult
+      // Merge entità rilevate con quelle già presenti e setta filePath
+      setFilePathAndMerge(resolvedPath, analysisResult.entities)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Errore durante l'analisi.")
+    } finally {
+      removeListener()
+      setIsAnalyzing(false)
+    }
+  }, [setProgress, setError, setFilePathAndMerge])
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop: onDropDocument,
+    accept: ACCEPTED_MIME,
+    multiple: false,
+    disabled: !isRestoredSession || isAnalyzing,
+  })
 
   async function handleAnonymize(): Promise<void> {
     if (!filePath) return
@@ -175,8 +240,11 @@ export default function EntityReview(): React.JSX.Element {
   }
 
   async function handleExport(): Promise<void> {
+    const rawName = analysisResult?.fileName ?? filePath?.split('/').pop() ?? ''
+    const baseName = rawName.replace(/\.[^.]+$/, '') || 'dizionario-entita'
     await window.electronAPI.exportEntities(
-      entities.map((e) => ({ originalText: e.originalText, pseudonym: e.pseudonym, type: e.type }))
+      entities.map((e) => ({ originalText: e.originalText, pseudonym: e.pseudonym, type: e.type })),
+      baseName,
     )
   }
 
@@ -215,11 +283,28 @@ export default function EntityReview(): React.JSX.Element {
       <main className="flex-1 overflow-y-auto px-6 py-5">
         <div className="max-w-2xl mx-auto space-y-4">
 
-          {/* Avviso sessione ripristinata */}
-          {isRestoredSession && (
-            <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg px-4 py-3">
-              <p className="text-sm text-blue-700 dark:text-blue-300">
-                Sessione ripristinata — trascina un documento per anonimizzare.
+          {/* Mini drop zone — visibile solo quando sessione ripristinata o analisi in corso */}
+          {(isRestoredSession || isAnalyzing) && (
+            <div
+              {...getRootProps()}
+              className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center gap-2 cursor-pointer transition-colors
+                ${isDragActive
+                  ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/30'
+                  : 'border-slate-300 bg-white hover:border-blue-400 dark:border-slate-600 dark:bg-slate-800 dark:hover:border-blue-500'}
+                ${isAnalyzing ? 'opacity-60 pointer-events-none' : ''}
+              `}
+            >
+              <input {...getInputProps()} />
+              <Upload size={28} className={isDragActive ? 'text-blue-500' : 'text-slate-400'} />
+              <p className="text-sm font-medium text-center text-slate-700 dark:text-slate-300">
+                {isAnalyzing
+                  ? 'Analisi in corso...'
+                  : isDragActive
+                    ? 'Rilascia il documento qui'
+                    : 'Trascina il documento da anonimizzare, oppure clicca per selezionarlo'}
+              </p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">
+                PDF · DOCX · ODT · TXT · PNG · JPG
               </p>
             </div>
           )}

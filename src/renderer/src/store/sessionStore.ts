@@ -66,6 +66,7 @@ interface SessionState {
   addMergedEntity: (entity: MergedEntity) => void
   importEntitiesToSingle: (imported: DetectedEntity[]) => void
   importEntitiesToBatch: (imported: MergedEntity[]) => void
+  setFilePathAndMerge: (filePath: string, newEntities: DetectedEntity[]) => void
 
   // ── Reset ─────────────────────────────────────────────────────────────────
   reset: () => void
@@ -172,6 +173,16 @@ export const useSessionStore = create<SessionState>((set) => ({
         }
       }
       return { mergedEntities: Array.from(map.values()) }
+    }),
+
+  setFilePathAndMerge: (filePath, newEntities) =>
+    set((state) => {
+      const map = new Map(state.entities.map((e) => [e.originalText.toLowerCase(), e]))
+      for (const e of newEntities) {
+        const key = e.originalText.toLowerCase()
+        if (!map.has(key)) map.set(key, e)
+      }
+      return { filePath, entities: Array.from(map.values()) }
     }),
 
   // ── Reset ─────────────────────────────────────────────────────────────────

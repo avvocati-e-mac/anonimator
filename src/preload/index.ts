@@ -60,8 +60,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(IPC_CHANNELS.ENTITY_ADD, { originalText, type }),
 
   // Entità: esporta lista su file JSON
-  exportEntities: (entities: Array<{ originalText: string; pseudonym: string; type: string }>) =>
-    ipcRenderer.invoke(IPC_CHANNELS.ENTITY_EXPORT, { entities }),
+  exportEntities: (entities: Array<{ originalText: string; pseudonym: string; type: string }>, defaultFileName?: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.ENTITY_EXPORT, { entities, defaultFileName }),
 
   // Entità: importa da file JSON
   importEntities: () =>

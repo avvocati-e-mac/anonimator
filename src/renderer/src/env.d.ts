@@ -20,7 +20,7 @@ interface ElectronAPI {
   getDefaultPrompt: (lang: 'it' | 'en') => Promise<string>
   getAppVersion: () => Promise<string>
   addEntity: (originalText: string, type: string) => Promise<{ pseudonym: string; id: string } | { error: string }>
-  exportEntities: (entities: Array<{ originalText: string; pseudonym: string; type: string }>) => Promise<{ saved: true } | { cancelled: true } | { error: string }>
+  exportEntities: (entities: Array<{ originalText: string; pseudonym: string; type: string }>, defaultFileName?: string) => Promise<{ saved: true } | { cancelled: true } | { error: string }>
   importEntities: () => Promise<{ imported: number; entries: Array<{ originalText: string; pseudonym: string; type: string; id: string }> } | { cancelled: true } | { error: string }>
   saveSession: () => Promise<{ status: string } | { error: string }>
   loadSession: () => Promise<{ entities: DetectedEntity[] } | null>

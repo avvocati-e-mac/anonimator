@@ -1044,9 +1044,14 @@ L'app React è strutturata come una macchina a stati con 7 schermate, gestite da
   - Pseudonimo editabile (click → input inline, Enter/blur per confermare, Esc per annullare)
   - Conteggio occorrenze (×N se > 1)
 - Sezione warning collassabile (se il parser ha generato avvertimenti)
-- Avviso "Sessione ripristinata" (banner blu) se `filePath === null`
+- **Mini drop zone** (visibile solo quando `filePath === null`, cioè sessione ripristinata o dizionario importato da DropZone):
+  - Appare sopra la lista entità con il testo "Trascina il documento da anonimizzare, oppure clicca per selezionarlo"
+  - Supporta drag & drop nativo Electron tramite `nativeDropPathsRef` (stesso pattern di `DropZone.tsx`)
+  - Al drop: avvia `processDocument()`, mostra "Analisi in corso...", mergia le entità NER rilevate con quelle importate (`setFilePathAndMerge`)
+  - La mini drop zone scompare automaticamente quando `filePath` viene settato
+  - Il pulsante "Anonimizza" si abilita automaticamente dopo l'analisi
 - Footer fisso: "Annulla" + "Aggiungi" + "Esporta" + "Importa" + "Anonimizza N entità"
-  - "Anonimizza" disabilitato se nessuna entità confermata **o** se sessione ripristinata senza documento
+  - "Anonimizza" disabilitato se nessuna entità confermata **o** se `filePath === null` (sessione senza documento)
   - "Aggiungi": apre `AddEntityModal` → `entity:add` IPC → pseudonimo generato automaticamente
   - "Esporta": `entity:export` IPC → dialog salvataggio → file `dizionario-entita.json`
   - "Importa": `entity:import` IPC → dialog apertura → merge nel dizionario (importato vince)
@@ -1143,6 +1148,7 @@ Store globale con Zustand (nessun Provider React necessario). Tutte le azioni so
 | `addMergedEntity(entity)` | Aggiunge un'entità MergedEntity alla lista batch |
 | `importEntitiesToSingle(imported)` | Merge lista importata in `entities` (importato vince) |
 | `importEntitiesToBatch(imported)` | Merge lista importata in `mergedEntities` (importato vince) |
+| `setFilePathAndMerge(filePath, newEntities)` | Setta `filePath` e mergia `newEntities` in `entities` (esistenti vince su nuove) — usato dalla mini drop zone in EntityReview |
 | `reset()` | Ripristina tutto allo stato iniziale |
 | `resetBatchOnly()` | Torna a dropzone, mantiene dizionario nel Main |
 
