@@ -1,9 +1,10 @@
-// ── Fix asar unpack per moduli nativi su Windows ──────────────────────────────
+// ── Fix asar unpack per moduli nativi su Windows/macOS ARM64 ──────────────────
 // Su Windows, Node non riesce a dlopen() file .node dall'interno di un asar.
 // electron-builder estrae i moduli in app.asar.unpacked/ ma il require di
 // onnxruntime-node (e altri) usa __dirname che punta ancora dentro app.asar.
 // Questa patch intercetta Module._resolveFilename e reindirizza i path dei
 // moduli nativi verso app.asar.unpacked prima che vengano caricati.
+// Copre anche semver (richiesto da sharp/libvips.js su macOS ARM64).
 import { createRequire } from 'module'
 const _require = createRequire(import.meta.url)
 const Module = _require('module') as { _resolveFilename: (...args: unknown[]) => string }
@@ -11,7 +12,7 @@ const _origResolve = Module._resolveFilename.bind(Module)
 Module._resolveFilename = function (request: unknown, ...rest: unknown[]): string {
   const resolved: string = _origResolve(request, ...rest)
   if (resolved.includes('app.asar') && !resolved.includes('app.asar.unpacked')) {
-    if (resolved.endsWith('.node') || resolved.includes('onnxruntime') || resolved.includes('/sharp') || resolved.includes('@img')) {
+    if (resolved.endsWith('.node') || resolved.includes('onnxruntime') || resolved.includes('/sharp') || resolved.includes('@img') || resolved.includes('/semver')) {
       return resolved.replace('app.asar', 'app.asar.unpacked')
     }
   }

@@ -5,6 +5,13 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.2.1] - 2026-03-08
+
+### Fix
+- **Fix NER ARM64 — semver non trovato da sharp**: la patch `Module._resolveFilename` ora reindirizza anche il modulo `semver` verso `app.asar.unpacked`, risolvendo l'errore `Cannot find module 'semver/functions/coerce'` che disabilitava il NER BERT su macOS ARM64.
+
+---
+
 ## [1.2.0] - 2026-03-08
 
 ### Novità
