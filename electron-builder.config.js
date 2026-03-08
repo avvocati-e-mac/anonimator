@@ -138,6 +138,7 @@ module.exports = {
     'node_modules/sharp/**/*',
     'node_modules/@img/**/*',
     'node_modules/tesseract.js/**/*',
-    'node_modules/tesseract.js-core/**/*'
+    'node_modules/tesseract.js-core/**/*',
+    'node_modules/detect-libc/**/*'
   ]
 }

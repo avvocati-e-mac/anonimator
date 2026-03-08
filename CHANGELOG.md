@@ -5,6 +5,13 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.1.8] - 2026-03-08
+
+### Correzioni
+- **Fix NER macOS — `detect-libc` mancante dall'asar**: `sharp` (importato da `@huggingface/transformers`) non trovava il modulo `detect-libc` perché non era incluso in `asarUnpack`. Aggiunto alla lista dei moduli estratti → NER BERT ora si carica correttamente.
+
+---
+
 ## [1.1.7] - 2026-03-08
 
 ### Correzioni
