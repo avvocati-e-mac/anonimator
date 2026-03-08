@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import type { AnonymizeRequest, SaveResult, DocumentAnalysisResult, LlmConfig, BatchAnonymizeRequest, BatchResultItem, DetectedEntity, EntityType } from '@shared/types'
+import type { AnonymizeRequest, SaveResult, DocumentAnalysisResult, LlmConfig, BatchAnonymizeRequest, BatchResultItem, DetectedEntity, EntityType, ModelStatus, ModelDownloadProgress } from '@shared/types'
 
 // Tipizzazione dell'API esposta dal preload via contextBridge
 interface ElectronAPI {
@@ -28,6 +28,9 @@ interface ElectronAPI {
   deleteSession: () => Promise<{ status: string } | { error: string }>
   getSessionPath: () => Promise<{ path: string }>
   collectDiagnostics: () => Promise<string>
+  getModelStatus: () => Promise<ModelStatus>
+  downloadModel: () => Promise<{ ok: boolean; error?: string }>
+  onModelDownloadProgress: (cb: (data: ModelDownloadProgress) => void) => () => void
 }
 
 declare global {

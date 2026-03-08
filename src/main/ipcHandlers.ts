@@ -2,11 +2,12 @@ import { ipcMain, BrowserWindow, shell, app, dialog, clipboard } from 'electron'
 import { z } from 'zod'
 import log from 'electron-log'
 import { join } from 'path'
-import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, createWriteStream } from 'fs'
+import https from 'https'
 import crypto from 'crypto'
 import { IPC_CHANNELS } from '@shared/types'
 import type { EntityDictionaryFile } from '@shared/types'
-import { analyzeText, getModelPath } from './services/nerService'
+import { analyzeText, getModelPath, resetNerPipeline } from './services/nerService'
 import { sessionManager } from './services/sessionManager'
 import { settingsManager } from './services/settingsManager'
 import { testLlmConnection, listLlmModels, SYSTEM_PROMPT_IT, SYSTEM_PROMPT_EN } from './services/llmService'
@@ -430,6 +431,88 @@ export function registerIpcHandlers(): void {
     clipboard.writeText(diagText)
     log.info('Diagnostica raccolta e copiata negli appunti')
     return diagText
+  })
+
+  // Handler: verifica presenza modello NER
+  ipcMain.handle(IPC_CHANNELS.MODEL_STATUS, () => {
+    const modelPath = getModelPath()
+    const exists = existsSync(join(modelPath, 'onnx', 'model_quantized.onnx'))
+    return { exists, modelPath }
+  })
+
+  // Handler: scarica il modello NER da HuggingFace
+  ipcMain.handle(IPC_CHANNELS.MODEL_DOWNLOAD, async (_event) => {
+    const modelPath = getModelPath()
+    const BASE_URL = 'https://huggingface.co/Laibniz/italian-ner-pii-browser-distilbert/resolve/main'
+    const FILES = [
+      { remote: 'onnx/model_quantized.onnx', local: join(modelPath, 'onnx', 'model_quantized.onnx') },
+      { remote: 'tokenizer.json',            local: join(modelPath, 'tokenizer.json') },
+      { remote: 'tokenizer_config.json',     local: join(modelPath, 'tokenizer_config.json') },
+      { remote: 'config.json',               local: join(modelPath, 'config.json') },
+    ]
+
+    function sendProgress(file: string, percent: number, done: boolean, error?: string): void {
+      const win = BrowserWindow.getAllWindows()[0]
+      if (win) {
+        win.webContents.send(IPC_CHANNELS.MODEL_DOWNLOAD_PROGRESS, { file, percent, done, error })
+      }
+    }
+
+    function downloadFile(url: string, destPath: string, onPercent: (p: number) => void): Promise<void> {
+      return new Promise((resolve, reject) => {
+        mkdirSync(require('path').dirname(destPath), { recursive: true })
+        const file = createWriteStream(destPath)
+        const doGet = (targetUrl: string): void => {
+          https.get(targetUrl, (res) => {
+            // Segui redirect (302/301)
+            if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location) {
+              res.resume()
+              doGet(res.headers.location)
+              return
+            }
+            if (res.statusCode !== 200) {
+              reject(new Error(`HTTP ${res.statusCode ?? 'unknown'} per ${targetUrl}`))
+              return
+            }
+            const total = parseInt(res.headers['content-length'] ?? '0', 10)
+            let received = 0
+            res.on('data', (chunk: Buffer) => {
+              received += chunk.length
+              if (total > 0) onPercent(Math.round((received / total) * 100))
+            })
+            res.pipe(file)
+            res.on('error', reject)
+            file.on('finish', () => file.close(() => resolve()))
+            file.on('error', reject)
+          }).on('error', reject)
+        }
+        doGet(url)
+      })
+    }
+
+    try {
+      for (let i = 0; i < FILES.length; i++) {
+        const { remote, local } = FILES[i]
+        const fileName = remote.split('/').pop() ?? remote
+        const basePercent = Math.round((i / FILES.length) * 100)
+        const nextPercent = Math.round(((i + 1) / FILES.length) * 100)
+        sendProgress(fileName, basePercent, false)
+        await downloadFile(`${BASE_URL}/${remote}`, local, (filePercent) => {
+          const global = basePercent + Math.round((filePercent / 100) * (nextPercent - basePercent))
+          sendProgress(fileName, global, false)
+        })
+        log.info('Modello NER — file scaricato', { file: remote })
+      }
+      resetNerPipeline()
+      sendProgress('', 100, true)
+      log.info('Modello NER scaricato e pipeline resettata', { modelPath })
+      return { ok: true }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.error('Errore download modello NER', { error: message })
+      sendProgress('', 0, true, message)
+      return { ok: false, error: message }
+    }
   })
 
   log.info('IPC handlers registrati')

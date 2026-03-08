@@ -2,9 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react'
 import {
   ShieldCheck, ArrowLeft, Cpu, CheckCircle2, XCircle,
   Loader2, RefreshCw, ChevronDown, Moon, Sun, Lock, Unlock, RotateCcw,
-  ClipboardCopy
+  ClipboardCopy, Download, AlertTriangle
 } from 'lucide-react'
-import type { LlmConfig } from '@shared/types'
+import type { LlmConfig, ModelStatus, ModelDownloadProgress } from '@shared/types'
 import { DEFAULT_LLM_CONFIG } from '@shared/types'
 
 interface SettingsScreenProps {
@@ -61,6 +61,10 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
   const [testMessage, setTestMessage] = useState('')
   const [saving, setSaving] = useState(false)
   const [diagState, setDiagState] = useState<'idle' | 'loading' | 'copied'>('idle')
+  const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null)
+  const [modelDownloading, setModelDownloading] = useState(false)
+  const [modelProgress, setModelProgress] = useState<ModelDownloadProgress | null>(null)
+  const [modelDone, setModelDone] = useState(false)
   const [loadingModels, setLoadingModels] = useState(false)
   const [defaultPromptText, setDefaultPromptText] = useState('')
   const [useCustomModel, setUseCustomModel] = useState(false)
@@ -78,6 +82,7 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
       const isSuggested = SUGGESTED_MODELS.some((m) => m.id === saved.model)
       setUseCustomModel(!isSuggested && saved.model !== '')
     })
+    window.electronAPI.getModelStatus().then(setModelStatus)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Carica il prompt di default quando cambia la lingua
@@ -127,6 +132,24 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
     await window.electronAPI.collectDiagnostics()
     setDiagState('copied')
     setTimeout(() => setDiagState('idle'), 3000)
+  }
+
+  async function handleDownloadModel(): Promise<void> {
+    setModelDownloading(true)
+    setModelProgress(null)
+    setModelDone(false)
+    const unsub = window.electronAPI.onModelDownloadProgress((data) => {
+      setModelProgress(data)
+      if (data.done) {
+        setModelDownloading(false)
+        setModelDone(true)
+        unsub()
+        if (!data.error) {
+          window.electronAPI.getModelStatus().then(setModelStatus)
+        }
+      }
+    })
+    await window.electronAPI.downloadModel()
   }
 
   async function handleSave(): Promise<void> {
@@ -552,6 +575,85 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
                     <span>{testMessage}</span>
                   </div>
                 )}
+              </div>
+            )}
+          </section>
+
+          {/* Sezione Modello NER */}
+          <section className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5 space-y-3">
+            <div className="flex items-center gap-2">
+              <Download size={18} className="text-slate-500 dark:text-slate-400" />
+              <h2 className="font-semibold text-slate-800 dark:text-slate-100">Modello NER</h2>
+            </div>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Il motore di riconoscimento entità (BERT) richiede un modello locale da ~65 MB.
+              Viene scaricato una volta sola — l'elaborazione avviene sempre offline.
+            </p>
+
+            {modelStatus === null ? (
+              <div className="flex items-center gap-2 text-sm text-slate-400 dark:text-slate-500">
+                <Loader2 size={14} className="animate-spin" />
+                Verifica in corso...
+              </div>
+            ) : modelStatus.exists ? (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-green-50 dark:bg-green-950/30 text-green-800 dark:text-green-300 border border-green-200 dark:border-green-800">
+                <CheckCircle2 size={15} className="flex-shrink-0" />
+                <span>Modello NER installato</span>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                  <AlertTriangle size={15} className="flex-shrink-0" />
+                  <span>Modello NER mancante — solo regex attive</span>
+                </div>
+
+                {!modelDownloading && !modelDone && (
+                  <button
+                    onClick={handleDownloadModel}
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-blue-300 dark:border-blue-600 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors"
+                  >
+                    <Download size={14} />
+                    Scarica modello (~65 MB)
+                  </button>
+                )}
+
+                {modelDownloading && modelProgress && (
+                  <div className="space-y-2">
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      Download: {modelProgress.file}
+                    </div>
+                    <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2">
+                      <div
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${modelProgress.percent}%` }}
+                      />
+                    </div>
+                    <div className="text-xs text-slate-400 dark:text-slate-500 text-right">
+                      {modelProgress.percent}%
+                    </div>
+                  </div>
+                )}
+
+                {modelDownloading && !modelProgress && (
+                  <div className="flex items-center gap-2 text-sm text-slate-400 dark:text-slate-500">
+                    <Loader2 size={14} className="animate-spin" />
+                    Avvio download...
+                  </div>
+                )}
+              </>
+            )}
+
+            {modelDone && modelProgress?.error && (
+              <div className="flex items-start gap-2 px-3 py-2 rounded-lg text-sm bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-800">
+                <XCircle size={15} className="flex-shrink-0 mt-0.5" />
+                <span>Errore download: {modelProgress.error}</span>
+              </div>
+            )}
+
+            {modelDone && !modelProgress?.error && (
+              <div className="flex items-start gap-2 px-3 py-2 rounded-lg text-sm bg-green-50 dark:bg-green-950/30 text-green-800 dark:text-green-300 border border-green-200 dark:border-green-800">
+                <CheckCircle2 size={15} className="flex-shrink-0 mt-0.5" />
+                <span>Download completato. Riavvia l'app per attivare il riconoscimento entità avanzato.</span>
               </div>
             )}
           </section>

@@ -5,6 +5,16 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.2.2] - 2026-03-08
+
+### Fix
+- **Fix semver ARM64 — approccio corretto**: `semver` aggiunto ad `asarUnpack` in `electron-builder.config.js` invece di usare la patch `Module._resolveFilename`. Rimosso `/semver` dalla patch (era sbagliato — reindirizzava verso un path inesistente).
+
+### Novità
+- **Check modello NER all'avvio e pulsante download**: sezione "Modello NER" in Impostazioni che verifica se il modello BERT è presente. Se mancante, mostra badge arancione e pulsante "Scarica modello (~65 MB)" con progress bar per il download da HuggingFace. Al termine, la pipeline NER viene resettata automaticamente e il modello è pronto senza ricompilare.
+
+---
+
 ## [1.2.1] - 2026-03-08
 
 ### Fix

@@ -27,6 +27,9 @@ export const IPC_CHANNELS = {
   SESSION_DELETE: 'session:delete',
   SESSION_GET_PATH: 'session:getPath',
   DIAG_COLLECT: 'diag:collect',
+  MODEL_STATUS: 'model:status',
+  MODEL_DOWNLOAD: 'model:download',
+  MODEL_DOWNLOAD_PROGRESS: 'model:download:progress',
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
@@ -155,4 +158,18 @@ export const DEFAULT_LLM_CONFIG: LlmConfig = {
   parallelRequests: 1,
   promptLanguage: 'it',  // TODO [A/B-TEST]
   chunkSize: 3000
+}
+
+// ─── Stato modello NER ────────────────────────────────────────────────────────
+
+export interface ModelStatus {
+  exists: boolean
+  modelPath: string
+}
+
+export interface ModelDownloadProgress {
+  file: string      // es. 'model_quantized.onnx'
+  percent: number   // 0–100 globale sui 4 file
+  done: boolean
+  error?: string
 }

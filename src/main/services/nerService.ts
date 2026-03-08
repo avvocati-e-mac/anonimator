@@ -38,6 +38,13 @@ async function tryLoadTransformers(): Promise<TransformersPipelineFn | null> {
   }
 }
 
+// ─── Reset pipeline NER (dopo download modello) ───────────────────────────────
+export function resetNerPipeline(): void {
+  _pipelineFactory = null
+  _transformersLoadAttempted = false
+  log.info('Pipeline NER resettata — verrà ricaricata alla prossima elaborazione')
+}
+
 // ─── Path modello NER ─────────────────────────────────────────────────────────
 // In produzione: process.resourcesPath = Contents/Resources/ (fuori dall'asar)
 //   ed è lì che electron-builder copia extraResources → path corretto.

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC_CHANNELS } from '@shared/types'
-import type { AnonymizeRequest, LlmConfig, BatchAnonymizeRequest } from '@shared/types'
+import type { AnonymizeRequest, LlmConfig, BatchAnonymizeRequest, ModelDownloadProgress } from '@shared/types'
 
 // Espone all'interfaccia grafica SOLO le funzioni strettamente necessarie.
 // Il renderer non può fare nient'altro — non vede Node.js, non vede il filesystem.
@@ -90,4 +90,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Diagnostica: raccoglie info installazione e le copia negli appunti
   collectDiagnostics: () =>
     ipcRenderer.invoke(IPC_CHANNELS.DIAG_COLLECT),
+
+  // Modello NER: verifica presenza
+  getModelStatus: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.MODEL_STATUS),
+
+  // Modello NER: avvia download
+  downloadModel: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.MODEL_DOWNLOAD),
+
+  // Modello NER: ascolta progresso download
+  onModelDownloadProgress: (cb: (data: ModelDownloadProgress) => void) => {
+    ipcRenderer.on(IPC_CHANNELS.MODEL_DOWNLOAD_PROGRESS, (_e, data) => cb(data as ModelDownloadProgress))
+    return () => ipcRenderer.removeAllListeners(IPC_CHANNELS.MODEL_DOWNLOAD_PROGRESS)
+  },
 })
