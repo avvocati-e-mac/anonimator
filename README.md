@@ -4,7 +4,7 @@ App desktop per la **pseudoanonimizzazione offline** di documenti legali italian
 
 Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a server esterni. Tutto il processing avviene localmente sul tuo Mac, PC Windows o Linux.
 
-**Versione attuale: 1.2.2**
+**Versione attuale: 1.2.3**
 
 > **L'app è stata creata in vibe coding e non sono un esperto programmatore — procedi con cautela nell'utilizzo.**
 
@@ -32,13 +32,14 @@ Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a se
 - Riconosce automaticamente nomi di persone, luoghi, organizzazioni, codici fiscali, P.IVA, IBAN, email e numeri di telefono
 - Pattern regex specializzati per documenti legali: parti processuali, difensori, indirizzi, date di nascita, numeri documento, firme digitali
 - Sostituisce le entità con pseudonimi coerenti in tutto il documento (es. "Mario Rossi" → "M. R." ovunque appaia)
-- **Pseudonimi editabili**: nella schermata di revisione puoi modificare manualmente ogni pseudonimo prima di procedere
+- **Entità completamente modificabili**: nella schermata di revisione puoi modificare il tipo (badge cliccabile con dropdown), il testo originale da cercare nel documento (icona matita in hover) e il pseudonimo sostitutivo
 - **Aggiunta manuale entità**: aggiungi nomi o soprannomi che il NER non ha rilevato direttamente dalla schermata di revisione
 - **Esporta/Importa dizionario**: salva le entità e i pseudonimi in un file JSON (il nome del file rispecchia quello del documento originale) e riutilizzali su documenti della stessa pratica
 - **Sessione persistente**: il dizionario pseudonimi viene salvato automaticamente dopo ogni anonimizzazione; al prossimo avvio puoi ripristinarlo con un clic senza rianalizzare i documenti. Dopo il ripristino, trascina il documento direttamente nella schermata di revisione per anonimizzare senza perdere le entità importate
 - Supporta PDF (nativi e scansionati via OCR), DOCX, ODT, TXT e Markdown
 - Elaborazione **batch** di più file contemporaneamente con revisione unificata delle entità
 - **LLM locale opzionale**: connetti Ollama o LM Studio per migliorare il riconoscimento dei nomi (i dati non escono mai dalla tua macchina)
+- **Schermata di benvenuto**: al primo avvio spiega il funzionamento dell'app (tre livelli di analisi, nota hardware per LLM) — disattivabile con un checkbox
 - **Dark mode**: toggle luna/sole nell'interfaccia, preferenza salvata automaticamente
 - **Diagnostica installazione**: pulsante "Copia diagnostica" nelle Impostazioni — raccoglie versione, piattaforma e ultime righe del log (mai contenuto dei documenti) e li copia negli appunti pronti da inviare allo sviluppatore
 - **Download modello NER integrato**: se il modello di riconoscimento entità (BERT, ~65 MB) è assente, le Impostazioni mostrano un badge di avviso e un pulsante per scaricarlo direttamente nell'app, con progress bar e feedback visivo
@@ -52,10 +53,10 @@ Scarica il file per il tuo sistema dalla pagina [Releases](https://github.com/av
 
 | File | Sistema |
 |---|---|
-| `Anonimator-1.2.2-arm64.dmg` | Mac Apple Silicon (M1/M2/M3/M4) |
-| `Anonimator-1.2.2-x64.dmg` | Mac Intel |
-| `Anonimator-1.2.2-windows-x64-setup.exe` | Windows 10/11 a 64 bit |
-| `Anonimator-1.2.2-linux-x64.AppImage` | Linux a 64 bit |
+| `Anonimator-1.2.3-arm64.dmg` | Mac Apple Silicon (M1/M2/M3/M4) |
+| `Anonimator-1.2.3-x64.dmg` | Mac Intel |
+| `Anonimator-1.2.3-windows-x64-setup.exe` | Windows 10/11 a 64 bit |
+| `Anonimator-1.2.3-linux-x64.AppImage` | Linux a 64 bit |
 
 ### macOS — passaggi obbligatori
 
@@ -89,7 +90,7 @@ Lo script controlla modello NER, binding onnxruntime, librerie dipendenti e log 
 
 ### Windows — passaggi obbligatori
 
-Esegui il file `Anonimator-1.2.2-windows-x64-setup.exe` per installare l'app.
+Esegui il file `Anonimator-1.2.3-windows-x64-setup.exe` per installare l'app.
 
 Poiché l'app non è firmata con un certificato Microsoft, Windows Defender SmartScreen mostrerà un avviso. Per procedere:
 
@@ -103,8 +104,8 @@ L'installer crea un collegamento nel menu Start e sul Desktop. L'app si disinsta
 Scarica il file `.AppImage`, rendilo eseguibile e avvialo:
 
 ```bash
-chmod +x Anonimator-1.2.2-linux-x64.AppImage
-./Anonimator-1.2.2-linux-x64.AppImage
+chmod +x Anonimator-1.2.3-linux-x64.AppImage
+./Anonimator-1.2.3-linux-x64.AppImage
 ```
 
 > Su alcune distribuzioni potrebbe essere necessario installare `libfuse2` (`sudo apt install libfuse2` su Ubuntu/Debian).
