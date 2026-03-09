@@ -400,7 +400,7 @@ export function registerIpcHandlers(): void {
 
     // Verifica file critici
     const tessdataPath = getTessdataPath()
-    const modelExists = existsSync(join(modelPath, 'onnx', 'model_quantized.onnx'))
+    const modelExists = existsSync(join(modelPath, 'model_quantized.onnx'))
     const tessdataExists = existsSync(join(tessdataPath, 'ita.traineddata'))
     const bindingExists = existsSync(join(
       app.getAppPath(), '..', 'app.asar.unpacked', 'node_modules',
@@ -461,7 +461,7 @@ export function registerIpcHandlers(): void {
     const TESS_URL = 'https://github.com/tesseract-ocr/tessdata/raw/main/ita.traineddata'
 
     const FILES = [
-      { remote: `${HF_BASE}/onnx/model_quantized.onnx`, local: join(modelPath, 'onnx', 'model_quantized.onnx') },
+      { remote: `${HF_BASE}/onnx/model_quantized.onnx`, local: join(modelPath, 'model_quantized.onnx') },
       { remote: `${HF_BASE}/tokenizer.json`,            local: join(modelPath, 'tokenizer.json') },
       { remote: `${HF_BASE}/tokenizer_config.json`,     local: join(modelPath, 'tokenizer_config.json') },
       { remote: `${HF_BASE}/config.json`,               local: join(modelPath, 'config.json') },

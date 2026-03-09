@@ -5,6 +5,13 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.2.5] - 2026-03-09
+
+### Fix
+- **Fix critico NER ARM64**: Corretto il caricamento del modello ONNX su Mac Apple Silicon risolvendo lerrore di inizializzazione della sessione. Spostato il file del modello nella root della cartella per compatibilità con Transformers.js v3.
+- **Configurazione ONNX Runtime**: Forzato luso del backend CPU per una maggiore stabilità su ambienti desktop sandboxed.
+- **Migrazione automatica**: I file del modello scaricati con la versione precedente vengono migrati automaticamente al nuovo percorso.
+
 ## [1.2.4] - 2026-03-09
 
 ### Fix

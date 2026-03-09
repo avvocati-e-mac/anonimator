@@ -29,12 +29,28 @@ async function tryLoadTransformers(): Promise<TransformersPipelineFn | null> {
     const mod = await import('@huggingface/transformers')
     mod.env.allowRemoteModels = false
     mod.env.allowLocalModels = true
-    mod.env.localModelPath = getModelPath()
+    
+    // Path assoluto alla cartella che contiene la struttura del modello
+    const modelPath = getModelPath()
+    mod.env.localModelPath = modelPath
+    
+    // Configurazione backends per Transformers.js v3
+    if (mod.env.backends && mod.env.backends.onnx) {
+      // Forza l'uso del path locale anche per i file WASM se necessario
+      // (anche se su Node dovrebbe usare il binding nativo)
+      mod.env.backends.onnx.wasm.wasmPaths = modelPath
+    }
+
+    log.info('Transformers.js caricato correttamente', { 
+      version: mod.VERSION || 'v3?',
+      localModelPath: mod.env.localModelPath 
+    })
+
     _pipelineFactory = mod.pipeline as TransformersPipelineFn
     return _pipelineFactory
   } catch (err) {
-    log.error('onnxruntime non disponibile — NER BERT disabilitato, solo regex attive', {
-      error: String(err)
+    log.error('Errore caricamento Transformers.js', {
+      error: err instanceof Error ? err.stack : String(err)
     })
     return null
   }
@@ -249,7 +265,22 @@ async function getNerPipeline(): Promise<NerPipelineFn | null> {
 
   // Log diagnostico per debug su ARM64/Windows
   const modelPath = getModelPath()
-  const modelExists = require('fs').existsSync(require('path').join(modelPath, 'onnx', 'model_quantized.onnx'))
+  const fs = require('fs')
+  const path = require('path')
+
+  // Auto-migrazione: se il file è in onnx/ lo sposta nella root
+  const oldOnnxPath = path.join(modelPath, 'onnx', 'model_quantized.onnx')
+  const newOnnxPath = path.join(modelPath, 'model_quantized.onnx')
+  if (fs.existsSync(oldOnnxPath) && !fs.existsSync(newOnnxPath)) {
+    try {
+      log.info('Migrazione modello NER: sposto da onnx/ alla root')
+      fs.renameSync(oldOnnxPath, newOnnxPath)
+    } catch (e) {
+      log.error('Errore migrazione modello', e)
+    }
+  }
+
+  const modelExists = fs.existsSync(newOnnxPath)
   log.info('NER diagnostics', {
     modelPath,
     modelExists,
@@ -274,10 +305,12 @@ async function getNerPipeline(): Promise<NerPipelineFn | null> {
 
     nerPipeline = await pipelineFactory('token-classification', modelPath, {
       local_files_only: true,
-      model_file_name: 'model_quantized',
+      model_file_name: 'model_quantized.onnx', // Corretto estensione
       session_options: {
         intraOpNumThreads: numThreads,
-        interOpNumThreads: 1
+        interOpNumThreads: 1,
+        // Su Electron/Node preferiamo forzare CPU per evitare conflitti con GPU non supportate
+        executionProviders: ['cpu'] 
       }
     }) as unknown as NerPipelineFn
 
