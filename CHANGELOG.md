@@ -5,6 +5,18 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.2.4] - 2026-03-09
+
+### Fix
+- **Gestione percorsi (userData)**: centralizzata la ricerca dei modelli NER e dei file Tessdata per l'OCR esclusivamente in `app.getPath('userData')` per una maggiore robustezza su diverse installazioni e sistemi operativi.
+- **Diagnostica avanzata**: aggiunto il controllo per i file OCR (`ita.traineddata`) nella schermata delle Impostazioni e nel log di diagnostica, per facilitare il supporto agli utenti.
+- **Log diagnostici**: migliorata la registrazione delle informazioni su piattaforma e architettura (ARM64/x64) per accelerare la risoluzione di eventuali problemi di compatibilità.
+
+### Documentazione
+- **Aggiornamento README**: riflette ora tutte le funzionalità introdotte nell'ultimo ciclo di sviluppo (entità modificabili, onboarding, batch processing migliorato).
+
+---
+
 ## [1.2.3] - 2026-03-09
 
 ### Fix
