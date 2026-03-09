@@ -38,6 +38,7 @@ export default function App(): React.JSX.Element {
   // Al mount: verifica se i modelli NER e tessdata sono presenti
   useEffect(() => {
     window.electronAPI.getModelStatus().then((status: { exists: boolean }) => {
+      console.log("Model Status: ", status.exists)
       setModelCheck(status.exists ? 'ready' : 'need-download')
     }).catch(() => {
       setModelCheck('need-download')

@@ -399,7 +399,9 @@ export function registerIpcHandlers(): void {
     const version = app.getVersion()
 
     // Verifica file critici
-    const modelExists = existsSync(join(modelPath, 'model_quantized.onnx'))
+    const tessdataPath = getTessdataPath()
+    const modelExists = existsSync(join(modelPath, 'onnx', 'model_quantized.onnx'))
+    const tessdataExists = existsSync(join(tessdataPath, 'ita.traineddata'))
     const bindingExists = existsSync(join(
       app.getAppPath(), '..', 'app.asar.unpacked', 'node_modules',
       'onnxruntime-node', 'bin', 'napi-v3', platform, arch, 'onnxruntime_binding.node'
@@ -421,6 +423,7 @@ export function registerIpcHandlers(): void {
       `Versione: ${version}`,
       `Piattaforma: ${platform}/${arch}`,
       `Modello NER: ${modelExists ? 'OK' : 'MANCANTE'} (${modelPath})`,
+      `Tessdata OCR: ${tessdataExists ? 'OK' : 'MANCANTE'} (${tessdataPath})`,
       `ORT binding: ${bindingExists ? 'OK' : 'MANCANTE (o in dev mode)'}`,
       `detect-libc: ${detectLibcExists ? 'OK' : 'MANCANTE (o in dev mode)'}`,
       ``,
