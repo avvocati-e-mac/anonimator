@@ -22,7 +22,7 @@ interface DropZoneProps {
 }
 
 export default function DropZone({ onOpenSettings, isDark, onToggleDark }: DropZoneProps): React.JSX.Element {
-  const { setFilePath, setScreen, setProgress, setAnalysisResult, setError } = useSessionStore()
+  const { setFilePath, setScreen, setProgress, setAnalysisResult, setError, setProcessingStartedAt } = useSessionStore()
   const { startBatchAnalysis, errorDialog, resolveErrorDialog } = useBatchOrchestrator()
   const [version, setVersion] = useState('')
   const [hasSavedSession, setHasSavedSession] = useState(false)
@@ -72,6 +72,7 @@ export default function DropZone({ onOpenSettings, isDark, onToggleDark }: DropZ
       if (paths.length === 1) {
         const filePath = paths[0]
         setFilePath(filePath)
+        setProcessingStartedAt(Date.now())
         setScreen('processing')
         setProgress(0, 'Avvio elaborazione...')
 
@@ -108,7 +109,7 @@ export default function DropZone({ onOpenSettings, isDark, onToggleDark }: DropZ
 
       await startBatchAnalysis(batchFiles)
     },
-    [setFilePath, setScreen, setProgress, setAnalysisResult, setError, startBatchAnalysis]
+    [setFilePath, setScreen, setProgress, setAnalysisResult, setError, setProcessingStartedAt, startBatchAnalysis]
   )
 
   const { getRootProps, getInputProps, isDragActive, isDragReject } = useDropzone({

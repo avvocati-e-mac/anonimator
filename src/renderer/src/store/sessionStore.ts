@@ -22,6 +22,12 @@ export interface SuccessInfo {
   fileName: string
 }
 
+export interface SessionStats {
+  totalFiles: number
+  totalPages: number
+  elapsedMs: number
+}
+
 interface SessionState {
   // Navigazione
   screen: AppScreen
@@ -39,6 +45,10 @@ interface SessionState {
   batchCurrentFileIndex: number
   mergedEntities: MergedEntity[]
   batchResults: BatchResultItem[]
+
+  // Statistiche di sessione (visibili nelle schermate di successo)
+  processingStartedAt: number | null
+  sessionStats: SessionStats | null
 
   // Errore (overlay su qualunque schermata)
   error: string | null
@@ -66,6 +76,9 @@ interface SessionState {
   updateMergedEntityOriginalText: (id: string, originalText: string) => void
   setBatchResults: (results: BatchResultItem[]) => void
 
+  setProcessingStartedAt: (ts: number) => void
+  setSessionStats: (stats: SessionStats) => void
+
   addEntity: (entity: DetectedEntity) => void
   addMergedEntity: (entity: MergedEntity) => void
   importEntitiesToSingle: (imported: DetectedEntity[]) => void
@@ -89,6 +102,8 @@ const initialState = {
   batchCurrentFileIndex: 0,
   mergedEntities: [],
   batchResults: [],
+  processingStartedAt: null,
+  sessionStats: null,
   error: null,
 }
 
@@ -174,6 +189,9 @@ export const useSessionStore = create<SessionState>((set) => ({
     })),
 
   setBatchResults: (batchResults) => set({ batchResults }),
+
+  setProcessingStartedAt: (ts) => set({ processingStartedAt: ts }),
+  setSessionStats: (sessionStats) => set({ sessionStats }),
 
   addEntity: (entity) => set((state) => ({ entities: [...state.entities, entity] })),
 

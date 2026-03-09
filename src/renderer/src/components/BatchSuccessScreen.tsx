@@ -1,9 +1,10 @@
 import React from 'react'
 import { CheckCircle2, XCircle, FolderOpen, RotateCcw, RefreshCw, ShieldCheck } from 'lucide-react'
 import { useSessionStore } from '../store/sessionStore'
+import SessionStatsBanner from './SessionStatsBanner'
 
 export default function BatchSuccessScreen(): React.JSX.Element {
-  const { batchResults, reset, resetBatchOnly, setError } = useSessionStore()
+  const { batchResults, sessionStats, reset, resetBatchOnly, setError } = useSessionStore()
 
   const succeeded = batchResults.filter((r) => !r.error)
   const totalReplaced = succeeded.reduce((sum, r) => sum + (r.entitiesReplaced ?? 0), 0)
@@ -70,6 +71,9 @@ export default function BatchSuccessScreen(): React.JSX.Element {
             ))}
           </ul>
         </div>
+
+        {/* Statistiche */}
+        {sessionStats && <SessionStatsBanner stats={sessionStats} />}
 
         {/* Azioni */}
         <div className="flex flex-col gap-3">
