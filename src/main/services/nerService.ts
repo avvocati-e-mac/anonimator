@@ -268,19 +268,8 @@ async function getNerPipeline(): Promise<NerPipelineFn | null> {
   const fs = require('fs')
   const path = require('path')
 
-  // Auto-migrazione: se il file è in onnx/ lo sposta nella root
-  const oldOnnxPath = path.join(modelPath, 'onnx', 'model_quantized.onnx')
-  const newOnnxPath = path.join(modelPath, 'model_quantized.onnx')
-  if (fs.existsSync(oldOnnxPath) && !fs.existsSync(newOnnxPath)) {
-    try {
-      log.info('Migrazione modello NER: sposto da onnx/ alla root')
-      fs.renameSync(oldOnnxPath, newOnnxPath)
-    } catch (e) {
-      log.error('Errore migrazione modello', e)
-    }
-  }
-
-  const modelExists = fs.existsSync(newOnnxPath)
+  const onnxFilePath = path.join(modelPath, 'onnx', 'model_quantized.onnx')
+  const modelExists = fs.existsSync(onnxFilePath)
   log.info('NER diagnostics', {
     modelPath,
     modelExists,
@@ -305,7 +294,7 @@ async function getNerPipeline(): Promise<NerPipelineFn | null> {
 
     nerPipeline = await pipelineFactory('token-classification', modelPath, {
       local_files_only: true,
-      model_file_name: 'model_quantized.onnx', // Corretto estensione
+      model_file_name: 'model_quantized', // Corretto estensione
       session_options: {
         intraOpNumThreads: numThreads,
         interOpNumThreads: 1,
