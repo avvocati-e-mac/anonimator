@@ -1043,8 +1043,8 @@ L'app React è strutturata come una macchina a stati con 7 schermate, gestite da
 - Lista scrollabile di entità rilevate
 - Per ogni entità (`EntityRow`):
   - Checkbox per confermare/escludere dall'anonimizzazione
-  - Badge colorato con icona per il tipo (PERSONA=blu, ORG=viola, LUOGO=verde, ecc.)
-  - Testo originale (troncato con tooltip se lungo)
+  - **Badge tipo cliccabile**: click → `<select>` dropdown inline con tutti gli 11 tipi — il badge si aggiorna subito
+  - **Testo originale cliccabile**: click (o comparsa icona matita in hover) → input inline editabile. `Enter`/blur per confermare, `Esc` per annullare. `title="Modifica il testo da cercare nel documento"`. Aggiorna `originalText` nello store — il generator usa il testo corretto
   - Pseudonimo editabile (click → input inline, Enter/blur per confermare, Esc per annullare)
   - Conteggio occorrenze (×N se > 1)
 - Sezione warning collassabile (se il parser ha generato avvertimenti)

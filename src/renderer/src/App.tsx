@@ -10,6 +10,7 @@ import BatchSuccessScreen from './components/BatchSuccessScreen'
 import ErrorOverlay from './components/ErrorOverlay'
 import SettingsScreen from './components/SettingsScreen'
 import ModelDownloadScreen from './components/ModelDownloadScreen'
+import WelcomeScreen from './components/WelcomeScreen'
 
 type ModelCheck = 'checking' | 'ready' | 'need-download'
 
@@ -18,6 +19,9 @@ export default function App(): React.JSX.Element {
   const [showSettings, setShowSettings] = useState(false)
   const [isDark, setIsDark] = useState(() => localStorage.getItem('theme') === 'dark')
   const [modelCheck, setModelCheck] = useState<ModelCheck>('checking')
+  const [showOnboarding, setShowOnboarding] = useState(() =>
+    localStorage.getItem('onboarding-dismissed') !== 'true'
+  )
 
   function toggleDark(): void {
     const next = !isDark
@@ -58,6 +62,17 @@ export default function App(): React.JSX.Element {
   }
   if (modelCheck === 'need-download') {
     return <ModelDownloadScreen onComplete={() => setModelCheck('ready')} />
+  }
+
+  if (showOnboarding) {
+    return (
+      <WelcomeScreen
+        onDismiss={(permanent) => {
+          if (permanent) localStorage.setItem('onboarding-dismissed', 'true')
+          setShowOnboarding(false)
+        }}
+      />
+    )
   }
 
   if (showSettings) {

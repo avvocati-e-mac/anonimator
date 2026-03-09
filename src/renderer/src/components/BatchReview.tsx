@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import {
   ShieldCheck, Check, Files,
   ChevronDown, ChevronUp,
-  Plus, Download, Upload
+  Plus, Download, Upload, Pencil
 } from 'lucide-react'
 import { useSessionStore } from '../store/sessionStore'
 import { ENTITY_CONFIG } from '../utils/entityConfig'
@@ -11,11 +11,17 @@ import type { EntityType } from '@shared/types'
 import type { MergedEntity } from '../store/sessionStore'
 
 function EntityRow({ entity }: { entity: MergedEntity }): React.JSX.Element {
-  const { toggleMergedEntityConfirmed, updateMergedEntityPseudonym } = useSessionStore()
+  const { toggleMergedEntityConfirmed, updateMergedEntityPseudonym, updateMergedEntityType, updateMergedEntityOriginalText } = useSessionStore()
   const config = ENTITY_CONFIG[entity.type]
   const Icon = config.icon
+
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(entity.pseudonym)
+
+  const [editingOriginal, setEditingOriginal] = useState(false)
+  const [draftOriginal, setDraftOriginal] = useState(entity.originalText)
+
+  const [editingType, setEditingType] = useState(false)
 
   function commitEdit(): void {
     const trimmed = draft.trim()
@@ -30,6 +36,21 @@ function EntityRow({ entity }: { entity: MergedEntity }): React.JSX.Element {
   function handleKeyDown(e: React.KeyboardEvent): void {
     if (e.key === 'Enter') commitEdit()
     if (e.key === 'Escape') { setDraft(entity.pseudonym); setEditing(false) }
+  }
+
+  function commitOriginalEdit(): void {
+    const trimmed = draftOriginal.trim()
+    if (trimmed && trimmed !== entity.originalText) {
+      updateMergedEntityOriginalText(entity.id, trimmed)
+    } else {
+      setDraftOriginal(entity.originalText)
+    }
+    setEditingOriginal(false)
+  }
+
+  function handleOriginalKeyDown(e: React.KeyboardEvent): void {
+    if (e.key === 'Enter') commitOriginalEdit()
+    if (e.key === 'Escape') { setDraftOriginal(entity.originalText); setEditingOriginal(false) }
   }
 
   return (
@@ -54,17 +75,54 @@ function EntityRow({ entity }: { entity: MergedEntity }): React.JSX.Element {
         {entity.confirmed && <Check size={12} className="text-white" strokeWidth={3} />}
       </button>
 
-      {/* Badge tipo */}
-      <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border flex-shrink-0 ${config.color}`}>
-        <Icon size={11} />
-        {config.label}
-      </span>
+      {/* Badge tipo — cliccabile per cambiare */}
+      <div className="relative flex-shrink-0">
+        {editingType ? (
+          <select
+            autoFocus
+            value={entity.type}
+            onChange={(e) => { updateMergedEntityType(entity.id, e.target.value as EntityType); setEditingType(false) }}
+            onBlur={() => setEditingType(false)}
+            className="text-xs rounded-full border px-2 py-0.5 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+          >
+            {(Object.keys(ENTITY_CONFIG) as EntityType[]).map((t) => (
+              <option key={t} value={t}>{ENTITY_CONFIG[t].label}</option>
+            ))}
+          </select>
+        ) : (
+          <button
+            onClick={() => setEditingType(true)}
+            title="Clicca per cambiare tipo"
+            className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border transition-opacity hover:opacity-80 ${config.color}`}
+          >
+            <Icon size={11} />
+            {config.label}
+          </button>
+        )}
+      </div>
 
-      {/* Testo originale */}
-      <div className="flex-1 min-w-0">
-        <span className="text-sm text-slate-700 dark:text-slate-300 font-medium truncate block" title={entity.originalText}>
-          {entity.originalText}
-        </span>
+      {/* Testo originale — cliccabile per modificare */}
+      <div className="flex-1 min-w-0 group">
+        {editingOriginal ? (
+          <input
+            autoFocus
+            value={draftOriginal}
+            onChange={(e) => setDraftOriginal(e.target.value)}
+            onBlur={commitOriginalEdit}
+            onKeyDown={handleOriginalKeyDown}
+            title="Modifica il testo da cercare nel documento"
+            className="text-sm text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700 border border-blue-400 rounded px-2 py-0.5 w-full focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+        ) : (
+          <button
+            onClick={() => { setDraftOriginal(entity.originalText); setEditingOriginal(true) }}
+            title="Modifica il testo da cercare nel documento"
+            className="flex items-center gap-1 w-full text-left text-sm text-slate-700 dark:text-slate-300 font-medium truncate hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-text"
+          >
+            <span className="truncate">{entity.originalText}</span>
+            <Pencil size={11} className="flex-shrink-0 opacity-0 group-hover:opacity-50 transition-opacity" />
+          </button>
+        )}
       </div>
 
       <span className="text-slate-400 dark:text-slate-500 text-sm flex-shrink-0">→</span>

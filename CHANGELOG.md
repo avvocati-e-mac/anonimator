@@ -5,6 +5,17 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.2.3] - 2026-03-09
+
+### Fix
+- **Fix NER ARM64 — `env.localModelPath`**: aggiunto `mod.env.localModelPath = getModelPath()` in `tryLoadTransformers()` per garantire che Transformers.js trovi il modello ONNX correttamente sia in sviluppo che in produzione (pacchettizzato). Elimina la causa root del fallback silenzioso ai soli regex su ARM64.
+
+### Novità
+- **Entità completamente modificabili**: nella schermata di revisione (singolo file e batch) è ora possibile modificare anche il **tipo** (badge cliccabile che apre un dropdown con tutti gli 11 tipi disponibili) e il **testo originale** (campo cliccabile con icona matita in hover). Prima era modificabile solo il pseudonimo.
+- **Schermata di benvenuto (onboarding)**: mostrata al primo avvio, spiega il funzionamento dell'app in tre sezioni (riconoscimento automatico, due livelli di analisi, LLM opzionale) con nota hardware per Mac Apple Silicon. Checkbox "Non mostrare più questo messaggio" per disabilitarla permanentemente.
+
+---
+
 ## [1.2.2] - 2026-03-08
 
 ### Fix

@@ -30,6 +30,7 @@ async function tryLoadTransformers(): Promise<TransformersPipelineFn | null> {
     const mod = await import('@huggingface/transformers')
     mod.env.allowRemoteModels = false
     mod.env.allowLocalModels = true
+    mod.env.localModelPath = getModelPath()
     _pipelineFactory = mod.pipeline as TransformersPipelineFn
     return _pipelineFactory
   } catch (err) {

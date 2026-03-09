@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { DetectedEntity, DocumentAnalysisResult, BatchFileItem, BatchResultItem } from '@shared/types'
+import type { DetectedEntity, DocumentAnalysisResult, BatchFileItem, BatchResultItem, EntityType } from '@shared/types'
 
 // Entità con campo aggiuntivo per il batch (quanti file la contengono)
 export interface MergedEntity extends DetectedEntity {
@@ -50,6 +50,8 @@ interface SessionState {
   setProgress: (percent: number, message: string) => void
   toggleEntityConfirmed: (id: string) => void
   updateEntityPseudonym: (id: string, pseudonym: string) => void
+  updateEntityType: (id: string, type: EntityType) => void
+  updateEntityOriginalText: (id: string, originalText: string) => void
   setSuccessInfo: (info: SuccessInfo) => void
   setError: (error: string | null) => void
 
@@ -60,6 +62,8 @@ interface SessionState {
   setMergedEntities: (entities: MergedEntity[]) => void
   toggleMergedEntityConfirmed: (id: string) => void
   updateMergedEntityPseudonym: (id: string, pseudonym: string) => void
+  updateMergedEntityType: (id: string, type: EntityType) => void
+  updateMergedEntityOriginalText: (id: string, originalText: string) => void
   setBatchResults: (results: BatchResultItem[]) => void
 
   addEntity: (entity: DetectedEntity) => void
@@ -111,6 +115,20 @@ export const useSessionStore = create<SessionState>((set) => ({
       ),
     })),
 
+  updateEntityType: (id, type) =>
+    set((state) => ({
+      entities: state.entities.map((e) =>
+        e.id === id ? { ...e, type } : e
+      ),
+    })),
+
+  updateEntityOriginalText: (id, originalText) =>
+    set((state) => ({
+      entities: state.entities.map((e) =>
+        e.id === id ? { ...e, originalText } : e
+      ),
+    })),
+
   setSuccessInfo: (successInfo) => set({ successInfo }),
   setError: (error) => set({ error }),
 
@@ -138,6 +156,20 @@ export const useSessionStore = create<SessionState>((set) => ({
     set((state) => ({
       mergedEntities: state.mergedEntities.map((e) =>
         e.id === id ? { ...e, pseudonym } : e
+      ),
+    })),
+
+  updateMergedEntityType: (id, type) =>
+    set((state) => ({
+      mergedEntities: state.mergedEntities.map((e) =>
+        e.id === id ? { ...e, type } : e
+      ),
+    })),
+
+  updateMergedEntityOriginalText: (id, originalText) =>
+    set((state) => ({
+      mergedEntities: state.mergedEntities.map((e) =>
+        e.id === id ? { ...e, originalText } : e
       ),
     })),
 
