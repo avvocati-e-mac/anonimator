@@ -36,21 +36,10 @@ module.exports = {
     '!**/{.DS_Store,.git,.hg,.svn,CVS,Thumbs.db}'
   ],
 
-  // Risorse extra da copiare nella cartella risorse dell'app
-  // Devono essere nella stessa posizione dove il codice le cerca a runtime:
-  //   app.getAppPath() + '/resources/...'
-  extraResources: [
-    {
-      from: 'resources/models',
-      to: 'resources/models',
-      filter: ['**/*']
-    },
-    {
-      from: 'resources/tessdata',
-      to: 'resources/tessdata',
-      filter: ['**/*']
-    }
-  ],
+  // I modelli NER e tessdata NON sono bundlati nell'app.
+  // Vengono scaricati al primo avvio in app.getPath('userData')
+  // (es. ~/.config/anonimator/models/, ~/Library/Application Support/anonimator/models/).
+  // Questo riduce la dimensione del pacchetto di ~80 MB.
 
   // ── macOS ────────────────────────────────────────────────────────────────────
   mac: {
