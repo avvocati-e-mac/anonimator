@@ -22,6 +22,7 @@ export function useBatchOrchestrator(): UseBatchOrchestratorReturn {
     setScreen,
     setProgress,
     setBatchCurrentFileIndex,
+    setProcessingStartedAt,
   } = useSessionStore()
 
   const [errorDialog, setErrorDialog] = useState<ErrorDialogState | null>(null)
@@ -34,6 +35,7 @@ export function useBatchOrchestrator(): UseBatchOrchestratorReturn {
   const startBatchAnalysis = useCallback(
     async (files: BatchFileItem[]): Promise<void> => {
       setBatchFiles(files)
+      setProcessingStartedAt(Date.now())
       setScreen('batch-processing')
 
       const completedResults: import('@shared/types').DocumentAnalysisResult[] = []
@@ -85,7 +87,7 @@ export function useBatchOrchestrator(): UseBatchOrchestratorReturn {
       setMergedEntities(merged)
       setScreen('batch-review')
     },
-    [setBatchFiles, updateBatchFile, setMergedEntities, setScreen, setProgress, setBatchCurrentFileIndex]
+    [setBatchFiles, updateBatchFile, setMergedEntities, setScreen, setProgress, setBatchCurrentFileIndex, setProcessingStartedAt]
   )
 
   return { startBatchAnalysis, errorDialog, resolveErrorDialog }

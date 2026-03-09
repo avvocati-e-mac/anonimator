@@ -1,9 +1,10 @@
 import React from 'react'
 import { CheckCircle2, FolderOpen, RotateCcw, ShieldCheck } from 'lucide-react'
 import { useSessionStore } from '../store/sessionStore'
+import SessionStatsBanner from './SessionStatsBanner'
 
 export default function SuccessScreen(): React.JSX.Element {
-  const { successInfo, reset, setError } = useSessionStore()
+  const { successInfo, sessionStats, reset, setError } = useSessionStore()
 
   if (!successInfo) return <></>
 
@@ -51,6 +52,9 @@ export default function SuccessScreen(): React.JSX.Element {
             nella stessa cartella del documento originale
           </p>
         </div>
+
+        {/* Statistiche */}
+        {sessionStats && <SessionStatsBanner stats={sessionStats} />}
 
         {/* Azioni */}
         <div className="flex flex-col gap-3">

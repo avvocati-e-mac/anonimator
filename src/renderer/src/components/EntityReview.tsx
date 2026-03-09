@@ -170,8 +170,8 @@ function EntityRow({ entity }: { entity: DetectedEntity }): React.JSX.Element {
 
 export default function EntityReview(): React.JSX.Element {
   const {
-    entities, analysisResult, filePath,
-    setScreen, setProgress, setSuccessInfo, setError, reset,
+    entities, analysisResult, filePath, processingStartedAt,
+    setScreen, setProgress, setSuccessInfo, setSessionStats, setError, reset,
     addEntity, importEntitiesToSingle, setFilePathAndMerge,
   } = useSessionStore()
 
@@ -264,6 +264,11 @@ export default function EntityReview(): React.JSX.Element {
         outputPath: saved.outputPath,
         entitiesReplaced: saved.entitiesReplaced,
         fileName: filePath.split('/').pop() ?? '',
+      })
+      setSessionStats({
+        totalFiles: 1,
+        totalPages: analysisResult?.pageCount ?? 1,
+        elapsedMs: processingStartedAt ? Date.now() - processingStartedAt : 0,
       })
       setScreen('success')
     } catch (err) {

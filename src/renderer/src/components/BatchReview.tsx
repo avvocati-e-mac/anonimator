@@ -169,9 +169,11 @@ export default function BatchReview(): React.JSX.Element {
   const {
     mergedEntities,
     batchFiles,
+    processingStartedAt,
     setScreen,
     setProgress,
     setBatchResults,
+    setSessionStats,
     reset,
     addMergedEntity,
     importEntitiesToBatch,
@@ -204,6 +206,12 @@ export default function BatchReview(): React.JSX.Element {
     try {
       const results = await window.electronAPI.batchAnonymize(requests)
       setBatchResults(results)
+      const totalPages = doneFiles.reduce((sum, f) => sum + (f.analysisResult?.pageCount ?? 1), 0)
+      setSessionStats({
+        totalFiles: doneFiles.length,
+        totalPages,
+        elapsedMs: processingStartedAt ? Date.now() - processingStartedAt : 0,
+      })
       setScreen('batch-success')
     } catch {
       setScreen('batch-review')
