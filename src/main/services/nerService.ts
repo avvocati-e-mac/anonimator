@@ -27,20 +27,22 @@ async function tryLoadTransformers(): Promise<TransformersPipelineFn | null> {
   _transformersLoadAttempted = true
   try {
     const mod = await import('@huggingface/transformers')
+    
+    // Configurazione globale Transformers.js v3 per ambiente Node.js/Electron
     mod.env.allowRemoteModels = false
     mod.env.allowLocalModels = true
     
+    // Forza l'uso del backend nativo onnxruntime-node
+    // Questo evita l'errore "Cannot read properties of undefined (reading 'create')"
+    // che capita se Transformers.js non rileva correttamente l'ambiente Node.
+    if (mod.env.backends && mod.env.backends.onnx) {
+      mod.env.backends.onnx.wasm.proxy = false
+    }
+
     // Path assoluto alla cartella che contiene la struttura del modello
     const modelPath = getModelPath()
     mod.env.localModelPath = modelPath
     
-    // Configurazione backends per Transformers.js v3
-    if (mod.env.backends && mod.env.backends.onnx) {
-      // Forza l'uso del path locale anche per i file WASM se necessario
-      // (anche se su Node dovrebbe usare il binding nativo)
-      mod.env.backends.onnx.wasm.wasmPaths = modelPath
-    }
-
     log.info('Transformers.js caricato correttamente', { 
       version: mod.VERSION || 'v3?',
       localModelPath: mod.env.localModelPath 
@@ -58,8 +60,10 @@ async function tryLoadTransformers(): Promise<TransformersPipelineFn | null> {
 
 // ─── Reset pipeline NER (dopo download modello) ───────────────────────────────
 export function resetNerPipeline(): void {
+  nerPipeline = null
   _pipelineFactory = null
   _transformersLoadAttempted = false
+  modelLoadFailed = false
   log.info('Pipeline NER resettata — verrà ricaricata alla prossima elaborazione')
 }
 
@@ -565,10 +569,28 @@ export async function analyzeText(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.warn('Errore durante inferenza NER', { error: message })
-      warnings.push('Riconoscimento automatico nomi parziale. Verificare manualmente.')
+      // Se il modello è presente ma fallisce per un errore tecnico, diamo un avviso specifico
+      const modelPath = getModelPath()
+      const fs = require('fs')
+      const path = require('path')
+      const modelExists = fs.existsSync(path.join(modelPath, 'onnx', 'model_quantized.onnx'))
+      if (modelExists) {
+        warnings.push('Modello NER presente ma non caricabile correttamente. Riavvia l\'app o controlla la diagnostica.')
+      } else {
+        warnings.push('Riconoscimento automatico nomi parziale. Verificare manualmente.')
+      }
     }
   } else {
-    warnings.push('Modello NER non disponibile. Solo dati strutturati (CF, IBAN, ecc.) rilevati automaticamente.')
+    // Se non è stato possibile inizializzare la pipeline (es. Transformers.js non caricato)
+    const modelPath = getModelPath()
+    const fs = require('fs')
+    const path = require('path')
+    const modelExists = fs.existsSync(path.join(modelPath, 'onnx', 'model_quantized.onnx'))
+    if (modelExists) {
+        warnings.push('Errore tecnico nel caricamento del motore NER. Usate solo regex e dati strutturati.')
+    } else {
+        warnings.push('Modello NER non disponibile. Solo dati strutturati (CF, IBAN, ecc.) rilevati automaticamente.')
+    }
   }
 
   // 3. LLM locale (opzionale) — rileva nomi che il BERT può aver mancato
