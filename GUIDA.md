@@ -1354,13 +1354,13 @@ npm run typecheck     # Verifica tipi (senza eseguire)
 
 ## 15. Problemi noti e soluzioni
 
-### Windows 10 — crash onnxruntime
+### Windows 10 / ARM64 — crash onnxruntime
 
-**Sintomo:** "Impossibile trovare il modulo specificato" all'avvio.
+**Sintomo:** "Impossibile trovare il modulo specificato" all'avvio o errore `Cannot read properties of undefined (reading 'create')` durante l'analisi.
 
-**Causa:** `binding.js` di onnxruntime dentro asar non riesce a caricare i file `.node` nativi. Windows 10 non fa il fallover automatico da asar per file JS.
+**Causa:** `binding.js` di onnxruntime dentro asar non riesce a caricare i file `.node` nativi, oppure Transformers.js cerca di usare Web Workers non supportati nel Main Process.
 
-**Soluzione:** Pattern `asarUnpack` esteso + patch `Module._resolveFilename` + import dinamico del NER.
+**Soluzione:** Pattern `asarUnpack` esteso + patch `Module._resolveFilename` + **pre-caricamento forzato** del modulo in `index.ts` + disabilitazione del proxy worker in `nerService.ts`.
 
 ### macOS — sharp darwin-arm64
 
