@@ -5,6 +5,13 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.2.7] - 2026-03-10
+
+### Fix
+- **Fix critico caricamento NER**: risolto l'errore tecnico `Cannot read properties of undefined (reading 'create')` che impediva il caricamento del modello ONNX su alcuni sistemi. Implementato il pre-caricamento del modulo `onnxruntime-node` all'avvio e disabilitato il proxy worker di Transformers.js per una maggiore stabilità in ambiente Electron.
+- **Riduzione falsi positivi**: aggiunti "REPUBBLICA", "ITALIANA", "STATO" e "GOVERNO" alla blocklist dei termini tutto-maiuscolo per evitare che riferimenti istituzionali vengano scambiati per nomi di persona.
+- **Miglioramento Diagnostica**: i messaggi di errore nella schermata di revisione sono ora più precisi nel distinguere tra modello mancante (da scaricare) ed errore tecnico di caricamento.
+
 ## [1.2.6] - 2026-03-10
 
 ### Novità
