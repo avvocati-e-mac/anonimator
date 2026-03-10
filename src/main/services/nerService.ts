@@ -68,13 +68,11 @@ export function resetNerPipeline(): void {
 const NER_MODEL_SUBDIR = 'models/italian-ner-xxl-v2'
 
 export function getModelPath(): string {
-  console.log("Cartella dei modelli: ", join(app.getPath('userData'), NER_MODEL_SUBDIR))
   return join(app.getPath('userData'), NER_MODEL_SUBDIR)
 }
 
 /** Alias di getModelPath — mantenuto per chiarezza semantica nei chiamanti */
 export function getModelDownloadPath(): string {
-  
   return getModelPath()
 }
 
@@ -109,6 +107,7 @@ const ALLCAPS_BLOCKLIST = new Set([
   'inps','inail','inpgi','inpdap','spa','srl','snc','sas','sapa','onlus','ong',
   'asl','usl','ssr','ssn','pec','iban','cig','cup',
   'tribunale','corte','procura','ministero','comune','regione',
+  'repubblica','italiana','stato','governo'
 ])
 
 // ─── Soglie score differenziate per label BERT ───────────────────────────────
@@ -268,16 +267,18 @@ async function getNerPipeline(): Promise<NerPipelineFn | null> {
   const fs = require('fs')
   const path = require('path')
 
-  // --- Migrazione automatica (v1.2.5+): sposta il modello da onnx/ alla root ---
-  const oldOnnxPath = path.join(modelPath, 'onnx', 'model_quantized.onnx')
-  const newOnnxPath = path.join(modelPath, 'model_quantized.onnx')
+  // --- Migrazione automatica: assicura che il modello sia in onnx/ (richiesto da Transformers.js) ---
+  const oldOnnxPath = path.join(modelPath, 'model_quantized.onnx')
+  const newOnnxDir = path.join(modelPath, 'onnx')
+  const newOnnxPath = path.join(newOnnxDir, 'model_quantized.onnx')
   
   try {
+    if (!fs.existsSync(newOnnxDir)) {
+      fs.mkdirSync(newOnnxDir, { recursive: true })
+    }
     if (fs.existsSync(oldOnnxPath) && !fs.existsSync(newOnnxPath)) {
-      log.info('Migrazione modello: sposto da onnx/ alla root per compatibilità v3')
+      log.info('Migrazione modello: sposto dalla root a onnx/ per compatibilità Transformers.js')
       fs.renameSync(oldOnnxPath, newOnnxPath)
-      // Prova a rimuovere la cartella onnx se vuota
-      try { fs.rmdirSync(path.join(modelPath, 'onnx')) } catch { /* ignorato */ }
     }
   } catch (err) {
     log.warn('Errore durante migrazione modello', { error: err })
@@ -307,7 +308,7 @@ async function getNerPipeline(): Promise<NerPipelineFn | null> {
 
     nerPipeline = await pipelineFactory('token-classification', modelPath, {
       local_files_only: true,
-      model_file_name: 'model_quantized', // Transformers.js aggiunge .onnx
+      model_file_name: 'model_quantized', // Transformers.js cerca in onnx/ se non specificato diversamente
       session_options: {
         intraOpNumThreads: numThreads,
         interOpNumThreads: 1,

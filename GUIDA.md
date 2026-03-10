@@ -141,7 +141,7 @@ llm:getDefaultPrompt│ Ottiene prompt di sistema default (it/en)
 app:getVersion     │ Versione app da package.json
 shell:showInFolder │ Apre cartella nel file manager
 diag:collect       │ Raccoglie diagnostica installazione, copia negli appunti
-model:status       │ Verifica presenza modello NER (model_quantized.onnx)
+model:status       │ Verifica presenza modello NER (onnx/model_quantized.onnx)
 model:download     │ Avvia download modello da HuggingFace (~65 MB, 4 file)
 
 MAIN → RENDERER (send/on)
@@ -1098,7 +1098,7 @@ Configurazione dell'integrazione LLM locale e strumenti di supporto. Sezioni:
 4. Selezione modello (lista suggerita o dropdown dal server)
 5. Impostazioni avanzate (collassabili): maxTokens, timeout, parallelRequests, lingua prompt, chunkSize, prompt personalizzato
 6. Test connessione → `testLlm()`
-8. **Sezione Modello NER**: verifica al mount se `model_quantized.onnx` è presente (`getModelStatus()` IPC). Se presente: badge verde. Se assente: badge arancione + pulsante "Scarica modello (~65 MB)" → `downloadModel()` IPC → progress bar con file corrente e percentuale globale. Al termine: badge verde + messaggio "Riavvia l'app". La pipeline NER viene resettata automaticamente (`resetNerPipeline()`) senza riavviare il processo.
+8. **Sezione Modello NER**: verifica al mount se `onnx/model_quantized.onnx` è presente (`getModelStatus()` IPC). Se presente: badge verde. Se assente: badge arancione + pulsante "Scarica modello (~65 MB)" → `downloadModel()` IPC → progress bar con file corrente e percentuale globale. Al termine: badge verde + messaggio "Riavvia l'app". La pipeline NER viene resettata automaticamente (`resetNerPipeline()`) senza riavviare il processo.
 8. **Sezione Diagnostica**: pulsante "Copia diagnostica" → `collectDiagnostics()` IPC → raccoglie versione/platform/arch, verifica modello NER + ORT binding + detect-libc, prende ultime 100 righe del log, copia tutto negli appunti. Feedback visivo "Copiato!" per 3 secondi.
 9. Salva/Annulla
 
@@ -1230,7 +1230,7 @@ npm run build:electron # Pacchettizzazione completa
 ### Risorse esterne (modelli AI)
 
 Le risorse offline NON vengono scaricate durante la CI e non sono incluse nel pacchetto di installazione:
-- `italian-ner-xxl-v2/model_quantized.onnx` (~65 MB) — modello NER
+- `italian-ner-xxl-v2/onnx/model_quantized.onnx` (~65 MB) — modello NER
 - `ita.traineddata` (~14 MB) — dati OCR italiano
 
 Questi file vengono scaricati dall'app al primo avvio (o tramite le Impostazioni) e salvati nella cartella dati utente (`userData`). Questo permette di mantenere l'installer leggero (~70-90 MB invece di ~170 MB).
