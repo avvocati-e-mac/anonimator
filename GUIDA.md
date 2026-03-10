@@ -2,7 +2,7 @@
 
 Documentazione tecnica per sviluppatori. Descrive architettura, flussi di dati, logica di anonimizzazione e componenti del software.
 
-**Versione documentata:** 1.2.2
+**Versione documentata:** 1.2.6
 **Stack:** Electron 40 + React 18 + TypeScript (strict mode)
 **Scopo:** Pseudonimizzazione locale di documenti legali italiani (PDF, DOCX, ODT, TXT, immagini). Nessuna connessione di rete durante l'elaborazione.
 

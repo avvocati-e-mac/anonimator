@@ -4,7 +4,7 @@ App desktop per la **pseudoanonimizzazione offline** di documenti legali italian
 
 Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a server esterni. Tutto il processing avviene localmente sul tuo Mac, PC Windows o Linux.
 
-**Versione attuale: 1.2.5**
+**Versione attuale: 1.2.6**
 
 > **L'app è stata creata in vibe coding e non sono un esperto programmatore — procedi con cautela nell'utilizzo.**
 
@@ -36,6 +36,7 @@ Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a se
 - **Aggiunta manuale entità**: aggiungi nomi o soprannomi che il NER non ha rilevato direttamente dalla schermata di revisione
 - **Esporta/Importa dizionario**: salva le entità e i pseudonimi in un file JSON (il nome del file rispecchia quello del documento originale) e riutilizzali su documenti della stessa pratica
 - **Sessione persistente**: il dizionario pseudonimi viene salvato automaticamente dopo ogni anonimizzazione; al prossimo avvio puoi ripristinarlo con un clic senza rianalizzare i documenti. Dopo il ripristino, trascina il documento direttamente nella schermata di revisione per anonimizzare senza perdere le entità importate
+- **Statistiche di sessione**: visualizza il numero di file e pagine processate, il tempo totale e la velocità di elaborazione (pagine al secondo) nella schermata finale di successo
 - Supporta PDF (nativi e scansionati via OCR), DOCX, ODT, TXT e Markdown
 - Elaborazione **batch** di più file contemporaneamente con revisione unificata delle entità
 - **LLM locale opzionale**: connetti Ollama o LM Studio per migliorare il riconoscimento dei nomi (i dati non escono mai dalla tua macchina)
@@ -53,10 +54,10 @@ Scarica il file per il tuo sistema dalla pagina [Releases](https://github.com/av
 
 | File | Sistema |
 |---|---|
-| `Anonimator-1.2.5-arm64.dmg` | Mac Apple Silicon (M1/M2/M3/M4) |
-| `Anonimator-1.2.5-x64.dmg` | Mac Intel |
-| `Anonimator-1.2.5-windows-x64-setup.exe` | Windows 10/11 a 64 bit |
-| `Anonimator-1.2.5-linux-x64.AppImage` | Linux a 64 bit |
+| `Anonimator-1.2.6-arm64.dmg` | Mac Apple Silicon (M1/M2/M3/M4) |
+| `Anonimator-1.2.6-x64.dmg` | Mac Intel |
+| `Anonimator-1.2.6-windows-x64-setup.exe` | Windows 10/11 a 64 bit |
+| `Anonimator-1.2.6-linux-x64.AppImage` | Linux a 64 bit |
 
 ### macOS — passaggi obbligatori
 
@@ -90,7 +91,7 @@ Lo script controlla modello NER, binding onnxruntime, librerie dipendenti e log 
 
 ### Windows — passaggi obbligatori
 
-Esegui il file `Anonimator-1.2.5-windows-x64-setup.exe` per installare l'app.
+Esegui il file `Anonimator-1.2.6-windows-x64-setup.exe` per installare l'app.
 
 Poiché l'app non è firmata con un certificato Microsoft, Windows Defender SmartScreen mostrerà un avviso. Per procedere:
 
@@ -104,8 +105,8 @@ L'installer crea un collegamento nel menu Start e sul Desktop. L'app si disinsta
 Scarica il file `.AppImage`, rendilo eseguibile e avvialo:
 
 ```bash
-chmod +x Anonimator-1.2.5-linux-x64.AppImage
-./Anonimator-1.2.5-linux-x64.AppImage
+chmod +x Anonimator-1.2.6-linux-x64.AppImage
+./Anonimator-1.2.6-linux-x64.AppImage
 ```
 
 > Su alcune distribuzioni potrebbe essere necessario installare `libfuse2` (`sudo apt install libfuse2` su Ubuntu/Debian).
@@ -202,7 +203,7 @@ tests/          # Test unitari
 ### Funzionalità future
 
 - [ ] **Auto-update** — check aggiornamenti opzionale (fuori dal flusso di elaborazione)
-- [ ] **Statistiche di elaborazione** — tempi per pagina, modello LLM utilizzato, performance worker NER/LLM, throughput prompt
+- [x] **Statistiche di elaborazione** — tempi per pagina, numero pagine, throughput (pag/s) nella schermata di successo
 - [x] **Aggiunta manuale di entità** — possibilità di aggiungere entità non rilevate da NER/LLM direttamente dalla schermata di revisione
 - [x] **Salvataggio e importazione entità** — esportare/importare il dizionario di sostituzione per riutilizzarlo su documenti della stessa pratica con i medesimi soggetti
 - [ ] **Ottimizzazione prompt per modelli piccoli** — prompt specializzato per LLM <9B (es. Phi-3, Gemma 2B) che non gestiscono bene prompt generici lunghi

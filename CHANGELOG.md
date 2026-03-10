@@ -5,6 +5,19 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.2.6] - 2026-03-10
+
+### Novità
+- **Statistiche di sessione**: aggiunta una nuova sezione nella schermata di successo (singola e batch) che mostra il riepilogo dell'elaborazione: numero totale di file, pagine totali processate, tempo trascorso e velocità (throughput in pagine al secondo).
+- **Nuovo componente `SessionStatsBanner`**: visualizzazione elegante delle metriche di performance con supporto alla dark mode.
+
+### Migliorie
+- **Ottimizzazione store**: aggiunto tracking del timestamp di inizio elaborazione nello `sessionStore` per calcoli precisi sulla durata della sessione.
+- **UI/UX**: migliorata la leggibilità delle schermate finali con l'integrazione delle statistiche.
+
+### Fix
+- **Stabilità sessione**: risolte alcune inconsistenze nel reset dei contatori quando si aggiungono nuovi file a una sessione esistente.
+
 ## [1.2.5] - 2026-03-09
 
 ### Fix
