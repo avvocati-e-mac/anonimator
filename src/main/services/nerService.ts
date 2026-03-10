@@ -3,10 +3,10 @@ import type {
   TokenClassificationOutput
 } from '@huggingface/transformers'
 
-// Tipo funzionale del pipeline NER — evita la union type troppo complessa di Transformers.js
+// Tipo funzionale del pipeline NER
 type NerPipelineFn = (text: string) => Promise<TokenClassificationOutput | TokenClassificationOutput[]>
-// Tipo della funzione pipeline di Transformers.js (caricata dinamicamente)
 type TransformersPipelineFn = typeof import('@huggingface/transformers').pipeline
+
 import { join } from 'path'
 import { app } from 'electron'
 import log from 'electron-log'
@@ -14,11 +14,6 @@ import type { DetectedEntity, EntityType, LlmConfig } from '@shared/types'
 import { detectNamesWithLlm } from './llmService'
 import { sessionManager } from './sessionManager'
 
-// ─── Lazy load Transformers.js (import dinamico con try/catch) ───────────────
-// L'import statico causerebbe il crash del main process all'avvio se
-// onnxruntime-node non è caricabile (es. Win10 con asarUnpack incompleto).
-// Con il dynamic import, il crash è contenuto nella funzione di init
-// e l'app sopravvive con solo regex.
 let _pipelineFactory: TransformersPipelineFn | null = null
 let _transformersLoadAttempted = false
 
@@ -26,75 +21,69 @@ async function tryLoadTransformers(): Promise<TransformersPipelineFn | null> {
   if (_transformersLoadAttempted) return _pipelineFactory
   _transformersLoadAttempted = true
   try {
+    log.info('Caricamento Transformers.js v3...')
     const mod = await import('@huggingface/transformers')
     
-    // Configurazione globale Transformers.js v3 per ambiente Node.js/Electron
+    // Configurazione Transformers.js per ambiente offline/local
     mod.env.allowRemoteModels = false
     mod.env.allowLocalModels = true
-    
-    // Forza l'uso del backend nativo onnxruntime-node
-    // Questo evita l'errore "Cannot read properties of undefined (reading 'create')"
-    // che capita se Transformers.js non rileva correttamente l'ambiente Node.
+    const modelPath = getModelPath()
+    mod.env.localModelPath = modelPath
+
+    // FIX per Electron: disabilita proxy worker che fallirebbe in ambiente Node
     if (mod.env.backends && mod.env.backends.onnx) {
       mod.env.backends.onnx.wasm.proxy = false
     }
 
-    // Path assoluto alla cartella che contiene la struttura del modello
-    const modelPath = getModelPath()
-    mod.env.localModelPath = modelPath
-    
-    log.info('Transformers.js caricato correttamente', { 
-      version: mod.VERSION || 'v3?',
-      localModelPath: mod.env.localModelPath 
-    })
+    // Diagnostica onnxruntime-node
+    try {
+      const ort = require('onnxruntime-node')
+      log.info('onnxruntime-node caricato', { version: ort.version, hasInferenceSession: !!ort.InferenceSession })
+    } catch (err) {
+      log.warn('onnxruntime-node non caricabile via require, Transformers.js userà il fallback', { 
+        error: err instanceof Error ? err.message : String(err) 
+      })
+    }
 
+    log.info('Transformers.js caricato correttamente', { version: mod.VERSION })
     _pipelineFactory = mod.pipeline as TransformersPipelineFn
     return _pipelineFactory
   } catch (err) {
-    log.error('Errore caricamento Transformers.js', {
+    log.error('Errore fatale caricamento Transformers.js', {
       error: err instanceof Error ? err.stack : String(err)
     })
     return null
   }
 }
 
-// ─── Reset pipeline NER (dopo download modello) ───────────────────────────────
 export function resetNerPipeline(): void {
   nerPipeline = null
   _pipelineFactory = null
   _transformersLoadAttempted = false
   modelLoadFailed = false
-  log.info('Pipeline NER resettata — verrà ricaricata alla prossima elaborazione')
+  log.info('Pipeline NER resettata')
 }
 
-// ─── Path modello NER ─────────────────────────────────────────────────────────
-// Unica posizione: app.getPath('userData'). Se non presente, va scaricato.
 const NER_MODEL_SUBDIR = 'models/italian-ner-xxl-v2'
 
 export function getModelPath(): string {
   return join(app.getPath('userData'), NER_MODEL_SUBDIR)
 }
 
-/** Alias di getModelPath — mantenuto per chiarezza semantica nei chiamanti */
 export function getModelDownloadPath(): string {
   return getModelPath()
 }
 
-// ─── Path tessdata OCR ────────────────────────────────────────────────────────
-// Unica posizione: app.getPath('userData'). Se non presente, va scaricato.
-const TESSDATA_SUBDIR  = 'tessdata'
+const TESSDATA_SUBDIR = 'tessdata'
 
 export function getTessdataPath(): string {
   return join(app.getPath('userData'), TESSDATA_SUBDIR)
 }
 
-/** Alias di getTessdataPath — mantenuto per chiarezza semantica nei chiamanti */
 export function getTessdataDownloadPath(): string {
   return getTessdataPath()
 }
 
-// ─── Blocklist istituzioni pubbliche (filtro post-BERT) ───────────────────────
-// Scarta entità ORG che iniziano con queste parole (falsi positivi sistematici)
 const PUBLIC_INSTITUTION_PREFIXES = new Set([
   'tribunale','corte','procura','pretura','questura','ministero','ministro',
   'comune','regione','provincia','prefettura','inps','inail','agenzia',
@@ -102,11 +91,8 @@ const PUBLIC_INSTITUTION_PREFIXES = new Set([
   'governo','parlamento','senato','camera',
 ])
 
-// ─── Blocklist frammenti PKI (filtro post-BERT) ───────────────────────────────
-// Scarta token corti tipici di certificati digitali (NG, CA, G3, ecc.)
 const PKI_NOISE = new Set(['ng','ca','ra','tsa','ocsp','crl','sub','root','g1','g2','g3','g4'])
 
-// ─── Blocklist acronimi per Pattern A3 (tutto-maiuscolo) ─────────────────────
 const ALLCAPS_BLOCKLIST = new Set([
   'inps','inail','inpgi','inpdap','spa','srl','snc','sas','sapa','onlus','ong',
   'asl','usl','ssr','ssn','pec','iban','cig','cup',
@@ -114,58 +100,27 @@ const ALLCAPS_BLOCKLIST = new Set([
   'repubblica','italiana','stato','governo'
 ])
 
-// ─── Soglie score differenziate per label BERT ───────────────────────────────
 const SCORE_THRESHOLDS: Record<string, number> = { PER: 0.50, ORG: 0.60, LOC: 0.65 }
 
-// ─── Regex per intestazioni sentenze italiane ────────────────────────────────
-// Cattura nomi nel formato tipico delle sentenze:
-//   "COGNOME NOME - Presidente -"
-//   "Dott. NOME COGNOME - Consigliere -"
-//   "D'ANGIOLINO AUGUSTO - Rel. Consigliere -"
-// Il pattern richiede almeno 2 token di parola (nome + cognome) e la presenza
-// di un ruolo giudiziario dopo il trattino per evitare falsi positivi.
 const JUDICIAL_ROLES =
   'presidente|consigliere|rel\\.?\\s*consigliere|giudice|sostituto\\s+procuratore|' +
   'procuratore|cancelliere|segretario|relatore|estensore|componente'
 
 const SENTENCE_HEADER_PATTERN = new RegExp(
-  // Titolo opzionale
   '(?:(?:dott\\.?(?:ssa)?|avv\\.?|prof\\.?|ing\\.?)\\s+)?' +
-  // Nome: supporta cognomi con apostrofo (D'ANGIOLINO) + 1-3 ulteriori token
-  // Il primo token può essere "D'" oppure una parola maiuscola normale
   "([A-ZÀ-Ü][A-ZÀ-Üa-zà-ü]*'?[A-ZÀ-Üa-zà-ü]*(?:\\s+[A-ZÀ-Ü][A-ZÀ-Üa-zà-ü']+){1,3})" +
-  // Separatore con ruolo giudiziario
   '\\s*[-–]\\s*(?:' + JUDICIAL_ROLES + ')\\s*[-–]',
   'gi'
 )
 
-// ─── Regex per dati strutturati italiani ─────────────────────────────────────
 const REGEX_PATTERNS: { type: EntityType; pattern: RegExp }[] = [
-  {
-    type: 'CODICE_FISCALE',
-    pattern: /\b[A-Z]{6}[0-9]{2}[A-Z][0-9]{2}[A-Z][0-9]{3}[A-Z]\b/gi
-  },
-  {
-    type: 'PARTITA_IVA',
-    pattern: /\b(?:P\.?\s?IVA\s*:?\s*)?([0-9]{11})\b/gi
-  },
-  {
-    type: 'IBAN',
-    pattern: /\bIT[0-9]{2}[A-Z][0-9]{22}\b/gi
-  },
-  {
-    type: 'EMAIL',
-    pattern: /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/gi
-  },
-  {
-    type: 'TELEFONO',
-    pattern: /\b(?:\+39[\s\-]?)?(?:0[0-9]{1,3}[\s\-]?[0-9]{5,8}|3[0-9]{2}[\s\-]?[0-9]{6,7})\b/g
-  }
+  { type: 'CODICE_FISCALE', pattern: /\b[A-Z]{6}[0-9]{2}[A-Z][0-9]{2}[A-Z][0-9]{3}[A-Z]\b/gi },
+  { type: 'PARTITA_IVA', pattern: /\b(?:P\.?\s?IVA\s*:?\s*)?([0-9]{11})\b/gi },
+  { type: 'IBAN', pattern: /\bIT[0-9]{2}[A-Z][0-9]{22}\b/gi },
+  { type: 'EMAIL', pattern: /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/gi },
+  { type: 'TELEFONO', pattern: /\b(?:\+39[\s\-]?)?(?:0[0-9]{1,3}[\s\-]?[0-9]{5,8}|3[0-9]{2}[\s\-]?[0-9]{6,7})\b/g }
 ]
 
-// ─── Pattern strutturati per tipo documento (Blocco A: parti processuali) ────
-
-// A1 — Parti del giudizio con keyword di ruolo processuale
 const PROCESSO_PARTE_PATTERN = new RegExp(
   '(?:^|\\n)\\s*(?:ricorrente|resistente|appellante|appellato|intimato|' +
   'controricorrente|opponente|opposto|attore|convenuto|debitore|creditore|' +
@@ -174,7 +129,6 @@ const PROCESSO_PARTE_PATTERN = new RegExp(
   'gi'
 )
 
-// A2 — Avvocati difensori
 const DIFENSORE_PATTERN = new RegExp(
   '(?:difeso|difesa|rappresentato|rappresentata|assistito|assistita)\\s+' +
   "(?:dall?['\\u2019])?(?:avv\\.?|avvocato|procuratore)\\s+" +
@@ -182,7 +136,6 @@ const DIFENSORE_PATTERN = new RegExp(
   'gi'
 )
 
-// A3 — Nomi tutto-maiuscolo su riga propria (conservativo)
 const ALLCAPS_NAME_PATTERN = new RegExp(
   '(?:^|\\n)([A-Z\u00C0-\u00DC][A-Z\u00C0-\u00DC\']{1,25}' +
   '(?:\\s+[A-Z\u00C0-\u00DC][A-Z\u00C0-\u00DC]{1,25}){1,2})' +
@@ -190,42 +143,15 @@ const ALLCAPS_NAME_PATTERN = new RegExp(
   'gm'
 )
 
-// ─── Pattern strutturati per tipo documento (Blocco B: dati anagrafici) ──────
-
-// B1 — Data di nascita → DATA_NASCITA
 const DATA_NASCITA_PATTERN = /(?:nato|nata|n\.)[\s,]+(?:a\s+\S+\s+)?il\s+(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})|(?:data(?:\s+di)?\s+nascita|d\.d\.n\.)[:\s]+(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})/gi
-
-// B2 — Indirizzo di residenza/domicilio → INDIRIZZO
 const INDIRIZZO_PATTERN = /(?:residente|domiciliato|domiciliata|con\s+sede)\s+(?:in\s+)?(?:Via|Viale|Corso|Piazza|Largo|Vicolo|Str\.|Loc\.|Fraz\.|V\.le)\s+[A-Za-z\u00C0-\u00FF\s0-9,.']{3,50},?\s*\d{5}/gi
-
-// B3 — Numero documento d'identità → NUMERO_DOCUMENTO
-// Usa \s* (non \s+) dopo l'apostrofo: "d'identità" non ha spazio tra ' e identità.
-// Separatore [\s:,n.°]+ gestisce varianti "n.", "nr.", " : " tra keyword e numero.
 const NUMERO_DOCUMENTO_PATTERN = /(?:carta(?:\s+d[i']\s*identit[àa])?|passaporto|patente|C\.I\.E?\.?)[\s:,n.°]+([A-Z]{2}[0-9]{5,7}[A-Z]?)|(?:n(?:umero)?\.?\s*doc(?:umento)?[:\s]+)([A-Z]{2}[0-9]{5,7}[A-Z]?)/gi
-
-// ─── Pattern strutturati per tipo documento (Blocco C: intestazioni specifiche) ─
-
-// C1 — Contraente/Assicurato/Beneficiario
 const POLIZZA_PARTE_PATTERN = /(?:Contraente|Assicurato|Assicurata|Beneficiario|Intestatario)[:\s]+([A-Z][A-Za-z\u00C0-\u00FF']+(?:\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3})/gi
-
-// C2 — Parti del contratto (formula "tra X, nato/residente")
 const CONTRATTO_PARTE_PATTERN = /(?:tra|fra)\s+([A-Z][A-Za-z\u00C0-\u00FF']+(?:\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3}),\s+(?:nato|nata|residente|domiciliato|codice\s+fiscale|con\s+sede)/gi
-
-// C3 — Paziente/CTU/CTP/Perito
 const PERIZIA_SOGGETTO_PATTERN = /(?:Paziente|CTU|C\.T\.U\.|CTP|C\.T\.P\.|Perito|Esaminato|Esaminata)[:\s]+([A-Z][A-Za-z\u00C0-\u00FF']+(?:\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3})/gi
-
-// ─── Pattern strutturati per tipo documento (Blocco D: avvocati e firma PKI) ──
-
-// D1 — Avvocati nel formato lista: "avvocati NOME COGNOME, NOME COGNOME"
-// Cattura l'intero blocco nomi dopo la keyword; i singoli nomi vengono estratti
-// con split su virgola (vedi Step 0c in analyzeText).
 const AVV_LISTA_PATTERN = /avvocat[oi]\s+((?:[A-Z][A-Za-z\u00C0-\u00FF']+(?:\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3})(?:\s*,\s*(?:[A-Z][A-Za-z\u00C0-\u00FF']+(?:\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3}))*)/gi
-
-// D2 — Firma digitale PKI: "Firmato Da: COGNOME NOME Emesso Da:"
-// Presente nell'header/footer dei documenti firmati digitalmente con ArubaPEC, ecc.
 const PKI_FIRMA_PATTERN = /Firmato\s+Da:\s+([A-Z][A-Z\u00C0-\u00DC]+\s+[A-Z][A-Z\u00C0-\u00DC]+)\s+Emesso/gi
 
-// ─── Array unificato pattern strutturati legali ───────────────────────────────
 const STRUCTURED_LEGAL_PATTERNS: { pattern: RegExp; type: EntityType }[] = [
   { pattern: PROCESSO_PARTE_PATTERN,   type: 'PERSONA' },
   { pattern: DIFENSORE_PATTERN,        type: 'PERSONA' },
@@ -238,27 +164,20 @@ const STRUCTURED_LEGAL_PATTERNS: { pattern: RegExp; type: EntityType }[] = [
   { pattern: PERIZIA_SOGGETTO_PATTERN, type: 'PERSONA' },
 ]
 
-/** Controlla se un testo è tutto-maiuscolo (esclusi spazi e apostrofi) */
 function isAllCaps(text: string): boolean {
   return /^[A-Z\u00C0-\u00DC\s']+$/.test(text)
 }
 
-// ─── Mapping etichette modello → EntityType interno ───────────────────────────
-// Laibniz/italian-ner-pii-browser-distilbert produce etichette semplici (no BIO):
-// PER → PERSONA, LOC → LUOGO, ORG → ORGANIZZAZIONE, MISC → ignorato
 const LABEL_TO_ENTITY_TYPE: Record<string, EntityType> = {
   PER: 'PERSONA',
   LOC: 'LUOGO',
   ORG: 'ORGANIZZAZIONE'
-  // MISC ignorato: troppo generico
 }
 
-/** Normalizza etichetta: rimuove eventuale prefisso B-/I- (robustezza) */
 function normalizeLabel(label: string): string {
   return label.replace(/^[BI]-/, '').toUpperCase()
 }
 
-// ─── Singleton pipeline NER ───────────────────────────────────────────────────
 let nerPipeline: NerPipelineFn | null = null
 let modelLoadFailed = false
 
@@ -266,37 +185,28 @@ async function getNerPipeline(): Promise<NerPipelineFn | null> {
   if (nerPipeline) return nerPipeline
   if (modelLoadFailed) return null
 
-  // Log diagnostico per debug su ARM64/Windows
   const modelPath = getModelPath()
   const fs = require('fs')
   const path = require('path')
 
-  // --- Migrazione automatica: assicura che il modello sia in onnx/ (richiesto da Transformers.js) ---
+  // Migrazione automatica: sposta modello da root a onnx/
   const oldOnnxPath = path.join(modelPath, 'model_quantized.onnx')
   const newOnnxDir = path.join(modelPath, 'onnx')
   const newOnnxPath = path.join(newOnnxDir, 'model_quantized.onnx')
   
   try {
-    if (!fs.existsSync(newOnnxDir)) {
-      fs.mkdirSync(newOnnxDir, { recursive: true })
-    }
+    if (!fs.existsSync(newOnnxDir)) fs.mkdirSync(newOnnxDir, { recursive: true })
     if (fs.existsSync(oldOnnxPath) && !fs.existsSync(newOnnxPath)) {
-      log.info('Migrazione modello: sposto dalla root a onnx/ per compatibilità Transformers.js')
+      log.info('Migrazione modello in onnx/')
       fs.renameSync(oldOnnxPath, newOnnxPath)
     }
   } catch (err) {
-    log.warn('Errore durante migrazione modello', { error: err })
+    log.warn('Errore migrazione modello', { error: err })
   }
 
   const modelExists = fs.existsSync(newOnnxPath)
-  log.info('NER diagnostics', {
-    modelPath,
-    modelExists,
-    platform: process.platform,
-    arch: process.arch
-  })
+  log.info('NER diagnostics', { modelPath, modelExists, platform: process.platform, arch: process.arch })
 
-  // Carica Transformers.js dinamicamente (fallback se onnxruntime non disponibile)
   const pipelineFactory = await tryLoadTransformers()
   if (!pipelineFactory) {
     modelLoadFailed = true
@@ -304,19 +214,16 @@ async function getNerPipeline(): Promise<NerPipelineFn | null> {
   }
 
   try {
-    log.info('Caricamento modello NER...', { path: modelPath })
+    log.info('Inizializzazione pipeline NER...', { path: modelPath })
     const startMs = Date.now()
-
-    // Usa fino a 4 thread per l'inferenza ORT (senza overhead eccessivo su ARM)
     const numThreads = Math.min(4, require('os').cpus().length)
 
     nerPipeline = await pipelineFactory('token-classification', modelPath, {
       local_files_only: true,
-      model_file_name: 'model_quantized', // Transformers.js cerca in onnx/ se non specificato diversamente
+      model_file_name: 'model_quantized',
       session_options: {
         intraOpNumThreads: numThreads,
         interOpNumThreads: 1,
-        // Su Electron/Node preferiamo forzare CPU per evitare conflitti con GPU non supportate
         executionProviders: ['cpu'] 
       }
     }) as unknown as NerPipelineFn
@@ -325,34 +232,28 @@ async function getNerPipeline(): Promise<NerPipelineFn | null> {
     return nerPipeline
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    log.warn('Modello NER non disponibile, fallback a sole regex', { error: message })
+    log.error('Errore durante inizializzazione pipeline NER', { error: message })
     modelLoadFailed = true
     return null
   }
 }
 
-// ─── Helper: costruisce DetectedEntity senza pseudonimo ──────────────────────
-// LUOGO viene impostato confirmed:false di default perché spesso i luoghi
-// non devono essere anonimizzati (es. "Roma", "Milano" nei documenti legali)
 function buildEntity(originalText: string, type: EntityType): DetectedEntity {
   return {
     id: `${type}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     type,
     originalText,
-    pseudonym: '', // assegnato da sessionManager.enrichEntities()
+    pseudonym: '',
     occurrences: 0,
     confirmed: type !== 'LUOGO'
   }
 }
 
-// ─── Conta occorrenze ─────────────────────────────────────────────────────────
 function countOccurrences(text: string, entityText: string): number {
   const escaped = entityText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   return (text.match(new RegExp(escaped, 'gi')) ?? []).length
 }
 
-// ─── Deduplicazione COGNOME NOME / Nome Cognome ───────────────────────────────
-// Parole da ignorare nel confronto (non distinguono un nome da un altro)
 const NAME_STOPWORDS = new Set([
   'dott', 'dott.ssa', 'avv', 'ing', 'prof', 'sig', 'sig.ra', 'on', 'dr',
   'presidente', 'consigliere', 'giudice', 'relatore', 'ricorrente', 'appellante',
@@ -361,10 +262,6 @@ const NAME_STOPWORDS = new Set([
   'il', 'lo', 'la', 'le', 'gli', 'un', 'una', 'e', 'o', '-',
 ])
 
-/**
- * Estrae i token significativi di un nome (lowercase, senza titoli/ruoli/stopword).
- * Es. "Dott. MARIO BERTUZZI - Presidente" → {"mario", "bertuzzi"}
- */
 function nameTokenSet(text: string): Set<string> {
   return new Set(
     text.toLowerCase()
@@ -374,38 +271,22 @@ function nameTokenSet(text: string): Set<string> {
   )
 }
 
-/**
- * Restituisce true se due testi si riferiscono alla stessa persona/entità.
- * Casi gestiti:
- *   - Ordine invertito: "ROSSI MARIO" === "Mario Rossi"
- *   - Testo lungo contiene testo corto: "Dott. MARIO BERTUZZI - Presidente" contiene {"mario","bertuzzi"}
- * Richiede almeno 2 token significativi in comune e che il set più piccolo
- * sia completamente contenuto nel set più grande.
- */
 function isSameName(a: string, b: string): boolean {
   const setA = nameTokenSet(a)
   const setB = nameTokenSet(b)
   if (setA.size < 2 || setB.size < 2) return false
   const [smaller, larger] = setA.size <= setB.size ? [setA, setB] : [setB, setA]
-  // Tutti i token del set più piccolo devono essere nel più grande
   for (const token of smaller) {
     if (!larger.has(token)) return false
   }
   return true
 }
 
-// ─── Post-processing output BIO: aggrega token consecutivi della stessa entità ─
-interface AggregatedEntity {
-  word: string
-  label: string
-  score: number
-}
+interface AggregatedEntity { word: string; label: string; score: number }
 
 function aggregateBioTokens(items: TokenClassificationSingle[]): AggregatedEntity[] {
   const aggregated: AggregatedEntity[] = []
   let current: AggregatedEntity | null = null
-
-  // Limite parole per entità: nessun nome/luogo/org reale supera 5 parole
   const MAX_WORDS = 5
 
   for (const item of items) {
@@ -417,30 +298,21 @@ function aggregateBioTokens(items: TokenClassificationSingle[]): AggregatedEntit
     const currentWordCount = current ? current.word.split(' ').length : 0
 
     if (isWordPieceContinuation && current) {
-      // Subword token: concatena senza spazio
       current.word += item.word.replace(/^##/, '')
       current.score = Math.min(current.score, item.score)
     } else if (isSameEntity && currentWordCount < MAX_WORDS) {
-      // Stesso tipo, token continuazione entro limite parole:
-      // - se il token corrente è un'apostrofo o la parola precedente finisce con '
-      //   concatena senza spazio (es. D' + ANGIOLINO → D'ANGIOLINO)
-      // - altrimenti concatena con spazio
       const prevWord = current!.word
       const noSpace = prevWord.endsWith("'") || item.word.startsWith("'") || item.word === "'"
       current!.word += noSpace ? item.word : ' ' + item.word
       current!.score = Math.min(current!.score, item.score)
     } else {
-      // Nuova entità (o entità corrente troppo lunga → la chiude e ne apre una nuova)
       if (current) aggregated.push(current)
       current = { word: item.word, label: normalized, score: item.score }
     }
   }
   if (current) aggregated.push(current)
-
   return aggregated
 }
-
-// ─── Analisi principale ───────────────────────────────────────────────────────
 
 export interface NerAnalysisResult {
   entities: DetectedEntity[]
@@ -460,9 +332,6 @@ export async function analyzeText(
   let nerUsed = false
   let llmUsed = false
 
-  // 0. Parser intestazione sentenze — regex strutturata ad alta precisione
-  //    Cattura "COGNOME NOME - Presidente/Consigliere/... -" prima del BERT
-  //    perché il modello BERT manca sistematicamente questi pattern.
   SENTENCE_HEADER_PATTERN.lastIndex = 0
   for (const match of text.matchAll(SENTENCE_HEADER_PATTERN)) {
     const raw = match[1].trim()
@@ -472,16 +341,13 @@ export async function analyzeText(
     allEntities.push(buildEntity(raw, 'PERSONA'))
   }
 
-  // 0b. Pattern strutturati per tipo documento (parti processuali, dati anagrafici, polizze, contratti, perizie)
   for (const { pattern, type } of STRUCTURED_LEGAL_PATTERNS) {
     pattern.lastIndex = 0
     for (const match of text.matchAll(pattern)) {
       const raw = (match[1] ?? match[2] ?? match[0]).trim()
       if (!raw) continue
-      // Per entità PERSONA richiedi almeno 2 token; per gli altri tipi basta 1
       if (type === 'PERSONA' && raw.split(/\s+/).length < 2) continue
       if (foundTexts.has(raw.toLowerCase())) continue
-      // Pattern A3 (tutto-maiuscolo): filtro aggiuntivo
       if (type === 'PERSONA' && isAllCaps(raw)) {
         const tokens = raw.split(/\s+/)
         if (tokens.some((t) => t.length <= 2 || ALLCAPS_BLOCKLIST.has(t.toLowerCase()))) continue
@@ -491,9 +357,6 @@ export async function analyzeText(
     }
   }
 
-  // 0c. Pattern speciali con estrazione multi-nome
-  //     D1: lista avvocati "avvocati NOME A, NOME B" → split su virgola
-  //     D2: firma digitale PKI "Firmato Da: COGNOME NOME Emesso Da:"
   AVV_LISTA_PATTERN.lastIndex = 0
   for (const match of text.matchAll(AVV_LISTA_PATTERN)) {
     const block = match[1].trim()
@@ -514,7 +377,6 @@ export async function analyzeText(
     allEntities.push(buildEntity(raw, 'PERSONA'))
   }
 
-  // 1. Regex — veloci, deterministiche, sempre eseguite
   for (const { type, pattern } of REGEX_PATTERNS) {
     pattern.lastIndex = 0
     for (const match of text.matchAll(pattern)) {
@@ -525,39 +387,30 @@ export async function analyzeText(
     }
   }
 
-  // 2. NER con modello BERT (se disponibile)
   const pipe = await getNerPipeline()
   if (pipe) {
     try {
       const chunks = splitTextIntoChunks(text, 400)
-      // Processa i chunk in parallelo (batch da 4) per sfruttare i thread ORT
       const BATCH = 4
       for (let i = 0; i < chunks.length; i += BATCH) {
         const batch = chunks.slice(i, i + BATCH)
         const results = await Promise.all(batch.map((chunk) => pipe(chunk)))
         for (const raw of results) {
-          // Normalizza: il risultato può essere array piatto o array di array (batch)
           const flat: TokenClassificationSingle[] = Array.isArray(raw[0])
             ? (raw as TokenClassificationOutput[]).flat()
             : (raw as TokenClassificationOutput)
-
           const aggregated = aggregateBioTokens(flat)
-
           for (const { word, label, score } of aggregated) {
             const threshold = SCORE_THRESHOLDS[label] ?? 0.50
             if (score < threshold) continue
             const entityType = LABEL_TO_ENTITY_TYPE[label]
             if (!entityType) continue
             const cleaned = word.trim().replace(/^#+/, '')
-            // Scarta token troppo corti, che iniziano con punto/preposizione,
-            // o che sono chiaramente frammenti (es. "NG", ". A", "di Appello di Salerno")
             if (cleaned.length < 3) continue
             if (/^[.\s]/.test(cleaned)) continue
             const cleanedFirstWord = cleaned.toLowerCase().split(/\s+/)[0]
             if (NAME_STOPWORDS.has(cleanedFirstWord)) continue
-            // Scarta frammenti PKI (NG, CA, G3, ecc.)
             if (PKI_NOISE.has(cleaned.toLowerCase())) continue
-            // Scarta ORG che iniziano con istituzione pubblica
             if (entityType === 'ORGANIZZAZIONE' && PUBLIC_INSTITUTION_PREFIXES.has(cleanedFirstWord)) continue
             if (foundTexts.has(cleaned.toLowerCase())) continue
             foundTexts.add(cleaned.toLowerCase())
@@ -567,64 +420,46 @@ export async function analyzeText(
       }
       nerUsed = true
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      log.warn('Errore durante inferenza NER', { error: message })
-      // Se il modello è presente ma fallisce per un errore tecnico, diamo un avviso specifico
+      log.error('Errore durante inferenza NER', { error: err })
       const modelPath = getModelPath()
       const fs = require('fs')
       const path = require('path')
       const modelExists = fs.existsSync(path.join(modelPath, 'onnx', 'model_quantized.onnx'))
       if (modelExists) {
-        warnings.push('Modello NER presente ma non caricabile correttamente. Riavvia l\'app o controlla la diagnostica.')
+        warnings.push('Modello NER presente ma non caricabile correttamente (errore tecnico).')
       } else {
         warnings.push('Riconoscimento automatico nomi parziale. Verificare manualmente.')
       }
     }
   } else {
-    // Se non è stato possibile inizializzare la pipeline (es. Transformers.js non caricato)
     const modelPath = getModelPath()
     const fs = require('fs')
     const path = require('path')
     const modelExists = fs.existsSync(path.join(modelPath, 'onnx', 'model_quantized.onnx'))
     if (modelExists) {
-        warnings.push('Errore tecnico nel caricamento del motore NER. Usate solo regex e dati strutturati.')
+        warnings.push('Errore nel caricamento del motore NER. Solo dati strutturati rilevati.')
     } else {
-        warnings.push('Modello NER non disponibile. Solo dati strutturati (CF, IBAN, ecc.) rilevati automaticamente.')
+        warnings.push('Modello NER non disponibile. Solo dati strutturati rilevati automaticamente.')
     }
   }
 
-  // 3. LLM locale (opzionale) — rileva nomi che il BERT può aver mancato
   if (llmConfig?.enabled && llmConfig.model) {
     try {
-      // Splitta per pagine (separate da \n\n nel testo estratto da PDF/DOCX)
-      // oppure chunk da 3000 char per documenti senza separatori espliciti
       const pages = text.split(/\n\n+/).filter((p) => p.trim().length > 50)
       const effectiveChunkSize = llmConfig.chunkSize ?? 3000
       const chunks = pages.length > 1 ? pages : splitTextIntoLlmChunks(text, effectiveChunkSize)
-      log.info('nerService: avvio analisi LLM', { model: llmConfig.model, chunks: chunks.length })
-
-      // Processa i chunk in batch paralleli secondo la preferenza dell'utente.
-      // Ollama/LM Studio accodano le richieste concorrenti; il valore ottimale
-      // dipende dalla GPU/CPU disponibile — configurabile nelle impostazioni avanzate.
       const LLM_BATCH = Math.max(1, llmConfig.parallelRequests ?? 1)
       let completed = 0
       for (let i = 0; i < chunks.length; i += LLM_BATCH) {
         const batch = chunks.slice(i, i + LLM_BATCH)
-        const results = await Promise.all(
-          batch.map((chunk) => detectNamesWithLlm(chunk, llmConfig))
-        )
+        const results = await Promise.all(batch.map((chunk) => detectNamesWithLlm(chunk, llmConfig)))
         completed += batch.length
         onLlmProgress?.(Math.min(completed, chunks.length), chunks.length)
-        log.info(`nerService: LLM batch ${i / LLM_BATCH + 1} completato`, { completed, total: chunks.length })
-
         for (const llmNames of results) {
           for (const { original, replacement } of llmNames) {
             const trimmed = original.trim()
             if (!trimmed || foundTexts.has(trimmed.toLowerCase())) continue
-            // Determina il tipo: iniziali pure (es. "M. R.") → PERSONA, altrimenti ORGANIZZAZIONE
-            const type: EntityType = /^([A-Z]\.\s*)+$/.test(replacement.trim())
-              ? 'PERSONA'
-              : 'ORGANIZZAZIONE'
+            const type: EntityType = /^([A-Z]\.\s*)+$/.test(replacement.trim()) ? 'PERSONA' : 'ORGANIZZAZIONE'
             foundTexts.add(trimmed.toLowerCase())
             const pseudonym = sessionManager.registerLlmPseudonym(trimmed, replacement.trim(), type)
             allEntities.push({ ...buildEntity(trimmed, type), pseudonym })
@@ -633,23 +468,14 @@ export async function analyzeText(
       }
       llmUsed = true
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      log.warn('nerService: errore LLM, continuo senza', { error: message })
+      log.warn('nerService: errore LLM, continuo senza', { error: err })
       warnings.push('LLM locale non raggiungibile. Usato solo BERT + regex.')
     }
   }
 
-  // 3b. Deduplicazione varianti nome/cognome e testi che ne contengono altri
-  //     Gestisce:
-  //       - Ordine invertito: "ROSSI MARIO" / "Mario Rossi"
-  //       - Testo lungo che contiene il nome: "Dott. MARIO BERTUZZI - Presidente" → scarta a favore di "BERTUZZI MARIO"
-  //       - Cross-type: stessa stringa classificata PERSONA da NER e ORGANIZZAZIONE da LLM
   {
     const toRemove = new Set<string>()
-    // Confronta tutte le coppie di entità NER (PERSONA + ORGANIZZAZIONE)
-    const nerLikeEntities = allEntities.filter(
-      (e) => e.type === 'PERSONA' || e.type === 'ORGANIZZAZIONE'
-    )
+    const nerLikeEntities = allEntities.filter((e) => e.type === 'PERSONA' || e.type === 'ORGANIZZAZIONE')
     for (let i = 0; i < nerLikeEntities.length; i++) {
       if (toRemove.has(nerLikeEntities[i].id)) continue
       for (let j = i + 1; j < nerLikeEntities.length; j++) {
@@ -657,39 +483,20 @@ export async function analyzeText(
         const a = nerLikeEntities[i]
         const b = nerLikeEntities[j]
         if (!isSameName(a.originalText, b.originalText)) continue
-
-        // Sono la stessa entità — scegli quella con il testo più corto (più pulita)
-        // e in parità quella con più occorrenze nel testo
         const aLen = nameTokenSet(a.originalText).size
         const bLen = nameTokenSet(b.originalText).size
         const occA = countOccurrences(text, a.originalText)
         const occB = countOccurrences(text, b.originalText)
-        const [keep, drop] = aLen <= bLen && (aLen < bLen || occA >= occB)
-          ? [a, b]
-          : [b, a]
-
-        // Propaga pseudonimo
-        if (keep.pseudonym && !drop.pseudonym) {
-          sessionManager.registerLlmPseudonym(drop.originalText, keep.pseudonym, keep.type)
-        }
+        const [keep, drop] = aLen <= bLen && (aLen < bLen || occA >= occB) ? [a, b] : [b, a]
+        if (keep.pseudonym && !drop.pseudonym) sessionManager.registerLlmPseudonym(drop.originalText, keep.pseudonym, keep.type)
         toRemove.add(drop.id)
-        log.info('nerService: deduplicata variante entità', {
-          kept: keep.originalText,
-          dropped: drop.originalText
-        })
       }
     }
-    if (toRemove.size > 0) {
-      allEntities = allEntities.filter((e) => !toRemove.has(e.id))
-    }
+    if (toRemove.size > 0) allEntities = allEntities.filter((e) => !toRemove.has(e.id))
   }
 
-  // 4. Cerca varianti maiuscole delle entità trovate (BERT + LLM)
-  //    Es. se viene trovato "Mario Rossi", cerca anche "MARIO ROSSI" nel testo
-  //    (utile per intestazioni in maiuscolo nei documenti legali)
   const nerTypes = new Set<EntityType>(['PERSONA', 'ORGANIZZAZIONE', 'LUOGO'])
-  const nerEntities = allEntities.filter((e) => nerTypes.has(e.type))
-  for (const entity of nerEntities) {
+  for (const entity of allEntities.filter((e) => nerTypes.has(e.type))) {
     const upperVariant = entity.originalText.toUpperCase()
     if (upperVariant !== entity.originalText && !foundTexts.has(upperVariant.toLowerCase())) {
       const escaped = upperVariant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -700,83 +507,36 @@ export async function analyzeText(
     }
   }
 
-  // 5. Conta occorrenze
-  for (const entity of allEntities) {
-    entity.occurrences = countOccurrences(text, entity.originalText)
-  }
+  for (const entity of allEntities) entity.occurrences = countOccurrences(text, entity.originalText)
 
-  // 6. Rimuovi entità NER rumorose: gestisce due casi:
-  //
-  //    A) Entità LUNGA che contiene una CORTA: scarta la lunga se tutte le
-  //       occorrenze del testo corto sono sottostringa di quella lunga.
-  //       Es. "Luca Bianchi Mario Rossi" scartato perché contiene "Luca Bianchi".
-  //
-  //    B) Entità CORTA (1 token, solo cognome) che è sottostringa di una PIÙ LUNGA
-  //       (nome+cognome): scarta la corta. Questo evita che "Bianchi" sopravviva
-  //       accanto a "Luca Bianchi" causando sostituzioni parziali nel testo.
-  //       Eccezione: mantieni la corta se appare molte più volte in modo standalone
-  //       rispetto all'entità lunga (indica che il cognome è usato da solo nel documento).
   allEntities = allEntities.filter((entity) => {
     if (entity.occurrences === 0) return false
-    if (!nerTypes.has(entity.type)) return true // mai scartare entità regex
-
-    const longer = allEntities.filter(
-      (e) => e !== entity && e.type === entity.type && e.originalText.length > entity.originalText.length
-    )
-    const shorter = allEntities.filter(
-      (e) => e !== entity && e.type === entity.type && e.originalText.length < entity.originalText.length
-    )
-
-    // Caso B: questa entità è corta (1 token) ed è sottostringa di una più lunga
-    const entityTokens = entity.originalText.trim().split(/\s+/)
-    if (entityTokens.length === 1) {
-      const containedInLonger = longer.some((e) =>
-        e.originalText.toLowerCase().includes(entity.originalText.toLowerCase())
-      )
-      if (containedInLonger) {
-        // Mantieni solo se appare significativamente più spesso standalone
-        // (es. cognome usato da solo nel documento dopo la prima menzione completa)
+    if (!nerTypes.has(entity.type)) return true
+    const longer = allEntities.filter((e) => e !== entity && e.type === entity.type && e.originalText.length > entity.originalText.length)
+    const shorter = allEntities.filter((e) => e !== entity && e.type === entity.type && e.originalText.length < entity.originalText.length)
+    if (entity.originalText.trim().split(/\s+/).length === 1) {
+      if (longer.some((e) => e.originalText.toLowerCase().includes(entity.originalText.toLowerCase()))) {
         const shortEscaped = entity.originalText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
         const standaloneOcc = (text.match(new RegExp(`\\b${shortEscaped}\\b`, 'gi')) ?? []).length
-        const longestContainerOcc = Math.max(...longer
-          .filter((e) => e.originalText.toLowerCase().includes(entity.originalText.toLowerCase()))
-          .map((e) => e.occurrences)
-        )
-        // Scarta se le occorrenze standalone non superano di almeno 2x quelle del contenitore
-        if (standaloneOcc <= longestContainerOcc * 2) return false
+        const containerOcc = Math.max(...longer.filter((e) => e.originalText.toLowerCase().includes(entity.originalText.toLowerCase())).map((e) => e.occurrences))
+        if (standaloneOcc <= containerOcc * 2) return false
       }
     }
-
-    // Caso A: questa entità è lunga e contiene una più corta.
-    // La corta deve avere almeno 2 token (nome+cognome) per poter essere considerata
-    // una variante "più pulita" — un singolo token (solo cognome) non è mai preferibile
-    // a nome+cognome, ed è gestito dal Caso B sopra.
     const containsShorter = shorter.some((e) => {
-      if (e.originalText.trim().split(/\s+/).length < 2) return false // ignora cognomi soli
+      if (e.originalText.trim().split(/\s+/).length < 2) return false
       if (!entity.originalText.toLowerCase().includes(e.originalText.toLowerCase())) return false
       const shortEscaped = e.originalText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       const longEscaped = entity.originalText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      const standaloneOccurrences = (text.match(new RegExp(`\\b${shortEscaped}\\b`, 'gi')) ?? []).length
-      const containedOccurrences = (text.match(new RegExp(longEscaped, 'gi')) ?? []).length
-      return standaloneOccurrences <= containedOccurrences
+      return (text.match(new RegExp(`\\b${shortEscaped}\\b`, 'gi')) ?? []).length <= (text.match(new RegExp(longEscaped, 'gi')) ?? []).length
     })
     return !containsShorter
   })
 
-  // 7. Ordina per occorrenze decrescenti
   allEntities.sort((a, b) => b.occurrences - a.occurrences)
-
-  log.info('Analisi NER completata', {
-    totalEntities: allEntities.length,
-    nerUsed,
-    llmUsed,
-    warnings: warnings.length
-  })
-
+  log.info('Analisi NER completata', { totalEntities: allEntities.length, nerUsed, llmUsed, warnings: warnings.length })
   return { entities: allEntities, nerUsed, llmUsed, warnings }
 }
 
-/** Divide il testo in chunk da ~maxChars caratteri, spezzando su newline */
 function splitTextIntoLlmChunks(text: string, maxChars: number): string[] {
   if (text.length <= maxChars) return [text]
   const chunks: string[] = []
@@ -796,10 +556,8 @@ function splitTextIntoLlmChunks(text: string, maxChars: number): string[] {
 function splitTextIntoChunks(text: string, targetWords: number): string[] {
   const words = text.split(/\s+/)
   if (words.length <= targetWords) return [text]
-
   const chunks: string[] = []
   let start = 0
-
   while (start < words.length) {
     let end = Math.min(start + targetWords, words.length)
     if (end < words.length) {
@@ -810,6 +568,5 @@ function splitTextIntoChunks(text: string, targetWords: number): string[] {
     chunks.push(words.slice(start, end).join(' '))
     start = end
   }
-
   return chunks
 }

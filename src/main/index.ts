@@ -7,6 +7,14 @@
 // Copre anche semver (richiesto da sharp/libvips.js su macOS ARM64).
 import { createRequire } from 'module'
 const _require = createRequire(import.meta.url)
+
+// Pre-caricamento onnxruntime-node per assicurare la risoluzione corretta del path nativo
+try {
+  _require('onnxruntime-node')
+} catch (e) {
+  // Ignorato in questa fase, verrà gestito nel nerService
+}
+
 const Module = _require('module') as { _resolveFilename: (...args: unknown[]) => string }
 const _origResolve = Module._resolveFilename.bind(Module)
 Module._resolveFilename = function (request: unknown, ...rest: unknown[]): string {
