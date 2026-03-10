@@ -57,15 +57,15 @@ L'applicazione segue il modello Electron a tre processi, con una netta separazio
 │  └─────────────────────┘                                             │
 │                                                                      │
 │  ┌─────────────────────┐                                             │
-│  │   RISORSE BUNDLE    │  resources/models/  (ONNX NER ~65 MB)      │
-│  │   (offline)         │  resources/tessdata/ (OCR ita ~14 MB)       │
+│  │   RISORSE ESTERNE   │  Scaricati al primo avvio in {userData}     │
+│  │   (offline dopo dl) │  Modello NER (~65 MB) e OCR ita (~14 MB)    │
 │  └─────────────────────┘                                             │
 └──────────────────────────────────────────────────────────────────────┘
-```
 
 **Principi fondamentali:**
 
-- **Zero rete** durante l'elaborazione. NER, OCR e parsing avvengono interamente offline con modelli bundled.
+- **Zero rete** durante l'elaborazione. NER, OCR e parsing avvengono interamente offline una volta scaricati i modelli (tramite wizard o Impostazioni).
+
 - **Sicurezza Electron:** il Renderer gira in sandbox (`nodeIntegration: false`, `contextIsolation: true`). Tutta la comunicazione avviene tramite `ipcRenderer.invoke` e canali validati con Zod.
 - **Privacy:** nessun contenuto dei documenti viene mai loggato. Solo metadati (formato, dimensione, conteggi, warning).
 
@@ -426,7 +426,7 @@ I `TextToken` sono fondamentali per il generatore PDF (sezione 9.4): servono a l
 
 ### 6.5 Parser OCR (`parsers/ocrParser.ts`)
 
-Per immagini singole e PDF scansionati. Usa `tesseract.js` con dati di training italiani bundled.
+Per immagini singole e PDF scansionati. Usa `tesseract.js` con dati di training italiani scaricati.
 
 ```typescript
 parseImage(filePath: string): Promise<ParseResult>     // immagine singola
@@ -1227,12 +1227,13 @@ npm test               # Vitest unit test
 npm run build:electron # Pacchettizzazione completa
 ```
 
-### Risorse bundled
+### Risorse esterne (modelli AI)
 
-Le risorse offline vengono scaricate dallo script `scripts/download-models.sh` durante la CI:
-- `resources/models/italian-ner-xxl-v2/onnx/model_quantized.onnx` (~65 MB) — modello NER
-- `resources/models/italian-ner-xxl-v2/onnx/tokenizer.json` — tokenizer
-- `resources/tessdata/ita.traineddata` (~14 MB) — dati OCR italiano
+Le risorse offline NON vengono scaricate durante la CI e non sono incluse nel pacchetto di installazione:
+- `italian-ner-xxl-v2/onnx/model_quantized.onnx` (~65 MB) — modello NER
+- `ita.traineddata` (~14 MB) — dati OCR italiano
+
+Questi file vengono scaricati dall'app al primo avvio (o tramite le Impostazioni) e salvati nella cartella dati utente (`userData`). Questo permette di mantenere l'installer leggero (~70-90 MB invece di ~170 MB).
 
 ### CI/CD (GitHub Actions)
 
@@ -1265,9 +1266,8 @@ Trigger: push di un tag `v*` (es. `git tag v1.1.5 && git push origin master --ta
 Ogni job di build:
 1. `npm ci` — installazione pulita dipendenze
 2. `npx @electron/rebuild --force` — ricompila moduli nativi per l'ABI di Electron
-3. `bash scripts/download-models.sh` — scarica modelli NER e OCR
-4. `npx electron-vite build` — build renderer + main + preload
-5. `npx electron-builder --{platform} --{arch}` — pacchettizzazione
+3. `npx electron-vite build` — build renderer + main + preload
+4. `npx electron-builder --{platform} --{arch}` — pacchettizzazione
 
 Il job `release` scarica tutti gli artefatti e crea una GitHub Release con i 4 installer allegati.
 

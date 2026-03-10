@@ -18,7 +18,7 @@ Questo documento riassume le scoperte effettuate durante il monitoraggio dell'ap
 
 ### 1.3 Localizzazione Modelli in Sviluppo vs Produzione
 **Comportamento:** L'utente si aspettava il caricamento da `userData`, ma l'app attingeva dalla cartella `resources` del progetto.
-**Analisi:** La funzione `getModelPath()` implementa correttamente una gerarchia: `bundled` -> `userData` -> `dev`. In modalità sviluppo (`npm start`), il fallback finale su `devPath` è il comportamento atteso, ma potrebbe non essere intuitivo se si desidera testare il flusso di download in `userData`.
+**Analisi:** La funzione `getModelPath()` implementa correttamente la gerarchia: `userData` -> `dev`. In modalità sviluppo (`npm start`), il fallback finale su `devPath` è il comportamento atteso.
 
 ### 1.4 Incoerenza Stilistica nel Codice (nerService.ts)
 **Osservazione:** All'interno di una funzione `async` (riga 323), vengono usate `require('fs')` e `require('path')` nonostante i moduli siano già stati importati staticamente all'inizio del file (`import { join } from 'path'; import { existsSync } from 'fs';`). Questo indica un debito tecnico o un copia-incolla non rifinito.

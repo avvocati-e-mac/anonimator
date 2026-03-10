@@ -160,7 +160,7 @@ npm start
 - **MuPDF + pdf-lib**: redaction e ricostruzione PDF
 - **Tesseract.js**: OCR offline per PDF scansionati
 
-I modelli AI sono bundled nell'app — nessun download avviene all'avvio.
+I modelli AI (NER e OCR) vengono scaricati automaticamente al primo avvio o tramite le Impostazioni per ridurre la dimensione iniziale dell'app. L'elaborazione successiva rimane 100% offline.
 
 ## Struttura del progetto
 

@@ -43,7 +43,7 @@ Gemini CLI findings should be documented in the relevant session file in `sessio
 
 Before making any changes, understand these absolute requirements have priority over any other best practices:
 
-1. **ZERO network calls** during document processing. No external APIs, telemetry, or crash reporting during analysis/anonymization. Only exception: optional update check (outside processing flow).
+1. **ZERO network calls** during document processing. No external APIs, telemetry, or crash reporting during analysis/anonymization. Only exception: initial model download and optional update check (outside processing flow).
 
 2. **Electron Security:**
    - Renderer: `nodeIntegration: false`, `contextIsolation: true`, `sandbox: true`
@@ -130,13 +130,13 @@ File dropped → ipcHandlers.ts (Zod validation)
 - `pdf-lib` - PDF manipulation (create output with white rectangles + pseudonyms)
 - `adm-zip` - parse/rebuild DOCX/ODT (ZIP + XML)
 - `fast-xml-parser` - parse XML content inside DOCX/ODT archives
-- `tesseract.js` - offline OCR with bundled `resources/tessdata/ita.traineddata`
+- `tesseract.js` - offline OCR (tessdata downloaded at first run)
 
 **NER (Named Entity Recognition):**
 - Regex for structured Italian data (Codice Fiscale, Partita IVA, IBAN, Email, Phone)
 - `@huggingface/transformers` (Transformers.js) - local NER with **`DeepMount00/Italian_NER_XXL_v2`** ONNX model
   - 52 Italian legal entity categories (AVV_NOTAIO, TRIBUNALE, N_SENTENZA, LEGGE, PERSONA, LUOGO, ORGANIZZAZIONE, etc.)
-  - Model loaded from `resources/models/` (bundled, NO runtime downloads)
+  - Model downloaded at first run (not bundled) to `app.getPath('userData')`
   - Decision rationale: see `sessioni/sessione_001_fase1.md`
 
 **UI:**
@@ -159,9 +159,7 @@ File dropped → ipcHandlers.ts (Zod validation)
 ├── sessioni/                 # Session logs — read latest before starting work
 │   └── sessione_NNN_faseN.md
 ├── package.json
-├── resources/                # Bundled assets (never downloaded at runtime)
-│   ├── models/               # ONNX quantized NER model (Italian_NER_XXL_v2)
-│   └── tessdata/             # Italian OCR training data (ita.traineddata)
+├── resources/                # App assets (icons, etc.)
 ├── src/
 │   ├── main/                 # Node.js process
 │   │   ├── index.ts
