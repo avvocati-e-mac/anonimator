@@ -6,10 +6,9 @@ Questo documento riassume le scoperte effettuate durante il monitoraggio dell'ap
 
 ## 1. Scoperte e Comportamenti Aberranti
 
-### 1.1 Falso Negativo nella Diagnostica NER
-**Comportamento:** I log mostrano `modelExists: false` nonostante il modello venga caricato correttamente poco dopo (`Modello NER caricato { ms: 463, threads: 4 }`).
-**Causa:** In `src/main/services/nerService.ts` (riga 324), il controllo diagnostico cerca il file `model_quantized.onnx` direttamente nella cartella del modello, dimenticando che Transformers.js (e la struttura dei file) lo colloca in una sottocartella `onnx/`.
-**Impatto:** Confusione per lo sviluppatore e report diagnostici errati inviati all'assistenza.
+### 1.1 Diagnostica NER e Migrazione (RISOLTO)
+**Stato:** Risolto in v1.2.6.
+**Soluzione:** Implementata migrazione automatica che sposta `model_quantized.onnx` da `onnx/` alla root della cartella modello. Il controllo diagnostico ora punta al percorso corretto nella root.
 
 ### 1.2 Fallimento Silenzioso del Servizio LLM
 **Comportamento:** L'app tenta di contattare un server LLM locale (`openai/gpt-oss-20b`) ricevendo un errore `500 Internal Server Error`.

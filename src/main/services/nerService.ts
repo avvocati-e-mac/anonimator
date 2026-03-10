@@ -268,8 +268,22 @@ async function getNerPipeline(): Promise<NerPipelineFn | null> {
   const fs = require('fs')
   const path = require('path')
 
-  const onnxFilePath = path.join(modelPath, 'onnx', 'model_quantized.onnx')
-  const modelExists = fs.existsSync(onnxFilePath)
+  // --- Migrazione automatica (v1.2.5+): sposta il modello da onnx/ alla root ---
+  const oldOnnxPath = path.join(modelPath, 'onnx', 'model_quantized.onnx')
+  const newOnnxPath = path.join(modelPath, 'model_quantized.onnx')
+  
+  try {
+    if (fs.existsSync(oldOnnxPath) && !fs.existsSync(newOnnxPath)) {
+      log.info('Migrazione modello: sposto da onnx/ alla root per compatibilità v3')
+      fs.renameSync(oldOnnxPath, newOnnxPath)
+      // Prova a rimuovere la cartella onnx se vuota
+      try { fs.rmdirSync(path.join(modelPath, 'onnx')) } catch { /* ignorato */ }
+    }
+  } catch (err) {
+    log.warn('Errore durante migrazione modello', { error: err })
+  }
+
+  const modelExists = fs.existsSync(newOnnxPath)
   log.info('NER diagnostics', {
     modelPath,
     modelExists,
@@ -285,7 +299,6 @@ async function getNerPipeline(): Promise<NerPipelineFn | null> {
   }
 
   try {
-    const modelPath = getModelPath()
     log.info('Caricamento modello NER...', { path: modelPath })
     const startMs = Date.now()
 
@@ -294,7 +307,7 @@ async function getNerPipeline(): Promise<NerPipelineFn | null> {
 
     nerPipeline = await pipelineFactory('token-classification', modelPath, {
       local_files_only: true,
-      model_file_name: 'model_quantized', // Corretto estensione
+      model_file_name: 'model_quantized', // Transformers.js aggiunge .onnx
       session_options: {
         intraOpNumThreads: numThreads,
         interOpNumThreads: 1,

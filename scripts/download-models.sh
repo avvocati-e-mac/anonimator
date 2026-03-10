@@ -5,7 +5,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-MODELS_DIR="$REPO_ROOT/resources/models/italian-ner-xxl-v2/onnx"
+MODELS_DIR="$REPO_ROOT/resources/models/italian-ner-xxl-v2"
 TESSDATA_DIR="$REPO_ROOT/resources/tessdata"
 
 HF_REPO="Laibniz/italian-ner-pii-browser-distilbert"
