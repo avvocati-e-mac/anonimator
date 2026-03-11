@@ -59,35 +59,24 @@ Scarica il file per il tuo sistema dalla pagina [Releases](https://github.com/av
 | `Anonimator-1.2.7-windows-x64-setup.exe` | Windows 10/11 a 64 bit |
 | `Anonimator-1.2.7-linux-x64.AppImage` | Linux a 64 bit |
 
+### Per tutti i sistemi
+
+L’app al primo avvio scarica circa 80 Mb di modello NER e Tesseract per OCR PDF
+
 ### macOS — passaggi obbligatori
 
 Trascina `Anonimator.app` nella cartella Applicazioni.
 
 Poiché l'app non è firmata né notarizzata, macOS la blocca all'apertura. Esegui questi due comandi nel Terminale **una sola volta** dopo l'installazione:
 
-**1. Disabilita il blocco Gatekeeper:**
-```bash
-spctl --master-disable
-```
-Poi apri **Impostazioni di Sistema → Privacy e Sicurezza** e dal menu a tendina seleziona **Dovunque**.
-
-**2. Rimuovi l'app dalla quarantena:**
+**1. Rimuovi l'app dalla quarantena:**
 ```bash
 sudo xattr -cr /Applications/Anonimator.app
 ```
 > Il comando presume che l'app sia nella cartella Applicazioni. Se l'hai installata altrove, sostituisci il percorso di conseguenza.
 
-Dopo questi passaggi l'app si apre normalmente.
+Dopo questo passaggio l'app si apre normalmente.
 
-### Verifica installazione (macOS)
-
-Se l'app si apre ma il riconoscimento entità non funziona, incolla questo comando nel Terminale per verificare che tutti i componenti siano presenti:
-
-```bash
-bash <(curl -s https://raw.githubusercontent.com/avvocati-e-mac/anonimator/master/scripts/check-install.sh)
-```
-
-Lo script controlla modello NER, binding onnxruntime, librerie dipendenti e log dell'app, e stampa un riepilogo ✅/❌. Copia tutto l'output e invialo allo sviluppatore.
 
 ### Windows — passaggi obbligatori
 
