@@ -23,15 +23,37 @@ function getSettingsPath(): string {
   return join(app.getPath('userData'), 'legalshield-settings.json')
 }
 
+function migrateLlmConfig(llm?: Partial<LlmConfig>): LlmConfig {
+  const merged: LlmConfig = { ...DEFAULT_LLM_CONFIG, ...(llm ?? {}) }
+
+  // Migrazione: se timeoutMs è assente o è il vecchio default (120000), aggiorna a 180000
+  if (llm?.timeoutMs == null) {
+    merged.timeoutMs = DEFAULT_LLM_CONFIG.timeoutMs
+  } else if (llm.timeoutMs === 120000) {
+    merged.timeoutMs = 180000
+  }
+
+  return merged
+}
+
 function load(): AppSettings {
   const p = getSettingsPath()
   if (!existsSync(p)) return { ...DEFAULT_SETTINGS, llm: { ...DEFAULT_LLM_CONFIG } }
   try {
     const raw = readFileSync(p, 'utf-8')
     const parsed = JSON.parse(raw) as Partial<AppSettings>
-    return {
-      llm: { ...DEFAULT_LLM_CONFIG, ...(parsed.llm ?? {}) }
+    
+    const migratedLlm = migrateLlmConfig(parsed.llm)
+    const settings: AppSettings = {
+      llm: migratedLlm
     }
+
+    // Se la migrazione ha cambiato il timeout o altri campi, salva i nuovi settings
+    if (JSON.stringify(parsed.llm) !== JSON.stringify(migratedLlm)) {
+      save(settings)
+    }
+
+    return settings
   } catch (err) {
     log.warn('settingsManager: errore lettura settings, uso default', { err })
     return { ...DEFAULT_SETTINGS, llm: { ...DEFAULT_LLM_CONFIG } }

@@ -154,7 +154,7 @@ export const DEFAULT_LLM_CONFIG: LlmConfig = {
   baseUrl: 'http://localhost:11434/v1',
   model: '',
   maxTokens: 8192,
-  timeoutMs: 120000,
+  timeoutMs: 180000,
   parallelRequests: 1,
   promptLanguage: 'it',  // TODO [A/B-TEST]
   chunkSize: 3000

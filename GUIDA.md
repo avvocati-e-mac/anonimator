@@ -434,10 +434,11 @@ parsePdfWithOcr(filePath: string): Promise<ParseResult> // PDF scansionato
 ```
 
 **Per PDF scansionato:**
-1. Per ogni pagina, renderizza in PNG a 150 DPI usando `node-canvas`
+1. Per ogni pagina, renderizza in PNG a 150 DPI usando `MuPDF`
 2. Esegue OCR sull'immagine PNG
 3. Aggrega il testo e la confidenza media
 4. Se la confidenza di una pagina è < 60%, aggiunge un warning
+5. **Fallback digitale:** se il rendering di una pagina fallisce, tenta l'estrazione del testo digitale tramite MuPDF (es. PDF ibridi).
 
 **Per immagine singola:**
 1. Crea un worker tesseract con lingua 'ita'
@@ -1165,6 +1166,8 @@ Store globale con Zustand (nessun Provider React necessario). Tutte le azioni so
 File: `src/main/services/llmService.ts`
 
 Supporta qualsiasi server locale con endpoint compatibile OpenAI (`/v1/chat/completions`). Testato con Ollama e LM Studio.
+
+> **Nota v1.1.0:** per migliorare la compatibilità con Ollama, le richieste vengono ora inviate con `stream: false`. Il timeout di default è stato aumentato a 180 secondi per gestire modelli pesanti in esecuzione su hardware non dedicato.
 
 ### Endpoint utilizzati
 

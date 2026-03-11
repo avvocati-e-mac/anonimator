@@ -174,6 +174,7 @@ export async function detectNamesWithLlm(
     model: config.model,
     max_tokens: config.maxTokens,
     temperature: 0,
+    stream: false,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: text }
@@ -191,17 +192,32 @@ export async function detectNamesWithLlm(
       body,
       signal: controller.signal
     })
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      log.error('llmService: timeout scaduto', { timeoutMs: config.timeoutMs })
+      throw new Error(`Il server LLM non ha risposto entro ${config.timeoutMs / 1000} secondi. Prova ad aumentare il timeout nelle impostazioni.`)
+    }
+    throw err
   } finally {
     clearTimeout(timer)
   }
 
   if (!response.ok) {
+    const errorText = await response.text().catch(() => '')
+    log.error('llmService: errore HTTP', { status: response.status, statusText: response.statusText, errorText })
     throw new Error(`LLM server error: ${response.status} ${response.statusText}`)
   }
 
-  const json = (await response.json()) as {
-    choices?: { message?: { content?: string } }[]
+  let json: { choices?: { message?: { content?: string } }[] }
+  try {
+    json = (await response.json()) as {
+      choices?: { message?: { content?: string } }[]
+    }
+  } catch (err) {
+    log.error('llmService: risposta non JSON', { error: String(err) })
+    throw new Error('Il server LLM ha restituito una risposta non valida (non JSON). Assicurati che l\'URL e il modello siano corretti.')
   }
+
   const content = json.choices?.[0]?.message?.content ?? ''
   if (!content) return []
 
