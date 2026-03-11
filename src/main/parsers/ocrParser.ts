@@ -1,13 +1,16 @@
 import { createWorker } from 'tesseract.js'
-import { resolve, join } from 'path'
+import { resolve, join, dirname } from 'path'
 import { pathToFileURL } from 'url'
+import { createRequire } from 'module'
 import { tmpdir } from 'os'
 import { randomBytes } from 'crypto'
 import { writeFile, unlink, readFile } from 'fs/promises'
+import { app } from 'electron'
 import type { ParseResult } from './index'
 import log from 'electron-log'
 import { getTessdataPath } from '../services/nerService'
 
+const _require = createRequire(import.meta.url)
 const OCR_CONFIDENCE_THRESHOLD = 60
 
 export interface OcrPageResult {
@@ -20,15 +23,20 @@ async function ocrSingleImage(source: string | Buffer, pageLabel: string): Promi
 
   // Risoluzione path assoluti per Tesseract.js in ambiente Node/Electron
   // langPath richiede file:// URL per node-fetch interno
-  // workerPath e corePath richiedono path filesystem per Node Worker
   const tessDataUrl = pathToFileURL(tessDataDir).href
-  const workerPath = resolve(process.cwd(), 'node_modules/tesseract.js/src/worker-script/node/index.js')
-  const corePath = resolve(process.cwd(), 'node_modules/tesseract.js-core')
+  
+  // workerPath DEVE essere un path filesystem perché usato da new Worker() di Node
+  const workerPath = _require.resolve('tesseract.js/src/worker-script/node/index.js')
+  
+  // corePath DEVE essere file:// URL perché Tesseract.js lo usa con fetch
+  const coreDir = dirname(_require.resolve('tesseract.js-core/tesseract-core-simd.wasm'))
+  const corePath = pathToFileURL(coreDir).href
 
   log.info('OCR Tesseract paths', {
     tessDataUrl,
     workerPath,
-    corePath
+    corePath,
+    isPackaged: app.isPackaged
   })
 
   const worker = await createWorker('ita', 1, {
