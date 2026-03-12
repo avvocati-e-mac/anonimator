@@ -10,9 +10,9 @@ Desktop Electron application for **local pseudonymization** of Italian legal doc
 
 ## Session Memory
 
-Before starting any work, read the latest file in `sessioni/` to understand what was done in previous sessions, which decisions were made, and what the current state of the project is. After completing significant work, update or create a new session file in `sessioni/` documenting decisions, files changed, and next steps.
+Before starting any work, read the latest file in `sessioni/` to understand what was done in previous sessions, which decisions were made, and what the current state of the project is.
 
-Session files are named: `sessione_NNN_faseN.md` (e.g. `sessione_001_fase1.md`)
+After completing significant work, update or create a new session file in `sessioni/` documenting decisions, files changed, and next steps. Session files are named: `sessione_NNN_faseN.md` (e.g. `sessione_001_fase1.md`)
 
 ## AI Agent Roles
 
@@ -22,6 +22,7 @@ Session files are named: `sessione_NNN_faseN.md` (e.g. `sessione_001_fase1.md`)
 - Updates `sessioni/` files after each significant work session
 
 ### Gemini CLI (secondary — research only, does NOT modify files)
+
 Use Gemini CLI for targeted research when needed. Invoke it from Claude Code via Bash when:
 - Researching a specific library API or finding the correct method signature
 - Evaluating edge cases or alternative implementations
@@ -44,40 +45,32 @@ Gemini CLI findings should be documented in the relevant session file in `sessio
 Before making any changes, understand these absolute requirements have priority over any other best practices:
 
 1. **ZERO network calls** during document processing. No external APIs, telemetry, or crash reporting during analysis/anonymization. Only exception: initial model download and optional update check (outside processing flow).
-
 2. **Electron Security:**
    - Renderer: `nodeIntegration: false`, `contextIsolation: true`, `sandbox: true`
    - Use only `contextBridge` + `ipcRenderer.invoke/on` for communication
    - Validate ALL IPC inputs in Main process with Zod
-
 3. **TypeScript strict mode everywhere.** No implicit `any` types.
-
 4. **Incremental development:** Implement one phase at a time from the roadmap in PROJECT_MASTER v2.1.md. STOP at end of each phase and wait for user confirmation.
-
 5. **Git commits** before any significant modifications to existing files.
-
 5b. **CHANGELOG.md**: update `CHANGELOG.md` at the root of the repo every time the version is bumped. Add a new `## [x.y.z] - YYYY-MM-DD` section at the top listing bug fixes and new features in Italian. Never delete existing entries.
-
 5c. **GUIDA.md**: update `GUIDA.md` every time new features, services, components, parsers, or output generators are implemented. Keep each relevant section in sync with the actual code. Never delete existing sections — only extend or correct them.
-
 6. **Privacy logging:** NEVER log document content. Only log metadata (sanitized filename, size, format, page count, timing, warnings, error codes).
-
 7. **Temporary files:** Prefer in-memory processing. If temp files needed (OCR rendering): use OS temp directory, random names, immediate cleanup on completion or error.
 
 ## Commands
 
 ### Development
 ```bash
-npm start              # Run Electron app in dev mode (electron-vite dev)
-npm run ui:dev         # Run Vite dev server (React UI only)
-npm run ui:build       # Build renderer process with Vite
-npm run typecheck      # TypeScript check without emitting files
-npm test               # Run vitest unit tests
+npm start          # Run Electron app in dev mode (electron-vite dev)
+npm run ui:dev     # Run Vite dev server (React UI only)
+npm run ui:build   # Build renderer process with Vite
+npm run typecheck  # TypeScript check without emitting files
+npm test           # Run vitest unit tests
 ```
 
 ### Build
 ```bash
-npm run build:electron # Package app with electron-builder
+npm run build:electron  # Package app with electron-builder
 ```
 
 ## Architecture
@@ -106,21 +99,21 @@ npm run build:electron # Package app with electron-builder
 - `types.ts` - TypeScript interfaces shared between Main and Renderer (IPC contracts, entity types, channels)
 
 ### Document Processing Flow
-
 ```
-File dropped → ipcHandlers.ts (Zod validation)
+File dropped
+  → ipcHandlers.ts (Zod validation)
   → Format detection
-    → Parser (txt/docx/odt/pdf/ocr) → extracts text
-      → nerService.ts
-        ├─ Regex patterns (CF, P.IVA, IBAN, Email, Tel)
-        └─ Transformers.js NER (Italian_NER_XXL_v2 ONNX model)
-          → sessionManager.ts (enriches with previously assigned roles)
-            → IPC: doc:complete
-              → Renderer: EntityReview.tsx (user reviews/confirms)
-                → IPC: doc:anonymize
-                  → outputGenerators/ (format-specific anonymization)
-                    → Save: [original]_anonimizzato.[ext]
-                    → Update sessionManager
+  → Parser (txt/docx/odt/pdf/ocr) → extracts text
+  → nerService.ts
+      ├─ Regex patterns (CF, P.IVA, IBAN, Email, Tel)
+      └─ Transformers.js NER (Italian_NER_XXL_v2 ONNX model)
+  → sessionManager.ts (enriches with previously assigned roles)
+  → IPC: doc:complete
+  → Renderer: EntityReview.tsx (user reviews/confirms)
+  → IPC: doc:anonymize
+  → outputGenerators/ (format-specific anonymization)
+  → Save: [original]_anonimizzato.[ext]
+  → Update sessionManager
 ```
 
 ### Key Libraries
@@ -135,9 +128,9 @@ File dropped → ipcHandlers.ts (Zod validation)
 **NER (Named Entity Recognition):**
 - Regex for structured Italian data (Codice Fiscale, Partita IVA, IBAN, Email, Phone)
 - `@huggingface/transformers` (Transformers.js) - local NER with **`DeepMount00/Italian_NER_XXL_v2`** ONNX model
-  - 52 Italian legal entity categories (AVV_NOTAIO, TRIBUNALE, N_SENTENZA, LEGGE, PERSONA, LUOGO, ORGANIZZAZIONE, etc.)
-  - Model downloaded at first run (not bundled) to `app.getPath('userData')`
-  - Decision rationale: see `sessioni/sessione_001_fase1.md`
+- 52 Italian legal entity categories (AVV_NOTAIO, TRIBUNALE, N_SENTENZA, LEGGE, PERSONA, LUOGO, ORGANIZZAZIONE, etc.)
+- Model downloaded at first run (not bundled) to `app.getPath('userData')`
+- Decision rationale: see `sessioni/sessione_001_fase1.md`
 
 **UI:**
 - `tailwindcss` - styling
@@ -151,31 +144,30 @@ File dropped → ipcHandlers.ts (Zod validation)
 - `vitest` - testing
 
 ## File Structure
-
 ```
 /
-├── PROJECT_MASTER v2.1.md    # Primary reference doc - read before operating
-├── CLAUDE.md                 # This file
-├── sessioni/                 # Session logs — read latest before starting work
+├── PROJECT_MASTER v2.1.md  # Primary reference doc - read before operating
+├── CLAUDE.md               # This file
+├── sessioni/               # Session logs — read latest before starting work
 │   └── sessione_NNN_faseN.md
 ├── package.json
-├── resources/                # App assets (icons, etc.)
+├── resources/              # App assets (icons, etc.)
 ├── src/
-│   ├── main/                 # Node.js process
+│   ├── main/               # Node.js process
 │   │   ├── index.ts
 │   │   ├── ipcHandlers.ts
 │   │   ├── parsers/
 │   │   ├── outputGenerators/
 │   │   └── services/
 │   ├── preload/
-│   │   └── index.ts          # contextBridge API
-│   ├── renderer/             # React app (sandboxed)
+│   │   └── index.ts        # contextBridge API
+│   ├── renderer/           # React app (sandboxed)
 │   │   └── src/
 │   │       ├── App.tsx
 │   │       ├── components/
 │   │       └── store/
 │   └── shared/
-│       └── types.ts          # Shared TypeScript interfaces
+│       └── types.ts        # Shared TypeScript interfaces
 └── tests/
 ```
 
@@ -211,6 +203,91 @@ const ProcessDocumentSchema = z.object({
 
 Use IPC channel constants from `src/shared/types.ts` - never hardcode strings.
 
+## IPC Channels Reference
+
+All channels are defined as constants in `src/shared/types.ts`. Never hardcode channel name strings.
+
+### Renderer → Main (`ipcRenderer.invoke` / `ipcMain.handle`)
+
+| Channel | Input | Output |
+|---------|-------|--------|
+| `doc:process` | `{ filePath: string }` | `DocumentAnalysisResult` |
+| `doc:anonymize` | `AnonymizeRequest` | `AnonymizeResult` |
+| `batch:anonymize` | `AnonymizeRequest[]` | `BatchResult[]` |
+| `session:reset` | none | `{ status: string }` |
+| `settings:get` | none | `LlmConfig` |
+| `settings:set` | `LlmConfig` | `{ status: string }` |
+| `llm:test` | `LlmConfig` | `{ ok: boolean, message: string }` |
+| `model:download` | none | streams progress events via `model:download:progress` |
+
+### Main → Renderer (`webContents.send` / `ipcRenderer.on`)
+
+| Channel | Payload |
+|---------|---------|
+| `doc:progress` | `{ stage: 'parsing' \| 'ner' \| 'ocr' \| 'done', percent: number, message: string }` |
+| `model:download:progress` | `{ file: string, percent: number, done: boolean, error?: string }` |
+
+> ⚠️ **Direzione Main → Renderer:** usare sempre `mainWindow.webContents.send(channel, data)`.
+> `ipcMain.send()` NON esiste — è un errore comune. I listener sul lato Renderer devono
+> essere rimossi al cleanup (vedi Performance — Livello 1).
+
+## window.electronAPI Surface
+
+Tutti i metodi esposti da `src/preload/index.ts` via `contextBridge`. Disponibili nel Renderer come `window.electronAPI.*`.
+
+```typescript
+// Operazioni documento
+processDocument(filePath: string): Promise<DocumentAnalysisResult>
+anonymizeDocument(req: AnonymizeRequest): Promise<AnonymizeResult>
+batchAnonymize(reqs: AnonymizeRequest[]): Promise<BatchResult[]>
+resetSession(): Promise<{ status: string }>
+
+// Progresso (Main → Renderer push events)
+onProgress(callback: (p: ProgressPayload) => void): () => void  // ritorna fn di unsub
+
+// Impostazioni
+getSettings(): Promise<LlmConfig>
+setSettings(config: LlmConfig): Promise<{ status: string }>
+
+// LLM
+testLlm(config: LlmConfig): Promise<{ ok: boolean; message: string }>
+listLlmModels(baseUrl: string): Promise<string[]>
+
+// Utility
+getAppVersion(): Promise<string>
+showInFolder(filePath: string): void
+```
+
+> Un componente React che non interagisce con file o IPC usa **solo** lo Zustand store
+> (`src/store/sessionStore.ts`) — non ha bisogno di `window.electronAPI`.
+
+## IPC Testing Pattern
+
+Non testare gli handler IPC direttamente. Isola la logica nei service e testala in modo puro.
+
+```typescript
+// ✅ Testa la logica nel service, senza IPC
+import { analyzeText } from '../src/main/services/nerService';
+
+it('riconosce codice fiscale', async () => {
+  const result = await analyzeText('Il sig. RSSMRA80A01H501U è presente');
+  expect(result.entities).toContainEqual(
+    expect.objectContaining({ type: 'CODICE_FISCALE', value: 'RSSMRA80A01H501U' })
+  );
+});
+
+// ✅ Mock di window.electronAPI per test componenti Renderer
+vi.stubGlobal('electronAPI', {
+  processDocument: vi.fn().mockResolvedValue({ entities: [], warnings: [] }),
+  onProgress: vi.fn().mockReturnValue(() => {}), // ritorna sempre la fn di unsub
+  getSettings: vi.fn().mockResolvedValue({ provider: 'ollama', model: 'llama3' }),
+  anonymizeDocument: vi.fn().mockResolvedValue({ outputPath: '/tmp/out.pdf', entitiesReplaced: 3 }),
+});
+
+// ❌ Non fare questo — ipcMain non è disponibile in vitest
+// ipcMain.handle('doc:process', handler); // → errore in test environment
+```
+
 ## Regex Patterns for Italian Data
 
 Located in `src/main/services/nerService.ts`. Uses `\b` word boundaries (NOT `^`/`$`) because matching happens on extracted paragraph text:
@@ -243,7 +320,9 @@ Located in `src/main/services/nerService.ts`. Uses `\b` word boundaries (NOT `^`
 ```bash
 npm install @img/sharp-darwin-arm64@0.34.5 @img/sharp-libvips-darwin-arm64@1.2.4 --force --no-save
 ```
+
 Use `--force` to bypass npm's platform check. Use `--no-save` to avoid modifying `package.json`.
+
 If sharp version changes, find the correct versions with:
 ```bash
 cat node_modules/@img/sharp-darwin-x64/package.json | python3 -m json.tool | grep '"version"'
@@ -256,7 +335,9 @@ cat node_modules/@img/sharp-libvips-darwin-x64/package.json | python3 -m json.to
 
 **Cause:** `hdiutil` cannot create DMG files inside iCloud Drive-synced folders.
 
-**Fix:** The `dist:mac:arm64` script has an automatic fallback that creates the DMG on `~/Desktop/` when electron-builder fails. Same fallback is in `scripts/build-mac.sh` for both architectures. Alternatively:
+**Fix:** The `dist:mac:arm64` script has an automatic fallback that creates the DMG on `~/Desktop/` when electron-builder fails. Same fallback is in `scripts/build-mac.sh` for both architectures.
+
+Alternatively:
 ```bash
 hdiutil create -volname "Anonimator" -srcfolder dist/mac-arm64/Anonimator.app -ov -format UDZO ~/Desktop/Anonimator-arm64.dmg
 ```
@@ -287,27 +368,27 @@ Le linee guida seguono un approccio a tre livelli: applica prima il Livello 1 (i
 ### Livello 1 — Regole base (sempre valide, impatto immediato)
 
 - **BrowserWindow startup percepito:** creare la finestra con `show: false` e mostrarla solo all'evento `ready-to-show`. Evita il flash di finestra bianca.
-  ```typescript
-  win.once('ready-to-show', () => win.show());
-  ```
+```typescript
+win.once('ready-to-show', () => win.show());
+```
 - **API Node.js asincrone:** usare sempre `fs.promises.*` nel main process. Mai `fs.readFileSync`, `fs.writeFileSync` nel percorso critico — bloccano il main thread e congelano l'intera app.
 - **Cleanup listener React:** ogni `useEffect` che registra un listener IPC o un timer deve restituire una funzione di cleanup. I memory leak si accumulano in app desktop long-running (gli utenti non chiudono mai l'app).
-  ```typescript
-  useEffect(() => {
-    const unsub = window.electronAPI.onProgress(handler);
-    return () => unsub(); // cleanup obbligatorio
-  }, []);
-  ```
+```typescript
+useEffect(() => {
+  const unsub = window.electronAPI.onProgress(handler);
+  return () => unsub(); // cleanup obbligatorio
+}, []);
+```
 - **`ipcRenderer.invoke` sempre (mai `sendSync`):** `sendSync` blocca il renderer fino alla risposta del main. Già usato correttamente nel progetto — mantenere questo pattern.
 - **Escludere file non necessari dalla build:** nella config `electron-builder`, il campo `files` deve escludere `tests/`, `.git/`, documentazione, file `.md` non necessari a runtime.
 
 ### Livello 2 — Ottimizzazioni mirate (applicare quando si toccano le aree interessate)
 
 - **Lazy loading moduli pesanti nel main:** caricare `mupdf`, `tesseract.js` e altri moduli pesanti solo quando servono con `import()` dinamico, non al top-level. Riduce il tempo di avvio.
-  ```typescript
-  // Invece di: import mupdf from 'mupdf' in cima al file
-  const mupdf = (await import('mupdf')).default; // dentro la funzione che lo usa
-  ```
+```typescript
+// Invece di: import mupdf from 'mupdf' in cima al file
+const mupdf = (await import('mupdf')).default; // dentro la funzione che lo usa
+```
 - **React.lazy() per componenti pesanti:** componenti non mostrati allo startup (es. SettingsScreen, BatchReview) possono essere caricati con `React.lazy()` + `Suspense`.
 - **Audit dipendenze:** prima di aggiungere una nuova libreria, verificare con `npx depcheck` se ci sono dipendenze inutilizzate da rimuovere. Preferire alternative leggere (es. `crypto.randomUUID()` invece di `uuid`).
 - **Compressione build:** in `electron-builder.yml` impostare `compression: maximum`. Per eseguibili Windows, valutare UPX (riduce dimensione ma alcuni antivirus segnalano falsi positivi).
@@ -323,8 +404,8 @@ Le linee guida seguono un approccio a tre livelli: applica prima il Livello 1 (i
 ### Strumenti di misura (prima di ottimizzare, misurare)
 
 ```bash
-npx depcheck                    # dipendenze inutilizzate
-npx vite-bundle-visualizer      # analisi bundle renderer
+npx depcheck               # dipendenze inutilizzate
+npx vite-bundle-visualizer # analisi bundle renderer
 # Chrome DevTools > Performance tab: profiling runtime
 # Chrome DevTools > Memory tab: heap snapshot per memory leak
 ```
@@ -333,10 +414,7 @@ npx vite-bundle-visualizer      # analisi bundle renderer
 
 ## Build — Istruzione utente
 
-Quando l'utente dice **"fai la build"** o **"fai il build"** intende sempre:
-**pubblicare un nuovo tag su GitHub per triggerare la CI/CD** (`git tag vX.Y.Z && git push origin vX.Y.Z`).
-
-NON avviare build locali (`npm run dist:mac:arm64`, ecc.) a meno che non sia esplicitamente richiesto.
+Quando l'utente dice **"fai la build"** o **"fai il build"** intende sempre: **pubblicare un nuovo tag su GitHub per triggerare la CI/CD** (`git tag vX.Y.Z && git push origin vX.Y.Z`). NON avviare build locali (`npm run dist:mac:arm64`, ecc.) a meno che non sia esplicitamente richiesto.
 
 Passaggi standard per una release:
 1. Verificare che `package.json` abbia la versione aggiornata
