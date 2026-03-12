@@ -89,8 +89,13 @@ Before making any changes, understand these absolute requirements have priority 
    - Use only `contextBridge` + `ipcRenderer.invoke/on` for communication
    - Validate ALL IPC inputs in Main process with Zod
 3. **TypeScript strict mode everywhere.** No implicit `any` types.
+   - **NO Type Cheating:** `// @ts-ignore`, `// @ts-expect-error`, and type assertions `as any` are **STRICTLY FORBIDDEN**. Fix the actual TypeScript interfaces — never silence the compiler.
 4. **Incremental development:** One feature/fix at a time. STOP at end of each logical unit and wait for user confirmation before proceeding.
-5. **Git commits** before any significant modifications to existing files.
+5. **Git commits** before any significant modifications to existing files. Use Conventional Commits:
+   - `feat:` new feature visible to the user
+   - `fix:` bug fix
+   - `refactor:` code change that neither fixes a bug nor adds a feature
+   - `chore:` scripts, configs, dependency updates, docs
 5b. **CHANGELOG.md**: update `CHANGELOG.md` at the root of the repo every time the version is bumped. Add a new `## [x.y.z] - YYYY-MM-DD` section at the top listing bug fixes and new features in Italian. Never delete existing entries.
 5c. **GUIDA.md**: update `GUIDA.md` every time new features, services, components, parsers, or output generators are implemented. Keep each relevant section in sync with the actual code. Never delete existing sections — only extend or correct them.
 5d. **CLAUDE.md ↔ GUIDA.md sync:** Le seguenti sezioni devono restare allineate tra i due file:
@@ -98,8 +103,10 @@ Before making any changes, understand these absolute requirements have priority 
    - `IPC Channels Reference` (CLAUDE.md) ↔ tabella canali IPC (GUIDA.md)
    - `Architecture` (CLAUDE.md) ↔ sezione Architettura (GUIDA.md)
    Ogni volta che si modifica una delle due, controllare e aggiornare anche l'altra nella stessa sessione/commit.
-6. **Privacy logging:** NEVER log document content. Only log metadata (sanitized filename, size, format, page count, timing, warnings, error codes).
+6. **Privacy logging & Debugging:** NEVER log document content. Only log metadata (sanitized filename, size, format, page count, timing, warnings, error codes).
+   - **CRITICAL — anche in debug:** non aggiungere MAI `console.log(text)`, `console.log(content)`, `console.log(entity.value)` su dati provenienti da documenti reali. Usare esclusivamente test Vitest con dati sintetici per debug di parser e NER. I log di sviluppo non devono mai contenere contenuto documentale — anche temporaneamente.
 7. **Temporary files:** Prefer in-memory processing. If temp files needed (OCR rendering): use OS temp directory, random names, immediate cleanup on completion or error.
+8. **Mandatory testing for NER/Parser changes:** If you add, modify, or fix a Regex pattern in `nerService.ts`, or change any document parser, you **MUST** write or update the corresponding Vitest unit test in `tests/` before asking for confirmation. Never leave NER/Parser changes untested.
 
 ## Versioning (SemVer)
 
@@ -148,6 +155,10 @@ npm run build:electron  # Package app with electron-builder
 - React app with ZERO Node.js access (sandboxed)
 - `src/store/sessionStore.ts` - Zustand state management
 - `src/components/` - UI components (DropZone, ProcessingScreen, EntityReview, BatchReview, SuccessScreen, BatchSuccess, Settings)
+
+**React Rules (Renderer):**
+- **Styling:** Use ONLY Tailwind CSS classes. Do **not** create inline styles (`style={{...}}`) or new `.css` files unless strictly unavoidable and explicitly approved.
+- **State:** Use the Zustand store (`sessionStore.ts`) for any state shared between components. Reserve `useState` exclusively for transient, strictly local UI state (e.g., dropdown open/close, local form input before submission).
 
 **Shared** (`src/shared/`)
 - `types.ts` - TypeScript interfaces shared between Main and Renderer (IPC contracts, entity types, channels)
@@ -235,7 +246,7 @@ File dropped
 ## Development Workflow
 1. **Run Session Startup Checklist** (see above)
 2. **Read PROJECT_MASTER v2.1.md** for the overall roadmap and post-launch priorities
-3. All 6 initial phases are **DONE** — new work consists of feature extensions, bugfixes, and quality improvements
+3. All 6 initial phases are **DONE** — new work consists of feature extensions, bugfixes, and quality improvements:
    - Phase 1: Setup & Scaffolding — **DONE** (see sessione_001_fase1.md)
    - Phase 2: NER Engine + SessionManager — **DONE**
    - Phase 3: Document Parsers (TXT/DOCX/ODT/MD) — **DONE**
