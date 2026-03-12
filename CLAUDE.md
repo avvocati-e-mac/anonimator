@@ -14,6 +14,29 @@ Before starting any work, read the latest file in `sessioni/` to understand what
 
 After completing significant work, update or create a new session file in `sessioni/` documenting decisions, files changed, and next steps. Session files are named: `sessione_NNN_faseN.md` (e.g. `sessione_001_fase1.md`)
 
+**Template sessione obbligatorio:**
+```markdown
+# Sessione NNN — [Titolo breve]
+**Data:** YYYY-MM-DD
+**Versione:** x.y.z
+
+## Obiettivo
+## Decisioni prese
+## File modificati
+## Problemi noti / TODO prossima sessione
+```
+
+## Session Startup Checklist
+
+Prima di iniziare qualsiasi lavoro, eseguire questi controlli:
+
+1. [ ] Letto il file più recente in `sessioni/`
+2. [ ] Verificato che `npm run typecheck` passi (nessun errore preesistente)
+3. [ ] Controllato `git status` (nessun file uncommitted non intenzionale)
+4. [ ] Gemini CLI disponibile? `command -v gemini` (opzionale — skip se non presente)
+
+Read-only operations (`cat`, `grep`, `git log`, `git diff`, `git status`, `npm run typecheck`) do **NOT** require user confirmation — execute immediately. Write/delete/commit operations require confirmation only if not part of an already-approved plan.
+
 ## AI Agent Roles
 
 ### Claude Code (primary)
@@ -21,24 +44,40 @@ After completing significant work, update or create a new session file in `sessi
 - Implements the roadmap phase by phase, stops at end of each phase for user confirmation
 - Updates `sessioni/` files after each significant work session
 
-### Gemini CLI (secondary — research only, does NOT modify files)
+### Gemini CLI (secondary — research + code drafting, does NOT commit files)
 
-Use Gemini CLI for targeted research when needed. Invoke it from Claude Code via Bash when:
+Use Gemini CLI for targeted research and isolated code drafting when available.
+
+**Pre-flight check — verificare disponibilità prima di usarlo:**
+```bash
+if ! command -v gemini &> /dev/null; then
+  echo "Gemini CLI non disponibile — skip, procedi senza."
+fi
+```
+Se il comando non è disponibile, **non usare Gemini CLI** e procedere normalmente con Claude Code. Non interrompere il lavoro per installarlo.
+
+**Quando usare Gemini CLI** (solo se disponibile):
 - Researching a specific library API or finding the correct method signature
 - Evaluating edge cases or alternative implementations
 - Checking model availability on HuggingFace or verifying ONNX compatibility
+- Drafting a well-scoped, isolated piece of code (single parser, utility function, regex pattern, standalone React component with no IPC dependencies)
 
 **How to invoke Gemini CLI from Claude Code:**
 ```bash
-gemini -p "Your research question here"
+gemini -p "Your research question or code drafting request here"
 ```
 
 Example use cases:
 - `gemini -p "What is the correct Transformers.js pipeline syntax for token-classification with Italian_NER_XXL_v2 ONNX model?"`
 - `gemini -p "How does adm-zip handle UTF-8 XML content in DOCX files on Windows?"`
 - `gemini -p "What are the OCR confidence thresholds in tesseract.js v5 and how to read them?"`
+- `gemini -p "Write a TypeScript function that strips Markdown syntax and returns plain text, using only Node.js built-ins"`
 
-Gemini CLI findings should be documented in the relevant session file in `sessioni/`.
+**Rules for code drafting via Gemini:**
+- Only use Gemini for **isolated, well-specified** tasks (single function, single parser, standalone utility)
+- Claude Code must **always review, adapt to project conventions, and commit** the result — never paste Gemini output directly
+- Gemini output must comply with TypeScript strict mode, project naming conventions, and IPC security rules
+- Document Gemini's contribution in the relevant session file in `sessioni/`
 
 ## Critical Rules (Non-Negotiable)
 
@@ -50,12 +89,25 @@ Before making any changes, understand these absolute requirements have priority 
    - Use only `contextBridge` + `ipcRenderer.invoke/on` for communication
    - Validate ALL IPC inputs in Main process with Zod
 3. **TypeScript strict mode everywhere.** No implicit `any` types.
-4. **Incremental development:** Implement one phase at a time from the roadmap in PROJECT_MASTER v2.1.md. STOP at end of each phase and wait for user confirmation.
+4. **Incremental development:** One feature/fix at a time. STOP at end of each logical unit and wait for user confirmation before proceeding.
 5. **Git commits** before any significant modifications to existing files.
 5b. **CHANGELOG.md**: update `CHANGELOG.md` at the root of the repo every time the version is bumped. Add a new `## [x.y.z] - YYYY-MM-DD` section at the top listing bug fixes and new features in Italian. Never delete existing entries.
 5c. **GUIDA.md**: update `GUIDA.md` every time new features, services, components, parsers, or output generators are implemented. Keep each relevant section in sync with the actual code. Never delete existing sections — only extend or correct them.
+5d. **CLAUDE.md ↔ GUIDA.md sync:** Le seguenti sezioni devono restare allineate tra i due file:
+   - `window.electronAPI Surface` (CLAUDE.md) ↔ sezione API Preload (GUIDA.md)
+   - `IPC Channels Reference` (CLAUDE.md) ↔ tabella canali IPC (GUIDA.md)
+   - `Architecture` (CLAUDE.md) ↔ sezione Architettura (GUIDA.md)
+   Ogni volta che si modifica una delle due, controllare e aggiornare anche l'altra nella stessa sessione/commit.
 6. **Privacy logging:** NEVER log document content. Only log metadata (sanitized filename, size, format, page count, timing, warnings, error codes).
 7. **Temporary files:** Prefer in-memory processing. If temp files needed (OCR rendering): use OS temp directory, random names, immediate cleanup on completion or error.
+
+## Versioning (SemVer)
+
+- **PATCH** (x.y.**Z**): bugfix, refactoring senza nuove funzionalità, aggiornamenti dipendenze
+- **MINOR** (x.**Y**.0): nuova funzionalità visibile all'utente, nuovo formato supportato, nuovo canale IPC
+- **MAJOR** (**X**.0.0): breaking change all'architettura o all'IPC contract
+
+Flusso obbligatorio: bump versione in `package.json` → aggiorna `CHANGELOG.md` → poi fai la build.
 
 ## Commands
 
@@ -82,9 +134,11 @@ npm run build:electron  # Package app with electron-builder
 - Entry point: `index.ts` - creates BrowserWindow
 - `ipcHandlers.ts` - centralized IPC handler registration with Zod validation
 - `services/` - all document processing logic:
-  - `nerService.ts` - hybrid NER engine (Transformers.js + Regex)
+  - `nerService.ts` - hybrid NER engine (Regex + Transformers.js + optional LLM)
   - `sessionManager.ts` - in-memory substitution dictionary (session persistence)
-  - `parsers/` - extract text from different formats (txt, docx, odt, pdf, ocr)
+  - `settingsManager.ts` - LLM configuration persistence on disk
+  - `llmService.ts` - client for local LLMs (Ollama/LM Studio) via OpenAI-compatible endpoint
+  - `parsers/` - extract text from different formats (txt, docx, odt, pdf, ocr, markdown)
   - `outputGenerators/` - create anonymized output files
 
 **Preload** (`src/preload/`)
@@ -93,7 +147,7 @@ npm run build:electron  # Package app with electron-builder
 **Renderer** (`src/renderer/`)
 - React app with ZERO Node.js access (sandboxed)
 - `src/store/sessionStore.ts` - Zustand state management
-- `src/components/` - UI components (DropZone, ProcessingScreen, EntityReview, SuccessScreen)
+- `src/components/` - UI components (DropZone, ProcessingScreen, EntityReview, BatchReview, SuccessScreen, BatchSuccess, Settings)
 
 **Shared** (`src/shared/`)
 - `types.ts` - TypeScript interfaces shared between Main and Renderer (IPC contracts, entity types, channels)
@@ -103,10 +157,11 @@ npm run build:electron  # Package app with electron-builder
 File dropped
   → ipcHandlers.ts (Zod validation)
   → Format detection
-  → Parser (txt/docx/odt/pdf/ocr) → extracts text
+  → Parser (txt/docx/odt/pdf/ocr/markdown) → extracts text
   → nerService.ts
-      ├─ Regex patterns (CF, P.IVA, IBAN, Email, Tel)
-      └─ Transformers.js NER (Italian_NER_XXL_v2 ONNX model)
+      ├─ Regex patterns (CF, P.IVA, IBAN, Email, Tel, legal structures)
+      ├─ Transformers.js NER (Italian_NER_XXL_v2 ONNX model)
+      └─ LLM locale (optional, Ollama/LM Studio)
   → sessionManager.ts (enriches with previously assigned roles)
   → IPC: doc:complete
   → Renderer: EntityReview.tsx (user reviews/confirms)
@@ -120,15 +175,17 @@ File dropped
 
 **Documents:**
 - `pdfjs-dist` - extract text + coordinates from native PDFs
-- `pdf-lib` - PDF manipulation (create output with white rectangles + pseudonyms)
+- `mupdf` - PDF redaction (removes text glyphs from PDF)
+- `pdf-lib` - PDF manipulation (overlay grey rectangles + pseudonyms)
 - `adm-zip` - parse/rebuild DOCX/ODT (ZIP + XML)
 - `fast-xml-parser` - parse XML content inside DOCX/ODT archives
 - `tesseract.js` - offline OCR (tessdata downloaded at first run)
 
 **NER (Named Entity Recognition):**
-- Regex for structured Italian data (Codice Fiscale, Partita IVA, IBAN, Email, Phone)
+- Regex for structured Italian data (Codice Fiscale, Partita IVA, IBAN, Email, Phone) and 11 legal structure patterns
 - `@huggingface/transformers` (Transformers.js) - local NER with **`DeepMount00/Italian_NER_XXL_v2`** ONNX model
 - 52 Italian legal entity categories (AVV_NOTAIO, TRIBUNALE, N_SENTENZA, LEGGE, PERSONA, LUOGO, ORGANIZZAZIONE, etc.)
+- Optional LLM level (Ollama / LM Studio) for additional entity extraction
 - Model downloaded at first run (not bundled) to `app.getPath('userData')`
 - Decision rationale: see `sessioni/sessione_001_fase1.md`
 
@@ -147,11 +204,15 @@ File dropped
 ```
 /
 ├── PROJECT_MASTER v2.1.md  # Primary reference doc - read before operating
-├── CLAUDE.md               # This file
+├── CLAUDE.md               # This file — keep in sync with GUIDA.md
+├── GUIDA.md                # Full technical documentation — keep in sync with CLAUDE.md
+├── CHANGELOG.md            # Version history in Italian
 ├── sessioni/               # Session logs — read latest before starting work
 │   └── sessione_NNN_faseN.md
 ├── package.json
-├── resources/              # App assets (icons, etc.)
+├── resources/              # App assets (icons, tessdata, NER model)
+├── scripts/
+│   └── build-mac.sh        # Unified arm64 + x64 build script
 ├── src/
 │   ├── main/               # Node.js process
 │   │   ├── index.ts
@@ -172,17 +233,16 @@ File dropped
 ```
 
 ## Development Workflow
-
-1. **Read latest file in `sessioni/`** to understand current project state
-2. **Read PROJECT_MASTER v2.1.md** for the overall roadmap
-3. Follow the 6-phase roadmap:
-   - Phase 1: Setup & Scaffolding — DONE (see sessione_001_fase1.md)
-   - Phase 2: NER Engine + SessionManager
-   - Phase 3: Document Parsers (TXT/DOCX/ODT)
-   - Phase 4: PDF Native + OCR
-   - Phase 5: User Interface
-   - Phase 6: Packaging & Auto-update
-4. Implement one phase at a time, stop and wait for confirmation
+1. **Run Session Startup Checklist** (see above)
+2. **Read PROJECT_MASTER v2.1.md** for the overall roadmap and post-launch priorities
+3. All 6 initial phases are **DONE** — new work consists of feature extensions, bugfixes, and quality improvements
+   - Phase 1: Setup & Scaffolding — **DONE** (see sessione_001_fase1.md)
+   - Phase 2: NER Engine + SessionManager — **DONE**
+   - Phase 3: Document Parsers (TXT/DOCX/ODT/MD) — **DONE**
+   - Phase 4: PDF Native + OCR — **DONE**
+   - Phase 5: User Interface — **DONE**
+   - Phase 6: Packaging & Auto-update — **DONE**
+4. Implement one feature/fix at a time, stop and wait for confirmation
 5. Read files before modifying them
 6. Commit before significant changes
 7. Run `npm run typecheck` after every change; run `npm test` when tests exist
@@ -195,7 +255,7 @@ All IPC handlers must validate inputs with Zod schemas before processing:
 ```typescript
 const ProcessDocumentSchema = z.object({
   filePath: z.string().min(1).refine(
-    (p) => ['.pdf','.docx','.odt','.txt','.png','.jpg','.jpeg'].some(ext => p.endsWith(ext)),
+    (p) => ['.pdf','.docx','.odt','.txt','.md','.png','.jpg','.jpeg'].some(ext => p.toLowerCase().endsWith(ext)),
     { message: 'Formato file non supportato' }
   ),
 });
@@ -215,9 +275,15 @@ All channels are defined as constants in `src/shared/types.ts`. Never hardcode c
 | `doc:anonymize` | `AnonymizeRequest` | `AnonymizeResult` |
 | `batch:anonymize` | `AnonymizeRequest[]` | `BatchResult[]` |
 | `session:reset` | none | `{ status: string }` |
-| `settings:get` | none | `LlmConfig` |
-| `settings:set` | `LlmConfig` | `{ status: string }` |
+| `settings:get` | none | `{ llm: LlmConfig }` |
+| `settings:set` | `{ llm: LlmConfig }` | `{ status: string }` |
 | `llm:test` | `LlmConfig` | `{ ok: boolean, message: string }` |
+| `llm:listModels` | `{ baseUrl: string }` | `{ models: string[] }` |
+| `llm:getDefaultPrompt` | `{ lang: 'it' \| 'en' }` | `string` |
+| `app:getVersion` | none | `string` |
+| `shell:showInFolder` | `{ filePath: string }` | `void` |
+| `diag:collect` | none | `string` (copied to clipboard) |
+| `model:status` | none | `{ present: boolean, path: string }` |
 | `model:download` | none | streams progress events via `model:download:progress` |
 
 ### Main → Renderer (`webContents.send` / `ipcRenderer.on`)
@@ -246,16 +312,25 @@ resetSession(): Promise<{ status: string }>
 onProgress(callback: (p: ProgressPayload) => void): () => void  // ritorna fn di unsub
 
 // Impostazioni
-getSettings(): Promise<LlmConfig>
-setSettings(config: LlmConfig): Promise<{ status: string }>
+getSettings(): Promise<{ llm: LlmConfig }>
+setSettings(config: { llm: LlmConfig }): Promise<{ status: string }>
 
 // LLM
 testLlm(config: LlmConfig): Promise<{ ok: boolean; message: string }>
-listLlmModels(baseUrl: string): Promise<string[]>
+listLlmModels(baseUrl: string): Promise<{ models: string[] }>
+getDefaultPrompt(lang: 'it' | 'en'): Promise<string>
 
 // Utility
 getAppVersion(): Promise<string>
 showInFolder(filePath: string): void
+getPathForFile(file: File): string  // path assoluto da File object drag-drop
+
+// Modello NER
+modelStatus(): Promise<{ present: boolean; path: string }>
+downloadModel(): Promise<void>  // progress via model:download:progress events
+
+// Diagnostica
+collectDiagnostics(): Promise<string>
 ```
 
 > Un componente React che non interagisce con file o IPC usa **solo** lo Zustand store
@@ -280,7 +355,7 @@ it('riconosce codice fiscale', async () => {
 vi.stubGlobal('electronAPI', {
   processDocument: vi.fn().mockResolvedValue({ entities: [], warnings: [] }),
   onProgress: vi.fn().mockReturnValue(() => {}), // ritorna sempre la fn di unsub
-  getSettings: vi.fn().mockResolvedValue({ provider: 'ollama', model: 'llama3' }),
+  getSettings: vi.fn().mockResolvedValue({ llm: { provider: 'ollama', model: 'llama3' } }),
   anonymizeDocument: vi.fn().mockResolvedValue({ outputPath: '/tmp/out.pdf', entitiesReplaced: 3 }),
 });
 
@@ -293,7 +368,7 @@ vi.stubGlobal('electronAPI', {
 Located in `src/main/services/nerService.ts`. Uses `\b` word boundaries (NOT `^`/`$`) because matching happens on extracted paragraph text:
 
 - **CODICE_FISCALE:** `/\b[A-Z]{6}[0-9]{2}[A-Z][0-9]{2}[A-Z][0-9]{3}[A-Z]\b/gi`
-- **PARTITA_IVA:** `/\b(?:P\.?\s?IVA\s*)?([0-9]{11})\b/gi`
+- **PARTITA_IVA:** `/\b(?:P\.?\s?IVA\s*:?\s*)?([0-9]{11})\b/gi`
 - **IBAN:** `/\bIT[0-9]{2}[A-Z][0-9]{22}\b/gi`
 - **EMAIL:** `/\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/gi`
 - **TELEFONO:** `/\b(?:\+39[\s\-]?)?(?:0[0-9]{1,3}[\s\-]?[0-9]{5,8}|3[0-9]{2}[\s\-]?[0-9]{6,7})\b/g`
@@ -307,6 +382,7 @@ Located in `src/main/services/nerService.ts`. Uses `\b` word boundaries (NOT `^`
 - NER model not found → fallback to regex-only
 - Corrupt DOCX → catch exception, suggest re-saving
 - Write permission error → log and show specific error
+- LLM not reachable → skip LLM level, proceed with regex + BERT only
 
 ## Known Build Issues
 
@@ -345,7 +421,6 @@ hdiutil create -volname "Anonimator" -srcfolder dist/mac-arm64/Anonimator.app -o
 Full details: `sessioni/sessione_019_sharp_arm64_fix.md`
 
 ### Build arm64 + x64 automatica (script unificato)
-
 ```bash
 npm run dist:mac:both
 # oppure direttamente:
