@@ -125,8 +125,18 @@ export const DEFAULT_BATCH_SETTINGS: BatchSettings = {
 
 // ─── Configurazione LLM locale ───────────────────────────────────────────────
 
+export type LlmProviderType = 'ollama' | 'openai_compat'
+export type LlmProviderPreset = 'ollama' | 'lmstudio' | 'mlx' | 'custom'
+
+export interface LlmDetectedName {
+  original: string
+  replacement: string
+}
+
 export interface LlmConfig {
   enabled: boolean
+  providerType: LlmProviderType
+  providerPreset: LlmProviderPreset
   baseUrl: string    // es. "http://localhost:11434/v1" (Ollama) o "http://localhost:1234/v1" (LM Studio)
   model: string      // es. "llama3.2" o "mistral"
   maxTokens: number
@@ -135,6 +145,21 @@ export interface LlmConfig {
   customPrompt?: string     // se valorizzato, sovrascrive il prompt di default
   promptLanguage: 'it' | 'en'  // TODO [A/B-TEST]: rimuovere dopo ottimizzazione prompt
   chunkSize: number         // caratteri per chunk (1000–8000)
+  stream: boolean           // disattiva lo streaming (sempre false)
+  temperature: number       // impostata a 0 per estrazione deterministica
+}
+
+export interface LlmCapabilities {
+  supportsStructuredOutput: boolean
+  supportsJsonSchema: boolean
+  supportsModelListing: boolean
+}
+
+export interface LlmTestResult {
+  ok: boolean
+  message: string
+  models?: string[]
+  capabilities?: LlmCapabilities
 }
 
 // ─── Dizionario entità esportato (file JSON) ──────────────────────────────────
@@ -151,13 +176,17 @@ export interface EntityDictionaryFile {
 
 export const DEFAULT_LLM_CONFIG: LlmConfig = {
   enabled: false,
+  providerType: 'ollama',
+  providerPreset: 'ollama',
   baseUrl: 'http://localhost:11434/v1',
   model: '',
   maxTokens: 8192,
   timeoutMs: 120000,
   parallelRequests: 1,
   promptLanguage: 'it',  // TODO [A/B-TEST]
-  chunkSize: 3000
+  chunkSize: 3000,
+  stream: false,
+  temperature: 0
 }
 
 // ─── Stato modello NER ────────────────────────────────────────────────────────

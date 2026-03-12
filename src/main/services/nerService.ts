@@ -31,21 +31,21 @@ async function tryLoadTransformers(): Promise<TransformersPipelineFn | null> {
     mod.env.localModelPath = modelPath
 
     // FIX per Electron: disabilita proxy worker che fallirebbe in ambiente Node
-    if (mod.env.backends && mod.env.backends.onnx) {
-      mod.env.backends.onnx.wasm.proxy = false
+    if (mod.env?.backends?.onnx?.wasm) {
+      (mod.env.backends.onnx.wasm as any).proxy = false
     }
 
     // Diagnostica onnxruntime-node
     try {
       const ort = require('onnxruntime-node')
-      log.info('onnxruntime-node caricato', { version: ort.version, hasInferenceSession: !!ort.InferenceSession })
+      log.info('onnxruntime-node caricato', { version: (ort as any).version, hasInferenceSession: !!(ort as any).InferenceSession })
     } catch (err) {
       log.warn('onnxruntime-node non caricabile via require, Transformers.js userà il fallback', { 
         error: err instanceof Error ? err.message : String(err) 
       })
     }
 
-    log.info('Transformers.js caricato correttamente', { version: mod.VERSION })
+    log.info('Transformers.js caricato correttamente')
     _pipelineFactory = mod.pipeline as TransformersPipelineFn
     return _pipelineFactory
   } catch (err) {

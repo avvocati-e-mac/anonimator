@@ -23,6 +23,32 @@ function getSettingsPath(): string {
   return join(app.getPath('userData'), 'legalshield-settings.json')
 }
 
+function migrateLlmConfig(config: any): LlmConfig {
+  // Se ha già il campo providerType, assumiamo sia già aggiornato
+  if (config && config.providerType) {
+    return { ...DEFAULT_LLM_CONFIG, ...config }
+  }
+
+  // Migrazione da vecchia configurazione
+  const migrated = { ...DEFAULT_LLM_CONFIG, ...config }
+
+  if (config && config.baseUrl) {
+    if (config.baseUrl.includes(':11434')) {
+      migrated.providerType = 'ollama'
+      migrated.providerPreset = 'ollama'
+    } else if (config.baseUrl.includes(':1234')) {
+      migrated.providerType = 'openai_compat'
+      migrated.providerPreset = 'lmstudio'
+    } else {
+      // Fallback a custom openai_compat se l'URL non è riconosciuto
+      migrated.providerType = 'openai_compat'
+      migrated.providerPreset = 'custom'
+    }
+  }
+
+  return migrated
+}
+
 function load(): AppSettings {
   const p = getSettingsPath()
   if (!existsSync(p)) return { ...DEFAULT_SETTINGS, llm: { ...DEFAULT_LLM_CONFIG } }
@@ -30,7 +56,7 @@ function load(): AppSettings {
     const raw = readFileSync(p, 'utf-8')
     const parsed = JSON.parse(raw) as Partial<AppSettings>
     return {
-      llm: { ...DEFAULT_LLM_CONFIG, ...(parsed.llm ?? {}) }
+      llm: migrateLlmConfig(parsed.llm)
     }
   } catch (err) {
     log.warn('settingsManager: errore lettura settings, uso default', { err })

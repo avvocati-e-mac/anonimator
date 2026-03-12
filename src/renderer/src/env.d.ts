@@ -15,8 +15,8 @@ interface ElectronAPI {
   getPathForFile: (file: File) => string
   getSettings: () => Promise<{ llm: LlmConfig }>
   setSettings: (settings: { llm: LlmConfig }) => Promise<{ status: string } | { error: string }>
-  testLlm: (llm: LlmConfig) => Promise<{ ok: boolean; message: string; models?: string[] }>
-  listLlmModels: (baseUrl: string) => Promise<{ models: string[] }>
+  testLlm: (llm: LlmConfig) => Promise<import('@shared/types').LlmTestResult>
+  listLlmModels: (llm: LlmConfig) => Promise<{ models: string[] }>
   getDefaultPrompt: (lang: 'it' | 'en') => Promise<string>
   getAppVersion: () => Promise<string>
   addEntity: (originalText: string, type: string) => Promise<{ pseudonym: string; id: string } | { error: string }>

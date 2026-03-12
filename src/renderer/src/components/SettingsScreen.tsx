@@ -23,10 +23,12 @@ const SUGGESTED_MODELS = [
   { id: 'phi3.5:mini', label: 'Phi 3.5 Mini — Leggerissimo, fallback CPU (~3GB RAM)' },
 ] as const
 
-// Preset per i due software LLM supportati
+// Preset per i software LLM supportati
 const LLM_PRESETS = {
-  ollama:   { label: 'Ollama',    defaultPort: 11434, path: '/v1' },
-  lmstudio: { label: 'LM Studio', defaultPort: 1234,  path: '/v1' },
+  ollama:   { label: 'Ollama',    providerType: 'ollama',        defaultPort: 11434, path: '/v1' },
+  lmstudio: { label: 'LM Studio', providerType: 'openai_compat', defaultPort: 1234,  path: '/v1' },
+  mlx:      { label: 'MLX Server', providerType: 'openai_compat', defaultPort: 8080,  path: '/v1' },
+  custom:   { label: 'Custom (OpenAI compat)', providerType: 'openai_compat', defaultPort: 11434, path: '/v1' },
 } as const
 type PresetKey = keyof typeof LLM_PRESETS
 
@@ -35,12 +37,8 @@ function buildBaseUrl(preset: PresetKey, host: string): string {
   const h = host.trim() || 'localhost'
   // Se l'host non include già la porta, aggiungila
   const hasPort = /:\d+$/.test(h)
-  return `http://${h}${hasPort ? '' : `:${defaultPort}`}${path}`
-}
-
-function detectPresetFromUrl(url: string): PresetKey {
-  if (url.includes(':1234')) return 'lmstudio'
-  return 'ollama'
+  const base = h.startsWith('http') ? h : `http://${h}`
+  return `${base}${hasPort ? '' : `:${defaultPort}`}${path}`
 }
 
 function extractHostFromUrl(url: string): string {
@@ -54,11 +52,11 @@ function extractHostFromUrl(url: string): string {
 
 export default function SettingsScreen({ onBack, isDark, onToggleDark }: SettingsScreenProps): React.JSX.Element {
   const [llm, setLlm] = useState<LlmConfig>(DEFAULT_LLM_CONFIG)
-  const [preset, setPreset] = useState<PresetKey>('ollama')
   const [host, setHost] = useState('localhost')
   const [availableModels, setAvailableModels] = useState<string[]>([])
   const [testState, setTestState] = useState<TestState>('idle')
   const [testMessage, setTestMessage] = useState('')
+  const [testCapabilities, setTestCapabilities] = useState<import('@shared/types').LlmCapabilities | null>(null)
   const [saving, setSaving] = useState(false)
   const [diagState, setDiagState] = useState<'idle' | 'loading' | 'copied'>('idle')
   const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null)
@@ -74,10 +72,8 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
   useEffect(() => {
     window.electronAPI.getSettings().then(({ llm: saved }) => {
       setLlm(saved)
-      const detectedPreset = detectPresetFromUrl(saved.baseUrl)
-      setPreset(detectedPreset)
       setHost(extractHostFromUrl(saved.baseUrl))
-      if (saved.baseUrl) loadModels(saved.baseUrl)
+      if (saved.baseUrl) loadModels(saved)
       // Mostra input manuale se il modello salvato non è tra i suggeriti
       const isSuggested = SUGGESTED_MODELS.some((m) => m.id === saved.model)
       setUseCustomModel(!isSuggested && saved.model !== '')
@@ -90,11 +86,11 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
     window.electronAPI.getDefaultPrompt(llm.promptLanguage).then(setDefaultPromptText)
   }, [llm.promptLanguage])
 
-  const loadModels = useCallback(async (baseUrl: string) => {
-    if (!baseUrl) return
+  const loadModels = useCallback(async (config: LlmConfig) => {
+    if (!config.baseUrl) return
     setLoadingModels(true)
     try {
-      const { models } = await window.electronAPI.listLlmModels(baseUrl)
+      const { models } = await window.electronAPI.listLlmModels(config)
       setAvailableModels(models)
     } catch {
       setAvailableModels([])
@@ -104,27 +100,35 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
   }, [])
 
   function handlePresetChange(p: PresetKey): void {
-    setPreset(p)
     const newUrl = buildBaseUrl(p, host)
-    setLlm((prev) => ({ ...prev, baseUrl: newUrl }))
-    loadModels(newUrl)
+    const newLlm = {
+      ...llm,
+      providerPreset: p,
+      providerType: LLM_PRESETS[p].providerType as any,
+      baseUrl: newUrl
+    }
+    setLlm(newLlm)
+    loadModels(newLlm)
     setTestState('idle')
   }
 
   function handleHostBlur(): void {
-    const newUrl = buildBaseUrl(preset, host)
-    setLlm((prev) => ({ ...prev, baseUrl: newUrl }))
-    loadModels(newUrl)
+    const newUrl = buildBaseUrl(llm.providerPreset as PresetKey, host)
+    const newLlm = { ...llm, baseUrl: newUrl }
+    setLlm(newLlm)
+    loadModels(newLlm)
     setTestState('idle')
   }
 
   async function handleTest(): Promise<void> {
     setTestState('loading')
     setTestMessage('')
+    setTestCapabilities(null)
     const result = await window.electronAPI.testLlm(llm)
     setTestState(result.ok ? 'ok' : 'error')
     setTestMessage(result.message)
     if (result.models) setAvailableModels(result.models)
+    if (result.capabilities) setTestCapabilities(result.capabilities)
   }
 
   async function handleCollectDiag(): Promise<void> {
@@ -227,17 +231,17 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
             {llm.enabled && (
               <div className="space-y-4 pt-1">
 
-                {/* Scelta preset: Ollama / LM Studio */}
+                {/* Scelta preset: Ollama / LM Studio / MLX / Custom */}
                 <div>
                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">Software</label>
-                  <div className="flex gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     {(Object.keys(LLM_PRESETS) as PresetKey[]).map((p) => (
                       <button
                         key={p}
                         onClick={() => handlePresetChange(p)}
                         className={`
-                          flex-1 py-2 px-3 text-sm font-medium rounded-lg border transition-colors
-                          ${preset === p
+                          py-2 px-3 text-sm font-medium rounded-lg border transition-colors
+                          ${llm.providerPreset === p
                             ? 'bg-blue-600 text-white border-blue-600'
                             : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:border-blue-400'}
                         `}
@@ -275,7 +279,7 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Modello</label>
                     <button
-                      onClick={() => loadModels(llm.baseUrl)}
+                      onClick={() => loadModels(llm)}
                       disabled={loadingModels || !llm.baseUrl}
                       className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1 disabled:opacity-40"
                     >
@@ -561,18 +565,40 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
 
                 {/* Risultato test */}
                 {testState !== 'idle' && testState !== 'loading' && (
-                  <div
-                    className={`
-                      flex items-start gap-2 px-3 py-2 rounded-lg text-sm
-                      ${testState === 'ok'
-                        ? 'bg-green-50 dark:bg-green-950/30 text-green-800 dark:text-green-300 border border-green-200 dark:border-green-800'
-                        : 'bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-800'}
-                    `}
-                  >
-                    {testState === 'ok'
-                      ? <CheckCircle2 size={15} className="flex-shrink-0 mt-0.5" />
-                      : <XCircle size={15} className="flex-shrink-0 mt-0.5" />}
-                    <span>{testMessage}</span>
+                  <div className="space-y-2">
+                    <div
+                      className={`
+                        flex items-start gap-2 px-3 py-2 rounded-lg text-sm
+                        ${testState === 'ok'
+                          ? 'bg-green-50 dark:bg-green-950/30 text-green-800 dark:text-green-300 border border-green-200 dark:border-green-800'
+                          : 'bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-800'}
+                      `}
+                    >
+                      {testState === 'ok'
+                        ? <CheckCircle2 size={15} className="flex-shrink-0 mt-0.5" />
+                        : <XCircle size={15} className="flex-shrink-0 mt-0.5" />}
+                      <span>{testMessage}</span>
+                    </div>
+
+                    {testState === 'ok' && testCapabilities && (
+                      <div className="px-3 py-2 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600 space-y-1.5">
+                        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Capacità rilevate</div>
+                        <div className="grid grid-cols-2 gap-y-1">
+                          <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
+                            {testCapabilities.supportsStructuredOutput ? <CheckCircle2 size={10} className="text-green-500" /> : <XCircle size={10} className="text-slate-400" />}
+                            Structured Output
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
+                            {testCapabilities.supportsJsonSchema ? <CheckCircle2 size={10} className="text-green-500" /> : <XCircle size={10} className="text-slate-400" />}
+                            JSON Schema
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
+                            {testCapabilities.supportsModelListing ? <CheckCircle2 size={10} className="text-green-500" /> : <XCircle size={10} className="text-slate-400" />}
+                            Model Listing
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
