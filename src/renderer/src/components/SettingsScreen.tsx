@@ -481,34 +481,6 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
                       </div>
                     </div>
 
-                    {/* Modalità analisi AI */}
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">
-                        Modalità analisi AI
-                      </label>
-                      <div className="flex gap-2">
-                        {(['chunk', 'page'] as const).map((mode) => (
-                          <button
-                            key={mode}
-                            onClick={() => setLlm((prev) => ({ ...prev, chunkMode: mode }))}
-                            className={`
-                              flex-1 py-1.5 px-3 text-xs font-medium rounded-lg border transition-colors
-                              ${(llm.chunkMode ?? 'chunk') === mode
-                                ? 'bg-blue-600 text-white border-blue-600'
-                                : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:border-blue-400'}
-                            `}
-                          >
-                            {mode === 'chunk' ? 'Chunk fissi (default)' : 'Pagina intera (solo PDF)'}
-                          </button>
-                        ))}
-                      </div>
-                      {(llm.chunkMode ?? 'chunk') === 'page' && (
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
-                          Invia ciascuna pagina del PDF come un'unica richiesta al modello. Più preciso ma richiede un modello con context window ampia (≥ 8K token).
-                        </p>
-                      )}
-                    </div>
-
                     {/* Dimensione chunk */}
                     <div>
                       <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
