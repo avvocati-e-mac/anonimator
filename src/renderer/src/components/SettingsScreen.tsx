@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import type { LlmConfig, ModelStatus, ModelDownloadProgress } from '@shared/types'
 import { DEFAULT_LLM_CONFIG } from '@shared/types'
+import { inferChunkSize } from '@shared/modelSizeUtils'
 
 interface SettingsScreenProps {
   onBack: () => void
@@ -23,24 +24,23 @@ const SUGGESTED_MODELS = [
   { id: 'phi3.5:mini', label: 'Phi 3.5 Mini — Leggerissimo, fallback CPU (~3GB RAM)' },
 ] as const
 
-// Preset per i due software LLM supportati
+// Preset per i software LLM supportati
 const LLM_PRESETS = {
-  ollama:   { label: 'Ollama',    defaultPort: 11434, path: '/v1' },
-  lmstudio: { label: 'LM Studio', defaultPort: 1234,  path: '/v1' },
+  ollama:   { label: 'Ollama',    providerType: 'ollama',        defaultPort: 11434, path: '/v1' },
+  lmstudio: { label: 'LM Studio', providerType: 'openai_compat', defaultPort: 1234,  path: '/v1' },
+  mlx:      { label: 'MLX Server', providerType: 'openai_compat', defaultPort: 8080,  path: '/v1' },
+  custom:   { label: 'Custom (OpenAI compat)', providerType: 'openai_compat', defaultPort: 11434, path: '/v1' },
 } as const
 type PresetKey = keyof typeof LLM_PRESETS
 
-function buildBaseUrl(preset: PresetKey, host: string): string {
+function buildBaseUrl(preset: PresetKey, host: string, port?: string): string {
   const { defaultPort, path } = LLM_PRESETS[preset]
   const h = host.trim() || 'localhost'
-  // Se l'host non include già la porta, aggiungila
+  const resolvedPort = port?.trim() ? port.trim() : String(defaultPort)
+  // Se l'host include già la porta, usala così com'è; altrimenti aggiungi la porta risolta
   const hasPort = /:\d+$/.test(h)
-  return `http://${h}${hasPort ? '' : `:${defaultPort}`}${path}`
-}
-
-function detectPresetFromUrl(url: string): PresetKey {
-  if (url.includes(':1234')) return 'lmstudio'
-  return 'ollama'
+  const base = h.startsWith('http') ? h : `http://${h}`
+  return `${base}${hasPort ? '' : `:${resolvedPort}`}${path}`
 }
 
 function extractHostFromUrl(url: string): string {
@@ -52,13 +52,23 @@ function extractHostFromUrl(url: string): string {
   }
 }
 
+function extractPortFromUrl(url: string): string {
+  try {
+    const u = new URL(url)
+    return u.port || ''
+  } catch {
+    return ''
+  }
+}
+
 export default function SettingsScreen({ onBack, isDark, onToggleDark }: SettingsScreenProps): React.JSX.Element {
   const [llm, setLlm] = useState<LlmConfig>(DEFAULT_LLM_CONFIG)
-  const [preset, setPreset] = useState<PresetKey>('ollama')
   const [host, setHost] = useState('localhost')
+  const [customPort, setCustomPort] = useState('')
   const [availableModels, setAvailableModels] = useState<string[]>([])
   const [testState, setTestState] = useState<TestState>('idle')
   const [testMessage, setTestMessage] = useState('')
+  const [testCapabilities, setTestCapabilities] = useState<import('@shared/types').LlmCapabilities | null>(null)
   const [saving, setSaving] = useState(false)
   const [diagState, setDiagState] = useState<'idle' | 'loading' | 'copied'>('idle')
   const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null)
@@ -74,10 +84,11 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
   useEffect(() => {
     window.electronAPI.getSettings().then(({ llm: saved }) => {
       setLlm(saved)
-      const detectedPreset = detectPresetFromUrl(saved.baseUrl)
-      setPreset(detectedPreset)
       setHost(extractHostFromUrl(saved.baseUrl))
-      if (saved.baseUrl) loadModels(saved.baseUrl)
+      if (saved.providerPreset === 'custom') {
+        setCustomPort(extractPortFromUrl(saved.baseUrl))
+      }
+      if (saved.baseUrl) loadModels(saved)
       // Mostra input manuale se il modello salvato non è tra i suggeriti
       const isSuggested = SUGGESTED_MODELS.some((m) => m.id === saved.model)
       setUseCustomModel(!isSuggested && saved.model !== '')
@@ -90,11 +101,11 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
     window.electronAPI.getDefaultPrompt(llm.promptLanguage).then(setDefaultPromptText)
   }, [llm.promptLanguage])
 
-  const loadModels = useCallback(async (baseUrl: string) => {
-    if (!baseUrl) return
+  const loadModels = useCallback(async (config: LlmConfig) => {
+    if (!config.baseUrl) return
     setLoadingModels(true)
     try {
-      const { models } = await window.electronAPI.listLlmModels(baseUrl)
+      const { models } = await window.electronAPI.listLlmModels(config)
       setAvailableModels(models)
     } catch {
       setAvailableModels([])
@@ -104,27 +115,47 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
   }, [])
 
   function handlePresetChange(p: PresetKey): void {
-    setPreset(p)
-    const newUrl = buildBaseUrl(p, host)
-    setLlm((prev) => ({ ...prev, baseUrl: newUrl }))
-    loadModels(newUrl)
+    // Quando si passa a custom, pre-popola la porta dall'URL corrente (se presente)
+    const portForNewPreset = p === 'custom' ? extractPortFromUrl(llm.baseUrl) : ''
+    if (p === 'custom') setCustomPort(portForNewPreset)
+    const newUrl = buildBaseUrl(p, host, p === 'custom' ? portForNewPreset : undefined)
+    const newLlm = {
+      ...llm,
+      providerPreset: p,
+      providerType: LLM_PRESETS[p].providerType as LlmConfig['providerType'],
+      baseUrl: newUrl
+    }
+    setLlm(newLlm)
+    loadModels(newLlm)
     setTestState('idle')
   }
 
   function handleHostBlur(): void {
-    const newUrl = buildBaseUrl(preset, host)
-    setLlm((prev) => ({ ...prev, baseUrl: newUrl }))
-    loadModels(newUrl)
+    const port = llm.providerPreset === 'custom' ? customPort : undefined
+    const newUrl = buildBaseUrl(llm.providerPreset as PresetKey, host, port)
+    const newLlm = { ...llm, baseUrl: newUrl }
+    setLlm(newLlm)
+    loadModels(newLlm)
+    setTestState('idle')
+  }
+
+  function handlePortBlur(): void {
+    const newUrl = buildBaseUrl('custom', host, customPort)
+    const newLlm = { ...llm, baseUrl: newUrl }
+    setLlm(newLlm)
+    loadModels(newLlm)
     setTestState('idle')
   }
 
   async function handleTest(): Promise<void> {
     setTestState('loading')
     setTestMessage('')
+    setTestCapabilities(null)
     const result = await window.electronAPI.testLlm(llm)
     setTestState(result.ok ? 'ok' : 'error')
     setTestMessage(result.message)
     if (result.models) setAvailableModels(result.models)
+    if (result.capabilities) setTestCapabilities(result.capabilities)
   }
 
   async function handleCollectDiag(): Promise<void> {
@@ -227,17 +258,17 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
             {llm.enabled && (
               <div className="space-y-4 pt-1">
 
-                {/* Scelta preset: Ollama / LM Studio */}
+                {/* Scelta preset: Ollama / LM Studio / MLX / Custom */}
                 <div>
                   <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">Software</label>
-                  <div className="flex gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     {(Object.keys(LLM_PRESETS) as PresetKey[]).map((p) => (
                       <button
                         key={p}
                         onClick={() => handlePresetChange(p)}
                         className={`
-                          flex-1 py-2 px-3 text-sm font-medium rounded-lg border transition-colors
-                          ${preset === p
+                          py-2 px-3 text-sm font-medium rounded-lg border transition-colors
+                          ${llm.providerPreset === p
                             ? 'bg-blue-600 text-white border-blue-600'
                             : 'bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:border-blue-400'}
                         `}
@@ -264,6 +295,24 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
                   />
                 </div>
 
+                {/* Porta (solo per preset custom) */}
+                {llm.providerPreset === 'custom' && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                      Porta
+                    </label>
+                    <input
+                      type="text"
+                      className={inputClass}
+                      value={customPort}
+                      onChange={(e) => setCustomPort(e.target.value)}
+                      onBlur={handlePortBlur}
+                      placeholder="es. 8080"
+                      spellCheck={false}
+                    />
+                  </div>
+                )}
+
                 {/* URL completo (sola lettura, per verifica) */}
                 <div className="bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 flex items-center gap-2">
                   <span className="text-xs text-slate-400 dark:text-slate-500 flex-shrink-0">URL:</span>
@@ -275,7 +324,7 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Modello</label>
                     <button
-                      onClick={() => loadModels(llm.baseUrl)}
+                      onClick={() => loadModels(llm)}
                       disabled={loadingModels || !llm.baseUrl}
                       className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1 disabled:opacity-40"
                     >
@@ -335,6 +384,17 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
                       />
                     )
                   ) : null}
+
+                  {/* Tooltip chunk adattivo */}
+                  {(() => {
+                    const inferred = inferChunkSize(llm.model)
+                    if (inferred >= 3000) return null
+                    return (
+                      <p className="text-xs text-amber-700 dark:text-amber-400 mt-1.5 leading-relaxed">
+                        Modello ~{inferred === 1200 ? '≤4B' : '7-8B'} rilevato — chunk ridotto automaticamente a {inferred.toLocaleString('it-IT')} car. per compatibilità.
+                      </p>
+                    )
+                  })()}
                 </div>
 
                 {/* Impostazioni avanzate */}
@@ -408,6 +468,11 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
                         Con <strong>1</strong> (predefinito) le sezioni vengono analizzate una alla volta: più lento ma stabile su qualsiasi computer.
                         Valori più alti (<strong>2–4</strong>) velocizzano l'analisi di documenti lunghi, ma richiedono un computer con GPU dedicata o molti core; su macchine meno potenti potrebbero causare errori di timeout.
                       </p>
+                      {inferChunkSize(llm.model) === 1200 && (llm.parallelRequests ?? 1) >= 2 && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 leading-relaxed">
+                          Con modelli ≤4B le richieste parallele vengono automaticamente ridotte a 1 durante l'elaborazione per evitare errori di context overflow.
+                        </p>
+                      )}
                     </div>
 
                     {/* Lingua prompt — TODO [A/B-TEST]: rimuovere dopo ottimizzazione */}
@@ -561,18 +626,40 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
 
                 {/* Risultato test */}
                 {testState !== 'idle' && testState !== 'loading' && (
-                  <div
-                    className={`
-                      flex items-start gap-2 px-3 py-2 rounded-lg text-sm
-                      ${testState === 'ok'
-                        ? 'bg-green-50 dark:bg-green-950/30 text-green-800 dark:text-green-300 border border-green-200 dark:border-green-800'
-                        : 'bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-800'}
-                    `}
-                  >
-                    {testState === 'ok'
-                      ? <CheckCircle2 size={15} className="flex-shrink-0 mt-0.5" />
-                      : <XCircle size={15} className="flex-shrink-0 mt-0.5" />}
-                    <span>{testMessage}</span>
+                  <div className="space-y-2">
+                    <div
+                      className={`
+                        flex items-start gap-2 px-3 py-2 rounded-lg text-sm
+                        ${testState === 'ok'
+                          ? 'bg-green-50 dark:bg-green-950/30 text-green-800 dark:text-green-300 border border-green-200 dark:border-green-800'
+                          : 'bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-800'}
+                      `}
+                    >
+                      {testState === 'ok'
+                        ? <CheckCircle2 size={15} className="flex-shrink-0 mt-0.5" />
+                        : <XCircle size={15} className="flex-shrink-0 mt-0.5" />}
+                      <span>{testMessage}</span>
+                    </div>
+
+                    {testState === 'ok' && testCapabilities && (
+                      <div className="px-3 py-2 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600 space-y-1.5">
+                        <div className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Capacità rilevate</div>
+                        <div className="grid grid-cols-2 gap-y-1">
+                          <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
+                            {testCapabilities.supportsStructuredOutput ? <CheckCircle2 size={10} className="text-green-500" /> : <XCircle size={10} className="text-slate-400" />}
+                            Structured Output
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
+                            {testCapabilities.supportsJsonSchema ? <CheckCircle2 size={10} className="text-green-500" /> : <XCircle size={10} className="text-slate-400" />}
+                            JSON Schema
+                          </div>
+                          <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
+                            {testCapabilities.supportsModelListing ? <CheckCircle2 size={10} className="text-green-500" /> : <XCircle size={10} className="text-slate-400" />}
+                            Model Listing
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

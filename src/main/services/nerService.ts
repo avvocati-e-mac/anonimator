@@ -11,6 +11,8 @@ import { join } from 'path'
 import { app } from 'electron'
 import log from 'electron-log'
 import type { DetectedEntity, EntityType, LlmConfig } from '@shared/types'
+import { DEFAULT_LLM_CONFIG } from '@shared/types'
+import { inferChunkSize } from '@shared/modelSizeUtils'
 import { detectNamesWithLlm } from './llmService'
 import { sessionManager } from './sessionManager'
 
@@ -31,21 +33,21 @@ async function tryLoadTransformers(): Promise<TransformersPipelineFn | null> {
     mod.env.localModelPath = modelPath
 
     // FIX per Electron: disabilita proxy worker che fallirebbe in ambiente Node
-    if (mod.env.backends && mod.env.backends.onnx) {
-      mod.env.backends.onnx.wasm.proxy = false
+    if (mod.env?.backends?.onnx?.wasm) {
+      (mod.env.backends.onnx.wasm as any).proxy = false
     }
 
     // Diagnostica onnxruntime-node
     try {
       const ort = require('onnxruntime-node')
-      log.info('onnxruntime-node caricato', { version: ort.version, hasInferenceSession: !!ort.InferenceSession })
+      log.info('onnxruntime-node caricato', { version: (ort as any).version, hasInferenceSession: !!(ort as any).InferenceSession })
     } catch (err) {
       log.warn('onnxruntime-node non caricabile via require, Transformers.js userà il fallback', { 
         error: err instanceof Error ? err.message : String(err) 
       })
     }
 
-    log.info('Transformers.js caricato correttamente', { version: mod.VERSION })
+    log.info('Transformers.js caricato correttamente')
     _pipelineFactory = mod.pipeline as TransformersPipelineFn
     return _pipelineFactory
   } catch (err) {
@@ -324,7 +326,8 @@ export interface NerAnalysisResult {
 export async function analyzeText(
   text: string,
   llmConfig?: LlmConfig,
-  onLlmProgress?: (page: number, total: number) => void
+  onLlmProgress?: (page: number, total: number) => void,
+  pages?: string[]
 ): Promise<NerAnalysisResult> {
   const warnings: string[] = []
   const foundTexts = new Set<string>()
@@ -445,14 +448,39 @@ export async function analyzeText(
 
   if (llmConfig?.enabled && llmConfig.model) {
     try {
-      const pages = text.split(/\n\n+/).filter((p) => p.trim().length > 50)
-      const effectiveChunkSize = llmConfig.chunkSize ?? 3000
-      const chunks = pages.length > 1 ? pages : splitTextIntoLlmChunks(text, effectiveChunkSize)
-      const LLM_BATCH = Math.max(1, llmConfig.parallelRequests ?? 1)
+      const effectiveChunkSize = llmConfig.chunkSize !== DEFAULT_LLM_CONFIG.chunkSize
+        ? llmConfig.chunkSize        // utente ha modificato manualmente → rispettare
+        : inferChunkSize(llmConfig.model)  // auto-detect dalla taglia del modello
+      const usePageMode = pages && pages.length > 0
+
+      let chunks: string[]
+      if (usePageMode) {
+        // Page-mode: ogni pagina PDF è una richiesta separata.
+        // Se una singola pagina supera chunkSize, la spezza comunque.
+        chunks = pages!.flatMap((page) =>
+          page.trim().length > effectiveChunkSize
+            ? splitTextIntoLlmChunks(page, effectiveChunkSize)
+            : page.trim().length > 50 ? [page] : []
+        )
+      } else {
+        // Chunk-mode (default): chunking fisso sul testo completo
+        chunks = splitTextIntoLlmChunks(text, effectiveChunkSize)
+      }
+
+      // ≤4B: KV cache LM Studio troppo piccola per richieste parallele → forza 1
+      const isSmallModel = inferChunkSize(llmConfig.model) === 1200
+      if (isSmallModel && (llmConfig.parallelRequests ?? 1) > 1) {
+        log.warn(`nerService: modello ≤4B rilevato (${llmConfig.model}) — parallelRequests forzato a 1 per evitare context overflow`)
+      }
+      const effectiveParallel = isSmallModel ? 1 : Math.max(1, llmConfig.parallelRequests ?? 1)
+      const LLM_BATCH = effectiveParallel
       let completed = 0
+      let llmChunkErrors = 0
       for (let i = 0; i < chunks.length; i += LLM_BATCH) {
         const batch = chunks.slice(i, i + LLM_BATCH)
-        const results = await Promise.all(batch.map((chunk) => detectNamesWithLlm(chunk, llmConfig)))
+        const results = await Promise.all(
+          batch.map((chunk) => detectNamesWithLlm(chunk, llmConfig, () => { llmChunkErrors++ }))
+        )
         completed += batch.length
         onLlmProgress?.(Math.min(completed, chunks.length), chunks.length)
         for (const llmNames of results) {
@@ -466,7 +494,14 @@ export async function analyzeText(
           }
         }
       }
-      llmUsed = true
+      if (llmChunkErrors > 0) {
+        const sez = llmChunkErrors === 1 ? 'sezione' : 'sezioni'
+        const analizzata = llmChunkErrors === 1 ? 'analizzata' : 'analizzate'
+        warnings.push(`LLM: ${llmChunkErrors} ${sez} non ${analizzata} per errore del server. I risultati potrebbero essere incompleti.`)
+      }
+      if (chunks.length - llmChunkErrors > 0) {
+        llmUsed = true
+      }
     } catch (err) {
       log.warn('nerService: errore LLM, continuo senza', { error: err })
       warnings.push('LLM locale non raggiungibile. Usato solo BERT + regex.')

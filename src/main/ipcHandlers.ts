@@ -54,6 +54,8 @@ const EntityTypeEnum = z.enum([
 
 const LlmConfigSchema = z.object({
   enabled: z.boolean(),
+  providerType: z.enum(['ollama', 'openai_compat']),
+  providerPreset: z.enum(['ollama', 'lmstudio', 'mlx', 'custom']),
   baseUrl: z.string().min(1),
   model: z.string(),
   maxTokens: z.number().int().min(256).max(32768),
@@ -62,7 +64,9 @@ const LlmConfigSchema = z.object({
   customPrompt: z.string().optional(),
   // TODO [A/B-TEST]: rimuovere promptLanguage dopo ottimizzazione prompt
   promptLanguage: z.enum(['it', 'en']).default('it'),
-  chunkSize: z.number().int().min(1000).max(8000).default(3000)
+  chunkSize: z.number().int().min(1000).max(8000).default(3000),
+  stream: z.boolean().default(false),
+  temperature: z.number().min(0).max(2).default(0)
 })
 
 // ─── Helper: invia progresso alla finestra attiva ─────────────────────────────
@@ -105,7 +109,11 @@ export function registerIpcHandlers(): void {
       const { entities: rawEntities, nerUsed, llmUsed, warnings: nerWarnings } =
         await analyzeText(text, llmConfig, (page, total) => {
           const pct = 50 + Math.round((page / total) * 30)
-          sendProgress('ner', pct, `Analisi LLM: pagina ${page}/${total}...`)
+          const effectiveTotal = format === 'pdf' && pageCount > 0 ? pageCount : total
+          const msg = format === 'pdf'
+            ? `Analisi LLM: pagina ${page}/${effectiveTotal}...`
+            : `Analisi LLM: chunk ${page} di ${total}...`
+          sendProgress('ner', pct, msg)
         })
 
       // Assegna pseudonimi dalla sessione corrente
@@ -245,6 +253,7 @@ export function registerIpcHandlers(): void {
     const body = payload as { llm?: unknown }
     const parsed = LlmConfigSchema.safeParse(body?.llm)
     if (!parsed.success) {
+      log.warn('IPC llm:test — payload non valido', parsed.error.flatten())
       return { ok: false, message: 'Configurazione non valida.' }
     }
     return testLlmConnection(parsed.data)
@@ -257,9 +266,12 @@ export function registerIpcHandlers(): void {
 
   // Handler: lista modelli disponibili sul server LLM
   ipcMain.handle(IPC_CHANNELS.LLM_LIST_MODELS, async (_event, payload: unknown) => {
-    const body = payload as { baseUrl?: string; timeoutMs?: number }
-    if (!body?.baseUrl) return { models: [] }
-    const models = await listLlmModels({ baseUrl: body.baseUrl, timeoutMs: body.timeoutMs ?? 10000 })
+    const body = payload as { llm?: unknown }
+    const parsed = LlmConfigSchema.safeParse(body?.llm)
+    if (!parsed.success) {
+      return { models: [] }
+    }
+    const models = await listLlmModels(parsed.data)
     return { models }
   })
 

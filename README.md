@@ -39,7 +39,7 @@ Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a se
 - **Statistiche di sessione**: visualizza il numero di file e pagine processate, il tempo totale e la velocità di elaborazione (pagine al secondo) nella schermata finale di successo
 - Supporta PDF (nativi e scansionati via OCR), DOCX, ODT, TXT e Markdown
 - Elaborazione **batch** di più file contemporaneamente con revisione unificata delle entità
-- **LLM locale opzionale**: connetti Ollama o LM Studio per migliorare il riconoscimento dei nomi (i dati non escono mai dalla tua macchina)
+- **LLM locale opzionale**: connetti Ollama o LM Studio per migliorare il riconoscimento dei nomi (i dati non escono mai dalla tua macchina); se il server restituisce un errore durante l'elaborazione, l'app continua e mostra un avviso con il numero di sezioni non analizzate
 - **Schermata di benvenuto**: al primo avvio spiega il funzionamento dell'app (tre livelli di analisi, nota hardware per LLM) — disattivabile con un checkbox
 - **Dark mode**: toggle luna/sole nell'interfaccia, preferenza salvata automaticamente
 - **Diagnostica installazione**: pulsante "Copia diagnostica" nelle Impostazioni — raccoglie versione, piattaforma e ultime righe del log (mai contenuto dei documenti) e li copia negli appunti pronti da inviare allo sviluppatore

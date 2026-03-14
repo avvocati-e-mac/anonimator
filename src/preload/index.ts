@@ -48,8 +48,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke(IPC_CHANNELS.LLM_TEST, { llm }),
 
   // LLM: elenca modelli disponibili sul server
-  listLlmModels: (baseUrl: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.LLM_LIST_MODELS, { baseUrl, timeoutMs: 10000 }),
+  listLlmModels: (llm: LlmConfig) =>
+    ipcRenderer.invoke(IPC_CHANNELS.LLM_LIST_MODELS, { llm }),
 
   // LLM: restituisce il prompt di default (IT o EN)
   getDefaultPrompt: (lang: 'it' | 'en') =>
