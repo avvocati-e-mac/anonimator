@@ -2,7 +2,7 @@
 
 Documentazione tecnica per sviluppatori. Descrive architettura, flussi di dati, logica di anonimizzazione e componenti del software.
 
-**Versione documentata:** 1.3.0
+**Versione documentata:** 1.3.1
 **Stack:** Electron 40 + React 18 + TypeScript (strict mode)
 **Scopo:** Pseudonimizzazione locale di documenti legali italiani (PDF, DOCX, ODT, TXT, immagini). Nessuna connessione di rete durante l'elaborazione.
 
@@ -1028,7 +1028,7 @@ L'app React è strutturata come una macchina a stati con 7 schermate, gestite da
 
 #### `DropZone.tsx`
 
-- Accetta file tramite drag-and-drop (`react-dropzone`)
+- Accetta file tramite drag-and-drop (`react-dropzone`). Formati accettati: `.pdf`, `.docx`, `.odt`, `.txt`, `.md`, `.png`, `.jpg`, `.jpeg`. MIME type accettati: `application/pdf`, OOXML, ODF, `text/plain`, `text/markdown`, `text/x-markdown`, `image/png`, `image/jpeg`. Il controllo sull'estensione del filename è il fallback primario, perché i browser/Electron assegnano MIME type non standardizzato ai `.md`.
 - Intercetta l'evento `drop` nativo (in fase di capture) per estrarre i path assoluti con `webUtils.getPathForFile()` prima che react-dropzone cloni gli oggetti `File`
 - Mostra: versione app, badge privacy ("Nessun dato inviato in rete"), toggle tema, bottone impostazioni
 - Se 1 file → flusso singolo; se 2+ file → flusso batch
@@ -1369,6 +1369,7 @@ File: `tests/` — Framework: Vitest
 | `settingsMigration.test.ts` | Migrazione configurazione LLM da versioni precedenti |
 | `settingsScreenUtils.test.ts` | Logica utilità per SettingsScreen (validazione URL, preset) |
 | `nerPageMode.test.ts` | Modalità page-mode NER con array pages[] |
+| `dropzone.test.ts` | Formati accettati dalla DropZone: `.md`/`.MD`, `text/markdown`, `text/x-markdown`, regression formati preesistenti, rifiuto formati non supportati |
 
 ```bash
 npm test              # Esegue tutti i test

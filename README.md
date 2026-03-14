@@ -4,7 +4,7 @@ App desktop per la **pseudoanonimizzazione offline** di documenti legali italian
 
 Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a server esterni. Tutto il processing avviene localmente sul tuo Mac, PC Windows o Linux.
 
-**Versione attuale: 1.3.0**
+**Versione attuale: 1.3.1**
 
 > **L'app è stata creata in vibe coding e non sono un esperto programmatore — procedi con cautela nell'utilizzo.**
 
@@ -54,10 +54,10 @@ Scarica il file per il tuo sistema dalla pagina [Releases](https://github.com/av
 
 | File | Sistema |
 |---|---|
-| `Anonimator-1.3.0-arm64.dmg` | Mac Apple Silicon (M1/M2/M3/M4) |
-| `Anonimator-1.3.0-x64.dmg` | Mac Intel |
-| `Anonimator-1.3.0-windows-x64-setup.exe` | Windows 10/11 a 64 bit |
-| `Anonimator-1.3.0-linux-x64.AppImage` | Linux a 64 bit |
+| `Anonimator-1.3.1-arm64.dmg` | Mac Apple Silicon (M1/M2/M3/M4) |
+| `Anonimator-1.3.1-x64.dmg` | Mac Intel |
+| `Anonimator-1.3.1-windows-x64-setup.exe` | Windows 10/11 a 64 bit |
+| `Anonimator-1.3.1-linux-x64.AppImage` | Linux a 64 bit |
 
 ### Per tutti i sistemi
 
