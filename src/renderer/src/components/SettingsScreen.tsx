@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import type { LlmConfig, ModelStatus, ModelDownloadProgress } from '@shared/types'
 import { DEFAULT_LLM_CONFIG } from '@shared/types'
+import { inferChunkSize } from '@shared/modelSizeUtils'
 
 interface SettingsScreenProps {
   onBack: () => void
@@ -383,6 +384,17 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
                       />
                     )
                   ) : null}
+
+                  {/* Tooltip chunk adattivo */}
+                  {(() => {
+                    const inferred = inferChunkSize(llm.model)
+                    if (inferred >= 3000) return null
+                    return (
+                      <p className="text-xs text-amber-700 dark:text-amber-400 mt-1.5 leading-relaxed">
+                        Modello ~{inferred === 1200 ? '≤4B' : '7-8B'} rilevato — chunk ridotto automaticamente a {inferred.toLocaleString('it-IT')} car. per compatibilità.
+                      </p>
+                    )
+                  })()}
                 </div>
 
                 {/* Impostazioni avanzate */}
@@ -456,6 +468,11 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
                         Con <strong>1</strong> (predefinito) le sezioni vengono analizzate una alla volta: più lento ma stabile su qualsiasi computer.
                         Valori più alti (<strong>2–4</strong>) velocizzano l'analisi di documenti lunghi, ma richiedono un computer con GPU dedicata o molti core; su macchine meno potenti potrebbero causare errori di timeout.
                       </p>
+                      {inferChunkSize(llm.model) === 1200 && (llm.parallelRequests ?? 1) >= 2 && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-2 leading-relaxed">
+                          Con modelli ≤4B le richieste parallele vengono automaticamente ridotte a 1 durante l'elaborazione per evitare errori di context overflow.
+                        </p>
+                      )}
                     </div>
 
                     {/* Lingua prompt — TODO [A/B-TEST]: rimuovere dopo ottimizzazione */}

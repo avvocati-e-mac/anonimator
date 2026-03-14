@@ -11,6 +11,8 @@ import { join } from 'path'
 import { app } from 'electron'
 import log from 'electron-log'
 import type { DetectedEntity, EntityType, LlmConfig } from '@shared/types'
+import { DEFAULT_LLM_CONFIG } from '@shared/types'
+import { inferChunkSize } from '@shared/modelSizeUtils'
 import { detectNamesWithLlm } from './llmService'
 import { sessionManager } from './sessionManager'
 
@@ -446,7 +448,9 @@ export async function analyzeText(
 
   if (llmConfig?.enabled && llmConfig.model) {
     try {
-      const effectiveChunkSize = llmConfig.chunkSize ?? 3000
+      const effectiveChunkSize = llmConfig.chunkSize !== DEFAULT_LLM_CONFIG.chunkSize
+        ? llmConfig.chunkSize        // utente ha modificato manualmente → rispettare
+        : inferChunkSize(llmConfig.model)  // auto-detect dalla taglia del modello
       const usePageMode = pages && pages.length > 0
 
       let chunks: string[]
@@ -463,7 +467,13 @@ export async function analyzeText(
         chunks = splitTextIntoLlmChunks(text, effectiveChunkSize)
       }
 
-      const LLM_BATCH = Math.max(1, llmConfig.parallelRequests ?? 1)
+      // ≤4B: KV cache LM Studio troppo piccola per richieste parallele → forza 1
+      const isSmallModel = inferChunkSize(llmConfig.model) === 1200
+      if (isSmallModel && (llmConfig.parallelRequests ?? 1) > 1) {
+        log.warn(`nerService: modello ≤4B rilevato (${llmConfig.model}) — parallelRequests forzato a 1 per evitare context overflow`)
+      }
+      const effectiveParallel = isSmallModel ? 1 : Math.max(1, llmConfig.parallelRequests ?? 1)
+      const LLM_BATCH = effectiveParallel
       let completed = 0
       for (let i = 0; i < chunks.length; i += LLM_BATCH) {
         const batch = chunks.slice(i, i + LLM_BATCH)

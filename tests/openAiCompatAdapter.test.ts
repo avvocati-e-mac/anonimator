@@ -35,6 +35,21 @@ function makeOkResponse(content: string) {
   }
 }
 
+function make400Response(body = 'response_format not supported') {
+  const obj = {
+    ok: false,
+    status: 400,
+    statusText: 'Bad Request',
+    text: async () => body,
+    clone: () => ({ text: async () => body })
+  }
+  return obj
+}
+
+function make400ContextOverflow(msg = 'Context size has been exceeded') {
+  return make400Response(msg)
+}
+
 describe('OpenAiCompatAdapter', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -71,9 +86,9 @@ describe('OpenAiCompatAdapter', () => {
   })
 
   describe('detectNames — fallback 400 → json_object', () => {
-    it('dovrebbe ritentare con json_object se il primo attempt restituisce 400', async () => {
+    it('dovrebbe ritentare con json_object se il primo attempt restituisce 400 (format non supportato)', async () => {
       globalFetch
-        .mockResolvedValueOnce({ ok: false, status: 400, statusText: 'Bad Request' })
+        .mockResolvedValueOnce(make400Response('response_format not supported'))
         .mockResolvedValueOnce(makeOkResponse(JSON.stringify({
           replacements: [{ original: 'Mario Rossi', replacement: 'M. R.' }]
         })))
@@ -89,8 +104,8 @@ describe('OpenAiCompatAdapter', () => {
 
     it('dovrebbe ritentare senza response_format se anche json_object restituisce 400 (es. Phi 3B)', async () => {
       globalFetch
-        .mockResolvedValueOnce({ ok: false, status: 400, statusText: 'Bad Request' })
-        .mockResolvedValueOnce({ ok: false, status: 400, statusText: 'Bad Request' })
+        .mockResolvedValueOnce(make400Response('response_format not supported'))
+        .mockResolvedValueOnce(make400Response('json_object not supported'))
         .mockResolvedValueOnce(makeOkResponse(JSON.stringify({
           replacements: [{ original: 'Luca Neri', replacement: 'L. N.' }]
         })))
@@ -103,6 +118,46 @@ describe('OpenAiCompatAdapter', () => {
       // Il terzo tentativo non deve avere response_format
       const thirdBody = JSON.parse(globalFetch.mock.calls[2][1].body as string)
       expect(thirdBody.response_format).toBeUndefined()
+    })
+  })
+
+  describe('detectNames — bail immediato su context overflow', () => {
+    it('dovrebbe lanciare subito un errore (senza retry) se il primo 400 indica context overflow', async () => {
+      globalFetch.mockResolvedValueOnce(make400ContextOverflow('Context size has been exceeded'))
+
+      await expect(adapter.detectNames('Testo', mockConfig, 'prompt'))
+        .rejects.toThrow(/context overflow/i)
+
+      // Nessun secondo tentativo
+      expect(globalFetch).toHaveBeenCalledTimes(1)
+    })
+
+    it('dovrebbe lanciare subito un errore se il secondo 400 indica context overflow', async () => {
+      globalFetch
+        .mockResolvedValueOnce(make400Response('response_format not supported'))
+        .mockResolvedValueOnce(make400ContextOverflow('context_length_exceeded'))
+
+      await expect(adapter.detectNames('Testo', mockConfig, 'prompt'))
+        .rejects.toThrow(/context overflow/i)
+
+      // Solo due tentativi, non tre
+      expect(globalFetch).toHaveBeenCalledTimes(2)
+    })
+
+    it('dovrebbe rilevare "maximum context length" come overflow', async () => {
+      globalFetch.mockResolvedValueOnce(make400ContextOverflow('maximum context length is 4096 tokens'))
+
+      await expect(adapter.detectNames('Testo', mockConfig, 'prompt'))
+        .rejects.toThrow(/context overflow/i)
+      expect(globalFetch).toHaveBeenCalledTimes(1)
+    })
+
+    it('dovrebbe rilevare "prompt is too long" come overflow', async () => {
+      globalFetch.mockResolvedValueOnce(make400ContextOverflow('prompt is too long for this model'))
+
+      await expect(adapter.detectNames('Testo', mockConfig, 'prompt'))
+        .rejects.toThrow(/context overflow/i)
+      expect(globalFetch).toHaveBeenCalledTimes(1)
     })
   })
 

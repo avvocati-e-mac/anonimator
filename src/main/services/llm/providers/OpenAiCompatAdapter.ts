@@ -110,6 +110,10 @@ export class OpenAiCompatAdapter implements LlmProviderAdapter {
 
       // Tentativo 2: json_schema non supportato (es. MLX vecchi) → riprova con json_object
       if (!response.ok && response.status === 400) {
+        if (await this.isContextOverflow(response)) {
+          const errBody = await response.clone().text()
+          throw new Error(`LLM context overflow: il chunk supera il context window del modello. ${errBody.slice(0, 200)}`)
+        }
         log.warn('OpenAiCompatAdapter: structured output fallito (400), riprovo con json_object')
         body.response_format = { type: 'json_object' }
         response = await fetch(url, {
@@ -125,6 +129,10 @@ export class OpenAiCompatAdapter implements LlmProviderAdapter {
 
       // Tentativo 3: json_object non supportato (es. Phi 3B, modelli molto piccoli) → plain chat
       if (!response.ok && response.status === 400) {
+        if (await this.isContextOverflow(response)) {
+          const errBody = await response.clone().text()
+          throw new Error(`LLM context overflow: il chunk supera il context window del modello. ${errBody.slice(0, 200)}`)
+        }
         log.warn('OpenAiCompatAdapter: json_object fallito (400), riprovo senza response_format')
         delete body.response_format
         response = await fetch(url, {
@@ -151,6 +159,15 @@ export class OpenAiCompatAdapter implements LlmProviderAdapter {
     } catch (err) {
       log.error('OpenAiCompatAdapter: errore detectNames', err)
       throw err
+    }
+  }
+
+  private async isContextOverflow(response: Response): Promise<boolean> {
+    try {
+      const body = await response.clone().text()
+      return /context.size.has.been.exceeded|context_length_exceeded|maximum.context.length|prompt.is.too.long/i.test(body)
+    } catch {
+      return false
     }
   }
 
