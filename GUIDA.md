@@ -616,6 +616,14 @@ Se l'utente ha configurato un LLM locale (Ollama o LM Studio), il sistema lo usa
 5. La risposta viene validata con `isValidReplacement()` (filtra stopword, date, pattern legali, frasi troppo lunghe)
 6. Gli pseudonimi suggeriti dall'LLM vengono registrati nel `sessionManager`
 
+**Gestione errori per chunk:** se un chunk fallisce (es. errore 500 del server durante il caricamento del modello), il flusso principale non viene interrotto. Il contatore `llmChunkErrors` viene incrementato e, al termine del loop, viene aggiunto un warning visibile all'utente:
+
+```
+LLM: 2 sezioni non analizzate per errore del server. I risultati potrebbero essere incompleti.
+```
+
+`llmUsed` viene impostato a `true` solo se almeno un chunk è andato a buon fine.
+
 **Differenza rispetto ai livelli 1 e 2:** l'LLM è l'unico livello che **suggerisce anche lo pseudonimo** (initiali puntate), mentre regex e BERT trovano solo il testo originale e delegano la generazione dello pseudonimo al `sessionManager`.
 
 ### 7.4 Deduplicazione e pulizia finale
@@ -1166,6 +1174,16 @@ File: `src/main/services/llmService.ts`
 
 Supporta qualsiasi server locale con endpoint compatibile OpenAI (`/v1/chat/completions`). Testato con Ollama e LM Studio.
 
+```typescript
+detectNamesWithLlm(
+  text: string,
+  config: LlmConfig,
+  onError?: (err: unknown) => void  // callback opzionale su errore chunk
+): Promise<LlmDetectedName[]>
+```
+
+La funzione è **non-throwing**: in caso di errore restituisce `[]` e chiama `onError` se fornito. Questo permette a `nerService` di tracciare i chunk falliti senza interrompere il flusso principale.
+
 ### Endpoint utilizzati
 
 ```
@@ -1344,6 +1362,13 @@ File: `tests/` — Framework: Vitest
 | `parsers.test.ts` | Funzionamento dei parser |
 | `sessionManager.test.ts` | Generazione pseudonimi, gestione conflitti, reset |
 | `pdfParser.test.ts` | Estrazione testo da PDF |
+| `llmService.test.ts` | Parsing structured output, filtro falsi positivi, callback `onError` su errore 500, assenza chiamata su successo |
+| `openAiCompatAdapter.test.ts` | Retry logic, context overflow detection (bail immediato su 400), structured output, formato richiesta |
+| `ollamaAdapter.test.ts` | Formato richiesta Ollama, gestione risposta |
+| `modelSizeUtils.test.ts` | `inferChunkSize()`: mapping nome modello → chunk size (1200 per ≤4B, 3000 per 9B+) |
+| `settingsMigration.test.ts` | Migrazione configurazione LLM da versioni precedenti |
+| `settingsScreenUtils.test.ts` | Logica utilità per SettingsScreen (validazione URL, preset) |
+| `nerPageMode.test.ts` | Modalità page-mode NER con array pages[] |
 
 ```bash
 npm test              # Esegue tutti i test

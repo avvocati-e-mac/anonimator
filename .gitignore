@@ -8,7 +8,6 @@ dist/
 # Materiale interno
 materiale studio app/
 PDF test/
-sessioni/
 
 # Modello NER e tessdata (scaricabili separatamente via scripts/download-models.sh)
 resources/models/*

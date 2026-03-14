@@ -94,10 +94,12 @@ const LlmDetectedNameSchema = z.object({
 
 /**
  * Chiama il server LLM locale per rilevare nomi e organizzazioni nel testo.
+ * @param onError callback opzionale chiamata in caso di errore (senza rilanciare)
  */
 export async function detectNamesWithLlm(
   text: string,
-  config: LlmConfig
+  config: LlmConfig,
+  onError?: (err: unknown) => void
 ): Promise<LlmDetectedName[]> {
   const adapter = getAdapter(config)
 
@@ -129,6 +131,7 @@ export async function detectNamesWithLlm(
   } catch (err) {
     log.error('llmService: errore durante detectNamesWithLlm', err)
     // Non rilanciamo l'errore per non rompere il flusso principale (BERT + Regex continueranno)
+    onError?.(err)
     return []
   }
 }

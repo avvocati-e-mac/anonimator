@@ -475,9 +475,12 @@ export async function analyzeText(
       const effectiveParallel = isSmallModel ? 1 : Math.max(1, llmConfig.parallelRequests ?? 1)
       const LLM_BATCH = effectiveParallel
       let completed = 0
+      let llmChunkErrors = 0
       for (let i = 0; i < chunks.length; i += LLM_BATCH) {
         const batch = chunks.slice(i, i + LLM_BATCH)
-        const results = await Promise.all(batch.map((chunk) => detectNamesWithLlm(chunk, llmConfig)))
+        const results = await Promise.all(
+          batch.map((chunk) => detectNamesWithLlm(chunk, llmConfig, () => { llmChunkErrors++ }))
+        )
         completed += batch.length
         onLlmProgress?.(Math.min(completed, chunks.length), chunks.length)
         for (const llmNames of results) {
@@ -491,7 +494,14 @@ export async function analyzeText(
           }
         }
       }
-      llmUsed = true
+      if (llmChunkErrors > 0) {
+        const sez = llmChunkErrors === 1 ? 'sezione' : 'sezioni'
+        const analizzata = llmChunkErrors === 1 ? 'analizzata' : 'analizzate'
+        warnings.push(`LLM: ${llmChunkErrors} ${sez} non ${analizzata} per errore del server. I risultati potrebbero essere incompleti.`)
+      }
+      if (chunks.length - llmChunkErrors > 0) {
+        llmUsed = true
+      }
     } catch (err) {
       log.warn('nerService: errore LLM, continuo senza', { error: err })
       warnings.push('LLM locale non raggiungibile. Usato solo BERT + regex.')

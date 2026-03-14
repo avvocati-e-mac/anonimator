@@ -106,6 +106,32 @@ describe('llmService', () => {
     expect(result).toEqual([])
   })
 
+  it('dovrebbe chiamare onError su errore 500 e restituire array vuoto', async () => {
+    globalFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error'
+    })
+
+    const onError = vi.fn()
+    const result = await detectNamesWithLlm('Test', mockConfig, onError)
+    expect(result).toEqual([])
+    expect(onError).toHaveBeenCalledOnce()
+  })
+
+  it('non dovrebbe chiamare onError in caso di successo', async () => {
+    globalFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: JSON.stringify({ replacements: [] }) } }]
+      })
+    })
+
+    const onError = vi.fn()
+    await detectNamesWithLlm('Test', mockConfig, onError)
+    expect(onError).not.toHaveBeenCalled()
+  })
+
   it('dovrebbe includere stream:false in ogni corpo richiesta (OpenAI compat)', async () => {
     globalFetch.mockResolvedValue({
       ok: true,
