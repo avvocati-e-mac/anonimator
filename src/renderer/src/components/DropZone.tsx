@@ -5,12 +5,14 @@ import { useSessionStore } from '../store/sessionStore'
 import { useBatchOrchestrator } from '../hooks/useBatchOrchestrator'
 import type { BatchFileItem, DetectedEntity, EntityType } from '@shared/types'
 
-const ACCEPTED_EXTENSIONS = ['.pdf', '.docx', '.odt', '.txt', '.png', '.jpg', '.jpeg']
-const ACCEPTED_MIME: Record<string, string[]> = {
+export const ACCEPTED_EXTENSIONS = ['.pdf', '.docx', '.odt', '.txt', '.md', '.png', '.jpg', '.jpeg']
+export const ACCEPTED_MIME: Record<string, string[]> = {
   'application/pdf': ['.pdf'],
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
   'application/vnd.oasis.opendocument.text': ['.odt'],
   'text/plain': ['.txt'],
+  'text/markdown': ['.md'],
+  'text/x-markdown': ['.md'],
   'image/png': ['.png'],
   'image/jpeg': ['.jpg', '.jpeg'],
 }
@@ -339,6 +341,7 @@ export default function DropZone({ onOpenSettings, isDark, onToggleDark }: DropZ
           { label: 'Word', desc: '.docx' },
           { label: 'OpenDocument', desc: '.odt' },
           { label: 'Testo', desc: '.txt' },
+          { label: 'Markdown', desc: '.md' },
           { label: 'Immagini', desc: 'PNG, JPG' },
         ].map(({ label, desc }) => (
           <div key={label} className="flex items-center gap-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5">

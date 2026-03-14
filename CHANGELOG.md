@@ -5,6 +5,13 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.3.1] - 2026-03-14
+
+### Fix
+- **DropZone: file `.md` rifiutati dall'interfaccia** — i file Markdown venivano bloccati dalla DropZone prima di raggiungere il backend. Aggiunte estensione `.md` e MIME type `text/markdown` / `text/x-markdown` alla lista dei formati accettati. Il badge "Markdown .md" è ora visibile nella sezione formati supportati nella schermata principale.
+
+---
+
 ## [1.3.0] - 2026-03-14
 
 ### Novità
