@@ -24,7 +24,8 @@ function getSettingsPath(): string {
 }
 
 function migrateLlmConfig(config: any): LlmConfig {
-  // Se ha già il campo providerType, assumiamo sia già aggiornato
+  // Se ha già il campo providerType, assumiamo sia già aggiornato.
+  // Spread su DEFAULT_LLM_CONFIG garantisce che campi nuovi (es. chunkMode) abbiano un default.
   if (config && config.providerType) {
     return { ...DEFAULT_LLM_CONFIG, ...config }
   }

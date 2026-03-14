@@ -324,7 +324,8 @@ export interface NerAnalysisResult {
 export async function analyzeText(
   text: string,
   llmConfig?: LlmConfig,
-  onLlmProgress?: (page: number, total: number) => void
+  onLlmProgress?: (page: number, total: number) => void,
+  pages?: string[]
 ): Promise<NerAnalysisResult> {
   const warnings: string[] = []
   const foundTexts = new Set<string>()
@@ -445,9 +446,26 @@ export async function analyzeText(
 
   if (llmConfig?.enabled && llmConfig.model) {
     try {
-      const pages = text.split(/\n\n+/).filter((p) => p.trim().length > 50)
       const effectiveChunkSize = llmConfig.chunkSize ?? 3000
-      const chunks = pages.length > 1 ? pages : splitTextIntoLlmChunks(text, effectiveChunkSize)
+      const chunkMode = llmConfig.chunkMode ?? 'chunk'
+
+      let chunks: string[]
+      if (chunkMode === 'page' && pages && pages.length > 0) {
+        // Page-mode: ogni pagina PDF è una richiesta separata.
+        // Se una singola pagina supera chunkSize, la spezza comunque.
+        chunks = pages.flatMap((page) =>
+          page.trim().length > effectiveChunkSize
+            ? splitTextIntoLlmChunks(page, effectiveChunkSize)
+            : page.trim().length > 50 ? [page] : []
+        )
+      } else {
+        if (chunkMode === 'page' && (!pages || pages.length === 0)) {
+          log.warn('nerService: chunkMode=page ma pages non disponibili, fallback a chunk')
+        }
+        // Chunk-mode (default): chunking fisso
+        chunks = splitTextIntoLlmChunks(text, effectiveChunkSize)
+      }
+
       const LLM_BATCH = Math.max(1, llmConfig.parallelRequests ?? 1)
       let completed = 0
       for (let i = 0; i < chunks.length; i += LLM_BATCH) {

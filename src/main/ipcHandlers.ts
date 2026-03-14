@@ -65,6 +65,7 @@ const LlmConfigSchema = z.object({
   // TODO [A/B-TEST]: rimuovere promptLanguage dopo ottimizzazione prompt
   promptLanguage: z.enum(['it', 'en']).default('it'),
   chunkSize: z.number().int().min(1000).max(8000).default(3000),
+  chunkMode: z.enum(['chunk', 'page']).default('chunk'),
   stream: z.boolean().default(false),
   temperature: z.number().min(0).max(2).default(0)
 })

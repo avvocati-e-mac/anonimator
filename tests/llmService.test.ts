@@ -26,6 +26,7 @@ const mockConfig: LlmConfig = {
   parallelRequests: 1,
   promptLanguage: 'it',
   chunkSize: 3000,
+  chunkMode: 'chunk',
   stream: false,
   temperature: 0
 }
