@@ -24,16 +24,31 @@ export const SYSTEM_PROMPT_IT = `Restituisci l'output in formato JSON con una ch
 Compito: estrai SOLO nomi di persone fisiche private e aziende private da testo legale italiano.
 
 Cosa includere:
-- Persone fisiche: nome + cognome. Sostituisci con iniziali puntate.
-  "Mario Rossi" → "M. R.", "Dott. Anna Maria Bianchi" → "A. M. B."
+- Persone fisiche: nome + cognome (o solo cognome se chiaramente una persona). Sostituisci con iniziali puntate.
+  "Mario Rossi" → "M. R.", "Dott. Anna Maria Bianchi" → "A. M. B.", "COLOMBO LUIGI" → "C. L."
+  "D'ANGIOLINO AUGUSTO" → "A. D." (l'apostrofo fa parte del cognome, non spezzare)
 - Aziende private: nome + suffisso legale. Sostituisci ogni parola del nome con la sua iniziale + mantieni suffisso.
-  "Alfa S.r.l." → "A. S.r.l.", "Beta S.p.A." → "B. S.p.A."
+  "Alfa S.r.l." → "A. S.r.l.", "ARUBAPEC S.P.A." → "A. S.P.A.", "Studio Legale Bianchi" → "S. L. B."
+
+Cosa NON includere (non restituire nulla per questi):
+- Istituzioni pubbliche: Tribunale, Corte, Ministero, Comune, Regione, Repubblica, Stato, INPS, Agenzia
+- Organi giudiziari: "Corte d'Appello", "Corte di Cassazione", "SECONDA SEZIONE CIVILE", "Cass. Sez. un."
+- Date, numeri, riferimenti di fascicolo: "Ud. 16/03/2023", "n. 15992/2022", "Cass. 4142/2017"
+- Leggi e decreti: "D.M. 10/3/2014 n. 55", "L. 31/12/2012 n. 247", "art. 3", "C.C.", "C.P.C."
+- Frasi più lunghe di 4 parole — un nome non è mai una frase
+- Parole singole comuni che non sono nomi propri
+- Metadati di certificati: "Firmato Da: ... Emesso Da:", "Serial#:", "Numero registro generale"
+- Titoli usati da soli: "il Giudice", "Consigliere", "Rel. Consigliere"
+
+Regola di estrazione: se un campo mescola nome e ruolo (es. "Dott. GIOVANNI FERRARI - Consigliere -"), estrai SOLO la parte nome ("GIOVANNI FERRARI").
 
 Esempio output:
 {
   "replacements": [
     {"original": "COLOMBO LUIGI", "replacement": "C. L."},
-    {"original": "ARUBAPEC S.P.A.", "replacement": "A. S.P.A."}
+    {"original": "D'ANGIOLINO AUGUSTO", "replacement": "A. D."},
+    {"original": "ARUBAPEC S.P.A.", "replacement": "A. S.P.A."},
+    {"original": "Beta S.p.A.", "replacement": "B. S.p.A."}
   ]
 }
 
@@ -44,16 +59,31 @@ export const SYSTEM_PROMPT_EN = `Return output in JSON format with a "replacemen
 Task: extract ONLY private names of natural persons and private companies from Italian legal text.
 
 What to include:
-- Natural persons: first name + last name. Replace with dotted initials.
-  "Mario Rossi" → "M. R."
+- Natural persons: first name + last name (or last name alone if clearly a person). Replace with dotted initials.
+  "Mario Rossi" → "M. R.", "Dott. Anna Maria Bianchi" → "A. M. B.", "COLOMBO LUIGI" → "C. L."
+  "D'ANGIOLINO AUGUSTO" → "A. D." (the apostrophe is part of the surname — do not split it)
 - Private companies: name + legal suffix. Replace each word of the name with its initial + keep suffix.
-  "Alfa S.r.l." → "A. S.r.l."
+  "Alfa S.r.l." → "A. S.r.l.", "ARUBAPEC S.P.A." → "A. S.P.A.", "Studio Legale Bianchi" → "S. L. B."
+
+What NOT to include (return nothing for these):
+- Public institutions: Tribunale, Corte, Ministero, Comune, Regione, Repubblica, Stato, INPS, Agenzia
+- Courts: "Corte d'Appello", "Corte di Cassazione", "SECONDA SEZIONE CIVILE", "Cass. Sez. un."
+- Dates, numbers, case references: "Ud. 16/03/2023", "n. 15992/2022", "Cass. 4142/2017"
+- Laws and decrees: "D.M. 10/3/2014 n. 55", "L. 31/12/2012 n. 247", "art. 3", "C.C.", "C.P.C."
+- Phrases longer than 4 words — a name is never a sentence
+- Single common words that are not proper names
+- Certificate metadata: "Firmato Da: ... Emesso Da:", "Serial#:", "Numero registro generale"
+- Job titles used alone: "il Giudice", "Consigliere", "Rel. Consigliere"
+
+Extraction rule: if a field mixes name and role (e.g. "Dott. GIOVANNI FERRARI - Consigliere -"), extract ONLY the name part ("GIOVANNI FERRARI").
 
 Example output:
 {
   "replacements": [
     {"original": "COLOMBO LUIGI", "replacement": "C. L."},
-    {"original": "ARUBAPEC S.P.A.", "replacement": "A. S.P.A."}
+    {"original": "D'ANGIOLINO AUGUSTO", "replacement": "A. D."},
+    {"original": "ARUBAPEC S.P.A.", "replacement": "A. S.P.A."},
+    {"original": "Beta S.p.A.", "replacement": "B. S.p.A."}
   ]
 }
 
