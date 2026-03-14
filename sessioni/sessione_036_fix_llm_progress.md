@@ -1,4 +1,4 @@
-# Sessione 001 — Fix progress LLM, rimozione chunkMode, prompt NER ottimizzato, fallback Phi 3B
+# Sessione 036 — Fix progress LLM, rimozione chunkMode, prompt NER ottimizzato, fallback Phi 3B
 **Data:** 2026-03-14
 **Versione:** 1.2.7
 

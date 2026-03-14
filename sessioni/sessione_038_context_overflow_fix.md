@@ -1,4 +1,4 @@
-# Sessione 003 — Fix context overflow LM Studio + cap parallelRequests ≤4B
+# Sessione 038 — Fix context overflow LM Studio + cap parallelRequests ≤4B
 **Data:** 2026-03-14
 **Versione:** 1.2.7
 

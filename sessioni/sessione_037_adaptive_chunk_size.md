@@ -1,4 +1,4 @@
-# Sessione 002 — chunkSize adattivo in base alla taglia del modello
+# Sessione 037 — chunkSize adattivo in base alla taglia del modello
 **Data:** 2026-03-14
 **Versione:** 1.2.7
 

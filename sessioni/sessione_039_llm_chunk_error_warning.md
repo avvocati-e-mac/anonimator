@@ -1,4 +1,4 @@
-# Sessione 004 — Warning UI per chunk LLM falliti silenziosamente
+# Sessione 039 — Warning UI per chunk LLM falliti silenziosamente
 **Data:** 2026-03-14
 **Versione:** 1.2.7
 
