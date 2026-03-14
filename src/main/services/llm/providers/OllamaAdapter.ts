@@ -1,27 +1,7 @@
 import log from 'electron-log'
 import { LlmConfig, LlmDetectedName, LlmTestResult } from '@shared/types'
 import { LlmProviderAdapter } from './LlmProviderAdapter'
-
-/**
- * Schema JSON per lo structured output.
- */
-const STRUCTURED_OUTPUT_SCHEMA = {
-  type: 'object',
-  properties: {
-    replacements: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          original: { type: 'string' },
-          replacement: { type: 'string' }
-        },
-        required: ['original', 'replacement']
-      }
-    }
-  },
-  required: ['replacements']
-}
+import { REPLACEMENT_JSON_SCHEMA } from '../schemas'
 
 export class OllamaAdapter implements LlmProviderAdapter {
   private normalizeUrl(baseUrl: string): string {
@@ -86,7 +66,7 @@ export class OllamaAdapter implements LlmProviderAdapter {
         { role: 'user', content: text }
       ],
       stream: false,
-      format: STRUCTURED_OUTPUT_SCHEMA,
+      format: REPLACEMENT_JSON_SCHEMA,
       options: {
         temperature: 0,
         num_predict: config.maxTokens

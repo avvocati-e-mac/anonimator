@@ -1,23 +1,19 @@
 import log from 'electron-log'
 import { LlmConfig, LlmDetectedName, LlmTestResult } from '@shared/types'
 import { LlmProviderAdapter } from './LlmProviderAdapter'
+import { REPLACEMENT_JSON_SCHEMA } from '../schemas'
 
-const STRUCTURED_OUTPUT_SCHEMA = {
-  type: 'object',
-  properties: {
-    replacements: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          original: { type: 'string' },
-          replacement: { type: 'string' }
-        },
-        required: ['original', 'replacement']
-      }
-    }
-  },
-  required: ['replacements']
+type ResponseFormat =
+  | { type: 'json_schema'; json_schema: { name: string; strict: boolean; schema: object } }
+  | { type: 'json_object' }
+
+interface OpenAiChatRequest {
+  model: string
+  messages: Array<{ role: 'system' | 'user'; content: string }>
+  stream: boolean
+  temperature: number
+  max_tokens: number
+  response_format?: ResponseFormat
 }
 
 export class OpenAiCompatAdapter implements LlmProviderAdapter {
@@ -47,7 +43,7 @@ export class OpenAiCompatAdapter implements LlmProviderAdapter {
     try {
       const models = await this.listModels(config)
       const capabilities = {
-        supportsStructuredOutput: true, // Preset tipici come LM Studio supportano json_schema
+        supportsStructuredOutput: true, // Preset tipici come LM Studio supportano json_schema; fallback gestito in detectNames
         supportsJsonSchema: true,
         supportsModelListing: true
       }
@@ -81,8 +77,7 @@ export class OpenAiCompatAdapter implements LlmProviderAdapter {
   async detectNames(text: string, config: LlmConfig, systemPrompt: string): Promise<LlmDetectedName[]> {
     const url = `${this.normalizeUrl(config.baseUrl)}/chat/completions`
 
-    // Prepariamo il body con structured output
-    const body: any = {
+    const body: OpenAiChatRequest = {
       model: config.model,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -90,17 +85,15 @@ export class OpenAiCompatAdapter implements LlmProviderAdapter {
       ],
       stream: false,
       temperature: 0,
-      max_tokens: config.maxTokens
-    }
-
-    // Aggiungi response_format se non è MLX o se vogliamo tentare lo structured output
-    // LM Studio e altri server moderni supportano json_schema
-    body.response_format = {
-      type: 'json_schema',
-      json_schema: {
-        name: 'anonymization_result',
-        strict: false, // Alcuni server locali falliscono con strict: true
-        schema: STRUCTURED_OUTPUT_SCHEMA
+      max_tokens: config.maxTokens,
+      // LM Studio e altri server moderni supportano json_schema
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'anonymization_result',
+          strict: false, // Alcuni server locali falliscono con strict: true
+          schema: REPLACEMENT_JSON_SCHEMA
+        }
       }
     }
 
@@ -150,16 +143,16 @@ export class OpenAiCompatAdapter implements LlmProviderAdapter {
     try {
       // Pulisce markdown se presente (anche se abbiamo chiesto JSON)
       const cleanJson = content.trim().replace(/^```(?:json)?\s*/m, '').replace(/\s*```$/m, '')
-      const parsed = JSON.parse(cleanJson) as any
+      const parsed = JSON.parse(cleanJson) as unknown
 
       // Caso 1: oggetto con chiave "replacements"
-      if (parsed && typeof parsed === 'object' && Array.isArray(parsed.replacements)) {
-        return parsed.replacements
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Array.isArray((parsed as Record<string, unknown>).replacements)) {
+        return (parsed as { replacements: LlmDetectedName[] }).replacements
       }
 
       // Caso 2: array diretto
       if (Array.isArray(parsed)) {
-        return parsed
+        return parsed as LlmDetectedName[]
       }
 
       return []
