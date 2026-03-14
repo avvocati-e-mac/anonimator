@@ -110,7 +110,11 @@ export function registerIpcHandlers(): void {
       const { entities: rawEntities, nerUsed, llmUsed, warnings: nerWarnings } =
         await analyzeText(text, llmConfig, (page, total) => {
           const pct = 50 + Math.round((page / total) * 30)
-          sendProgress('ner', pct, `Analisi LLM: sezione ${page}/${total}...`)
+          const effectiveTotal = format === 'pdf' && pageCount > 0 ? pageCount : total
+          const msg = format === 'pdf'
+            ? `Analisi LLM: pagina ${page}/${effectiveTotal}...`
+            : `Analisi LLM: chunk ${page} di ${total}...`
+          sendProgress('ner', pct, msg)
         })
 
       // Assegna pseudonimi dalla sessione corrente
