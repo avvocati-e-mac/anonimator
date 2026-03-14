@@ -5,6 +5,27 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.3.0] - 2026-03-14
+
+### Novità
+- **Integrazione LLM con provider adapter**: refactoring completo del client LLM in provider separati (`OllamaAdapter`, `OpenAiCompatAdapter`) con structured output JSON schema nativo. Risposta LLM più affidabile su tutti i modelli supportati.
+- **Page-mode LLM per PDF**: i documenti PDF vengono ora inviati all'LLM pagina per pagina invece che come blocchi di testo continuo. Migliora la precisione su documenti lunghi e riduce i falsi positivi da testo troncato a cavallo di chunk.
+- **Porta configurabile per preset custom**: il preset "Custom OpenAI-compat" permette ora di specificare una porta diversa da quella di default, senza dover riscrivere l'URL base completo.
+- **Warning per chunk LLM falliti**: se uno o più chunk falliscono silenziosamente durante l'analisi LLM (es. errore 500 mentre LM Studio carica il modello), l'utente vede ora un avviso chiaro con il numero di sezioni non analizzate. Il flusso principale non viene interrotto.
+
+### Fix
+- **Context overflow immediato**: su errori 400 causati da context overflow (KV cache esaurita su LM Studio con modelli grandi), il sistema interrompe immediatamente i retry invece di tentare inutilmente.
+- **Cap parallelRequests per modelli ≤4B**: per modelli piccoli (Phi-3, Gemma 2B, Qwen 2.5 3B, ecc.) il numero di richieste parallele viene forzato a 1 per evitare overflow della KV cache condivisa su LM Studio. Avviso amber in Impostazioni se il cap è attivo.
+- **Terzo tentativo senza response_format**: su modelli 3B che non supportano lo structured output JSON, il terzo tentativo viene inviato senza il vincolo `response_format` per ottenere comunque una risposta parsabile.
+- **Prompt NER ripristinato completo**: ripristinate le regole di esclusione complete nel prompt di sistema (istituzioni pubbliche, riferimenti normativi, metadati PKI) che erano state accidentalmente rimosse in una versione precedente.
+- **Progresso LLM — terminologia corretta**: il messaggio di avanzamento usa ora "sezione" invece di "pagina" per i documenti non-PDF, e mostra l'indice corretto del chunk corrente.
+- **chunkMode rimosso**: il toggle manuale "chunk mode / page mode" è stato rimosso dalle impostazioni. La modalità viene ora selezionata automaticamente in base al formato del documento (PDF → page-mode, altri → chunk-mode).
+
+### Migliorie tecniche
+- `llmUsed` viene impostato a `true` solo se almeno un chunk LLM ha avuto successo (in precedenza era sempre `true` anche se tutti i chunk fallivano).
+- Aggiunto `modelSizeUtils.ts` (`inferChunkSize`) per il rilevamento automatico della taglia del modello dal nome.
+- Test unitari aggiuntivi: `OllamaAdapter`, `OpenAiCompatAdapter` (retry, context overflow, structured output), `modelSizeUtils`, `nerPageMode`, migrazione impostazioni, utilità SettingsScreen.
+
 ## [1.2.7] - 2026-03-10
 
 ### Fix
