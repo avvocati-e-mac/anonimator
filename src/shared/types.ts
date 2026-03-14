@@ -145,7 +145,6 @@ export interface LlmConfig {
   customPrompt?: string     // se valorizzato, sovrascrive il prompt di default
   promptLanguage: 'it' | 'en'  // TODO [A/B-TEST]: rimuovere dopo ottimizzazione prompt
   chunkSize: number         // caratteri per chunk (1000–8000)
-  chunkMode: 'chunk' | 'page'  // 'chunk': chunking fisso (default); 'page': una richiesta per pagina PDF
   stream: boolean           // disattiva lo streaming (sempre false)
   temperature: number       // impostata a 0 per estrazione deterministica
 }
@@ -186,7 +185,6 @@ export const DEFAULT_LLM_CONFIG: LlmConfig = {
   parallelRequests: 1,
   promptLanguage: 'it',  // TODO [A/B-TEST]
   chunkSize: 3000,
-  chunkMode: 'chunk',
   stream: false,
   temperature: 0
 }
