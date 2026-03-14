@@ -32,13 +32,14 @@ const LLM_PRESETS = {
 } as const
 type PresetKey = keyof typeof LLM_PRESETS
 
-function buildBaseUrl(preset: PresetKey, host: string): string {
+function buildBaseUrl(preset: PresetKey, host: string, port?: string): string {
   const { defaultPort, path } = LLM_PRESETS[preset]
   const h = host.trim() || 'localhost'
-  // Se l'host non include già la porta, aggiungila
+  const resolvedPort = port?.trim() ? port.trim() : String(defaultPort)
+  // Se l'host include già la porta, usala così com'è; altrimenti aggiungi la porta risolta
   const hasPort = /:\d+$/.test(h)
   const base = h.startsWith('http') ? h : `http://${h}`
-  return `${base}${hasPort ? '' : `:${defaultPort}`}${path}`
+  return `${base}${hasPort ? '' : `:${resolvedPort}`}${path}`
 }
 
 function extractHostFromUrl(url: string): string {
@@ -50,9 +51,19 @@ function extractHostFromUrl(url: string): string {
   }
 }
 
+function extractPortFromUrl(url: string): string {
+  try {
+    const u = new URL(url)
+    return u.port || ''
+  } catch {
+    return ''
+  }
+}
+
 export default function SettingsScreen({ onBack, isDark, onToggleDark }: SettingsScreenProps): React.JSX.Element {
   const [llm, setLlm] = useState<LlmConfig>(DEFAULT_LLM_CONFIG)
   const [host, setHost] = useState('localhost')
+  const [customPort, setCustomPort] = useState('')
   const [availableModels, setAvailableModels] = useState<string[]>([])
   const [testState, setTestState] = useState<TestState>('idle')
   const [testMessage, setTestMessage] = useState('')
@@ -73,6 +84,9 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
     window.electronAPI.getSettings().then(({ llm: saved }) => {
       setLlm(saved)
       setHost(extractHostFromUrl(saved.baseUrl))
+      if (saved.providerPreset === 'custom') {
+        setCustomPort(extractPortFromUrl(saved.baseUrl))
+      }
       if (saved.baseUrl) loadModels(saved)
       // Mostra input manuale se il modello salvato non è tra i suggeriti
       const isSuggested = SUGGESTED_MODELS.some((m) => m.id === saved.model)
@@ -100,11 +114,14 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
   }, [])
 
   function handlePresetChange(p: PresetKey): void {
-    const newUrl = buildBaseUrl(p, host)
+    // Quando si passa a custom, pre-popola la porta dall'URL corrente (se presente)
+    const portForNewPreset = p === 'custom' ? extractPortFromUrl(llm.baseUrl) : ''
+    if (p === 'custom') setCustomPort(portForNewPreset)
+    const newUrl = buildBaseUrl(p, host, p === 'custom' ? portForNewPreset : undefined)
     const newLlm = {
       ...llm,
       providerPreset: p,
-      providerType: LLM_PRESETS[p].providerType as any,
+      providerType: LLM_PRESETS[p].providerType as LlmConfig['providerType'],
       baseUrl: newUrl
     }
     setLlm(newLlm)
@@ -113,7 +130,16 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
   }
 
   function handleHostBlur(): void {
-    const newUrl = buildBaseUrl(llm.providerPreset as PresetKey, host)
+    const port = llm.providerPreset === 'custom' ? customPort : undefined
+    const newUrl = buildBaseUrl(llm.providerPreset as PresetKey, host, port)
+    const newLlm = { ...llm, baseUrl: newUrl }
+    setLlm(newLlm)
+    loadModels(newLlm)
+    setTestState('idle')
+  }
+
+  function handlePortBlur(): void {
+    const newUrl = buildBaseUrl('custom', host, customPort)
     const newLlm = { ...llm, baseUrl: newUrl }
     setLlm(newLlm)
     loadModels(newLlm)
@@ -267,6 +293,24 @@ export default function SettingsScreen({ onBack, isDark, onToggleDark }: Setting
                     spellCheck={false}
                   />
                 </div>
+
+                {/* Porta (solo per preset custom) */}
+                {llm.providerPreset === 'custom' && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                      Porta
+                    </label>
+                    <input
+                      type="text"
+                      className={inputClass}
+                      value={customPort}
+                      onChange={(e) => setCustomPort(e.target.value)}
+                      onBlur={handlePortBlur}
+                      placeholder="es. 8080"
+                      spellCheck={false}
+                    />
+                  </div>
+                )}
 
                 {/* URL completo (sola lettura, per verifica) */}
                 <div className="bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 flex items-center gap-2">
