@@ -72,10 +72,8 @@ describe('OpenAiCompatAdapter', () => {
 
   describe('detectNames — fallback 400 → json_object', () => {
     it('dovrebbe ritentare con json_object se il primo attempt restituisce 400', async () => {
-      // Prima chiamata: 400
       globalFetch
         .mockResolvedValueOnce({ ok: false, status: 400, statusText: 'Bad Request' })
-        // Seconda chiamata: ok con json_object
         .mockResolvedValueOnce(makeOkResponse(JSON.stringify({
           replacements: [{ original: 'Mario Rossi', replacement: 'M. R.' }]
         })))
@@ -85,9 +83,26 @@ describe('OpenAiCompatAdapter', () => {
       expect(result[0].original).toBe('Mario Rossi')
       expect(globalFetch).toHaveBeenCalledTimes(2)
 
-      // Il secondo body deve avere response_format: json_object
       const secondBody = JSON.parse(globalFetch.mock.calls[1][1].body as string)
       expect(secondBody.response_format).toEqual({ type: 'json_object' })
+    })
+
+    it('dovrebbe ritentare senza response_format se anche json_object restituisce 400 (es. Phi 3B)', async () => {
+      globalFetch
+        .mockResolvedValueOnce({ ok: false, status: 400, statusText: 'Bad Request' })
+        .mockResolvedValueOnce({ ok: false, status: 400, statusText: 'Bad Request' })
+        .mockResolvedValueOnce(makeOkResponse(JSON.stringify({
+          replacements: [{ original: 'Luca Neri', replacement: 'L. N.' }]
+        })))
+
+      const result = await adapter.detectNames('Testo', mockConfig, 'prompt')
+      expect(result).toHaveLength(1)
+      expect(result[0].original).toBe('Luca Neri')
+      expect(globalFetch).toHaveBeenCalledTimes(3)
+
+      // Il terzo tentativo non deve avere response_format
+      const thirdBody = JSON.parse(globalFetch.mock.calls[2][1].body as string)
+      expect(thirdBody.response_format).toBeUndefined()
     })
   })
 

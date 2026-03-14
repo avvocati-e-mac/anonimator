@@ -108,10 +108,25 @@ export class OpenAiCompatAdapter implements LlmProviderAdapter {
         signal: AbortSignal.timeout(config.timeoutMs)
       })
 
-      // Se fallisce con response_format (es. MLX server vecchi), riprova con json_mode semplice
+      // Tentativo 2: json_schema non supportato (es. MLX vecchi) → riprova con json_object
       if (!response.ok && response.status === 400) {
-        log.warn('OpenAiCompatAdapter: structured output fallito (400), riprovo con json_mode')
+        log.warn('OpenAiCompatAdapter: structured output fallito (400), riprovo con json_object')
         body.response_format = { type: 'json_object' }
+        response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer not-needed'
+          },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(config.timeoutMs)
+        })
+      }
+
+      // Tentativo 3: json_object non supportato (es. Phi 3B, modelli molto piccoli) → plain chat
+      if (!response.ok && response.status === 400) {
+        log.warn('OpenAiCompatAdapter: json_object fallito (400), riprovo senza response_format')
+        delete body.response_format
         response = await fetch(url, {
           method: 'POST',
           headers: {
