@@ -105,4 +105,37 @@ describe('llmService', () => {
     const result = await detectNamesWithLlm('Test', mockConfig)
     expect(result).toEqual([])
   })
+
+  it('dovrebbe includere stream:false in ogni corpo richiesta (OpenAI compat)', async () => {
+    globalFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: JSON.stringify({ replacements: [] }) } }]
+      })
+    })
+
+    await detectNamesWithLlm('Test', mockConfig)
+    const body = JSON.parse(globalFetch.mock.calls[0][1].body as string)
+    expect(body.stream).toBe(false)
+  })
+
+  it('dovrebbe includere stream:false in ogni corpo richiesta (Ollama)', async () => {
+    const ollamaConfig: LlmConfig = {
+      ...mockConfig,
+      providerType: 'ollama',
+      providerPreset: 'ollama',
+      baseUrl: 'http://localhost:11434/v1'
+    }
+
+    globalFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        message: { content: JSON.stringify({ replacements: [] }) }
+      })
+    })
+
+    await detectNamesWithLlm('Test', ollamaConfig)
+    const body = JSON.parse(globalFetch.mock.calls[0][1].body as string)
+    expect(body.stream).toBe(false)
+  })
 })
