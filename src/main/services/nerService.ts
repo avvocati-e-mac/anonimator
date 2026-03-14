@@ -447,22 +447,19 @@ export async function analyzeText(
   if (llmConfig?.enabled && llmConfig.model) {
     try {
       const effectiveChunkSize = llmConfig.chunkSize ?? 3000
-      const chunkMode = llmConfig.chunkMode ?? 'chunk'
+      const usePageMode = pages && pages.length > 0
 
       let chunks: string[]
-      if (chunkMode === 'page' && pages && pages.length > 0) {
+      if (usePageMode) {
         // Page-mode: ogni pagina PDF è una richiesta separata.
         // Se una singola pagina supera chunkSize, la spezza comunque.
-        chunks = pages.flatMap((page) =>
+        chunks = pages!.flatMap((page) =>
           page.trim().length > effectiveChunkSize
             ? splitTextIntoLlmChunks(page, effectiveChunkSize)
             : page.trim().length > 50 ? [page] : []
         )
       } else {
-        if (chunkMode === 'page' && (!pages || pages.length === 0)) {
-          log.warn('nerService: chunkMode=page ma pages non disponibili, fallback a chunk')
-        }
-        // Chunk-mode (default): chunking fisso
+        // Chunk-mode (default): chunking fisso sul testo completo
         chunks = splitTextIntoLlmChunks(text, effectiveChunkSize)
       }
 

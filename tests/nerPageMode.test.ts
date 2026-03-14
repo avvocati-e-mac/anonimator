@@ -40,51 +40,47 @@ const baseLlmConfig: LlmConfig = {
   parallelRequests: 1,
   promptLanguage: 'it',
   chunkSize: 3000,
-  chunkMode: 'chunk',
   stream: false,
   temperature: 0
 }
 
-describe('analyzeText — page-mode LLM', () => {
+describe('analyzeText — page-mode LLM (automatico da presenza di pages)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(detectNamesWithLlm).mockResolvedValue([])
   })
 
-  it('con chunkMode=page e pages presenti, chiama detectNamesWithLlm N volte (una per pagina)', async () => {
+  it('con pages presenti, chiama detectNamesWithLlm N volte (una per pagina)', async () => {
     // Le pagine devono essere > 50 caratteri per non essere filtrate
     const pages = [
       'Pagina uno con testo sufficientemente lungo per passare il filtro minimo',
       'Pagina due con testo sufficientemente lungo per passare il filtro minimo',
       'Pagina tre con testo sufficientemente lungo per passare il filtro minimo'
     ]
-    const config: LlmConfig = { ...baseLlmConfig, chunkMode: 'page' }
 
-    await analyzeText('testo completo', config, undefined, pages)
+    await analyzeText('testo completo', baseLlmConfig, undefined, pages)
 
     expect(detectNamesWithLlm).toHaveBeenCalledTimes(pages.length)
   })
 
-  it('con chunkMode=page ma pages assente, fa fallback a chunking senza errori', async () => {
-    const config: LlmConfig = { ...baseLlmConfig, chunkMode: 'page', chunkSize: 3000 }
+  it('con pages assente, usa chunking fisso senza errori', async () => {
     const text = 'Testo breve senza pagine separate.'
 
-    await expect(analyzeText(text, config, undefined, undefined)).resolves.not.toThrow()
+    await expect(analyzeText(text, baseLlmConfig, undefined, undefined)).resolves.not.toThrow()
     // Con testo breve, viene chiamato una volta (un unico chunk)
     expect(detectNamesWithLlm).toHaveBeenCalledTimes(1)
   })
 
-  it('con chunkMode=page e pages assente (array vuoto), fa fallback a chunking', async () => {
-    const config: LlmConfig = { ...baseLlmConfig, chunkMode: 'page' }
+  it('con pages vuoto (array vuoto), usa chunking fisso', async () => {
     const text = 'Testo breve.'
 
-    await analyzeText(text, config, undefined, [])
+    await analyzeText(text, baseLlmConfig, undefined, [])
     // Fallback a chunk → una chiamata per il testo breve
     expect(detectNamesWithLlm).toHaveBeenCalledTimes(1)
   })
 
-  it('con chunkMode=page e una pagina che supera chunkSize, la pagina viene spezzata', async () => {
-    const config: LlmConfig = { ...baseLlmConfig, chunkMode: 'page', chunkSize: 50 }
+  it('con una pagina che supera chunkSize, la pagina viene spezzata in più chunk', async () => {
+    const config: LlmConfig = { ...baseLlmConfig, chunkSize: 50 }
     // Pagina molto lunga (> 50 char), dovrebbe essere spezzata in più chunk
     const longPage = 'A'.repeat(200)
     const pages = [longPage]
@@ -95,14 +91,18 @@ describe('analyzeText — page-mode LLM', () => {
     expect(detectNamesWithLlm.mock.calls.length).toBeGreaterThan(1)
   })
 
-  it('con chunkMode=chunk (default), ignora pages e usa chunking fisso', async () => {
-    const pages = ['Pagina uno', 'Pagina due', 'Pagina tre']
-    const config: LlmConfig = { ...baseLlmConfig, chunkMode: 'chunk', chunkSize: 3000 }
+  it('con pages fornite ma testo breve, usa chunking fisso se pages è assente', async () => {
     const text = 'Testo breve.'
 
-    await analyzeText(text, config, undefined, pages)
+    await analyzeText(text, baseLlmConfig, undefined, undefined)
 
-    // chunkMode=chunk → 1 chiamata (tutto il testo in un unico chunk)
+    // Nessuna page fornita → chunking fisso → 1 chiamata
     expect(detectNamesWithLlm).toHaveBeenCalledTimes(1)
+  })
+
+  it('LlmConfig non ha più la proprietà chunkMode', () => {
+    // Verifica a runtime che il tipo non includa chunkMode
+    const config = { ...baseLlmConfig }
+    expect('chunkMode' in config).toBe(false)
   })
 })
