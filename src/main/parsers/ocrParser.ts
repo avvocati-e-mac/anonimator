@@ -2,8 +2,7 @@ import { createWorker } from 'tesseract.js'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { randomBytes } from 'crypto'
-import { writeFile, unlink } from 'fs/promises'
-import type { PDFDocumentProxy, TextItem, TextMarkedContent } from 'pdfjs-dist/types/src/display/api'
+import { writeFile, unlink, readFile } from 'fs/promises'
 import type { ParseResult } from './index'
 import log from 'electron-log'
 import { getTessdataPath } from '../services/nerService'
@@ -67,17 +66,12 @@ export async function parseImage(filePath: string): Promise<ParseResult> {
 
 export async function parsePdfWithOcr(filePath: string): Promise<ParseResult> {
   const warnings: string[] = []
-  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
-  const workerPath = new URL(
-    '../../../node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs',
-    import.meta.url
-  ).href
-  pdfjs.GlobalWorkerOptions.workerSrc = workerPath
+  const mupdf = (await import('mupdf')).default as typeof import('mupdf')
 
-  let doc: PDFDocumentProxy
+  const fileBuffer = await readFile(filePath)
+  let doc: import('mupdf').PDFDocument
   try {
-    const task = pdfjs.getDocument({ url: filePath, isEvalSupported: false, useSystemFonts: true })
-    doc = await task.promise
+    doc = new mupdf.PDFDocument(fileBuffer as unknown as ArrayBuffer)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     if (msg.toLowerCase().includes('password')) {
@@ -86,40 +80,37 @@ export async function parsePdfWithOcr(filePath: string): Promise<ParseResult> {
     throw new Error(`Impossibile aprire il PDF per OCR: ${msg}`)
   }
 
-  const pageCount = doc.numPages
+  const pageCount = doc.countPages()
   const pageTexts: string[] = []
   let totalConfidence = 0
   let lowConfidencePages = 0
+  let digitalFallbackPages = 0
 
-  for (let i = 1; i <= pageCount; i++) {
-    log.info(`OCR pagina ${i}/${pageCount}`)
-    const page = await doc.getPage(i)
-    const viewport = page.getViewport({ scale: 150 / 72 }) // 150 DPI
+  for (let i = 0; i < pageCount; i++) {
+    log.info(`OCR pagina ${i + 1}/${pageCount}`)
+    const page = doc.loadPage(i) as import('mupdf').PDFPage
 
     let pageText = ''
     let confidence = 100
 
     try {
-      // Renderizza la pagina PDF in PNG tramite node-canvas, poi OCR
-      const canvasFactory = createNodeCanvasFactory()
-      const cc = canvasFactory.create(viewport.width, viewport.height)
+      // Renderizza la pagina PDF in PNG tramite MuPDF (150 DPI), poi OCR
+      const scale = 150 / 72
+      const matrix = mupdf.Matrix.scale(scale, scale)
+      const pixmap = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false)
+      const pngBuffer = Buffer.from(pixmap.asPNG())
 
-      // cast necessario: node-canvas implementa CanvasRenderingContext2D ma non estende il tipo DOM
-      // canvasFactory non è nei RenderParameters dichiarati ma è supportato a runtime da pdfjs
-      const renderParams = { canvasContext: cc.context as CanvasRenderingContext2D, viewport } as Parameters<typeof page.render>[0]
-      await page.render(renderParams).promise
-
-      const pngBuffer = cc.canvas.toBuffer('image/png')
-      const ocrResult = await ocrSingleImage(pngBuffer, `pagina ${i}`)
+      const ocrResult = await ocrSingleImage(pngBuffer, `pagina ${i + 1}`)
       pageText = ocrResult.text
       confidence = ocrResult.confidence
-    } catch {
+    } catch (err) {
       // Fallback: estrai il testo digitale se disponibile (es. PDF ibridi)
-      log.warn(`OCR rendering non disponibile per pagina ${i}, uso testo digitale`)
-      const content = await page.getTextContent()
-      pageText = content.items
-        .map((item: TextItem | TextMarkedContent) => ('str' in item ? item.str : ''))
-        .join(' ')
+      digitalFallbackPages++
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      log.warn(`OCR rendering fallito per pagina ${i + 1}, uso testo digitale`, { error: errorMsg })
+
+      const stext = page.toStructuredText()
+      pageText = stext.asText()
       confidence = 100
     }
 
@@ -141,48 +132,9 @@ export async function parsePdfWithOcr(filePath: string): Promise<ParseResult> {
   log.info('PDF OCR completed', {
     pageCount,
     chars: text.length,
-    avgConfidence: Math.round(avgConfidence)
+    avgConfidence: Math.round(avgConfidence),
+    digitalFallbackPages
   })
 
   return { text, pageCount, warnings }
-}
-
-// ─── Canvas factory per pdfjs in Node.js ─────────────────────────────────────
-
-interface CanvasLike {
-  toBuffer: (format: string) => Buffer
-  width: number
-  height: number
-}
-
-interface CanvasAndContext {
-  canvas: CanvasLike
-  context: unknown
-}
-
-interface NodeCanvasFactory {
-  create: (width: number, height: number) => CanvasAndContext
-  reset: (cc: CanvasAndContext, width: number, height: number) => void
-  destroy: (cc: CanvasAndContext) => void
-  [key: string]: unknown
-}
-
-function createNodeCanvasFactory(): NodeCanvasFactory {
-  // node-canvas non è una dipendenza diretta; se non installato, il try/catch
-  // nel chiamante gestisce il fallback all'estrazione testo digitale
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { createCanvas } = require('canvas') as { createCanvas: (w: number, h: number) => CanvasLike & { getContext: (t: string) => unknown } }
-
-  return {
-    create(width: number, height: number): CanvasAndContext {
-      const canvas = createCanvas(width, height)
-      const context = canvas.getContext('2d')
-      return { canvas, context }
-    },
-    reset(cc: CanvasAndContext, width: number, height: number): void {
-      cc.canvas.width = width
-      cc.canvas.height = height
-    },
-    destroy(_cc: CanvasAndContext): void {}
-  }
 }
