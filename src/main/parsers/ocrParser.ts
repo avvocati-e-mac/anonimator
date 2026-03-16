@@ -39,15 +39,23 @@ async function ocrSingleImage(source: string | Buffer, pageLabel: string): Promi
   const tessDataDir = getTessdataPath()
   const workerPath = resolveWorkerPath()
 
+  // In Electron, getEnvironment() restituisce 'electron' (non 'node'), quindi
+  // tesseract.js tratta sempre langPath come URL e usa node-fetch (che non supporta
+  // filesystem path né file:// URL). Soluzione: leggere il traineddata in memoria
+  // e passarlo direttamente come { code, data } — bypassando completamente il fetch.
+  const trainedDataPath = join(tessDataDir, 'ita.traineddata')
+  const trainedDataBuffer = await readFile(trainedDataPath)
+  const langData: import('tesseract.js').Lang = { code: 'ita', data: trainedDataBuffer as unknown }
+
   log.info('OCR Tesseract paths', {
     isPackaged: app.isPackaged,
     workerPath,
-    langPath: tessDataDir
+    trainedDataPath,
+    trainedDataSize: trainedDataBuffer.length
   })
 
-  const worker = await createWorker('ita', 1, {
+  const worker = await createWorker([langData], 1, {
     workerPath,
-    langPath: tessDataDir,
     cacheMethod: 'none' as const,
     gzip: false,
     errorHandler: (err: unknown) => {
