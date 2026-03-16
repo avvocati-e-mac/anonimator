@@ -76,12 +76,14 @@ export interface DocumentAnalysisResult {
   pageCount: number
   entities: DetectedEntity[]
   warnings: string[]
+  isScanned?: boolean  // true per PDF scansionati (testo estratto via OCR, nessun layer testo nativo)
 }
 
 // Richiesta di anonimizzazione (Renderer → Main)
 export interface AnonymizeRequest {
   filePath: string
   entities: DetectedEntity[] // con confirmed aggiornato dall'utente
+  isScanned?: boolean        // true per PDF scansionati (output via rettangoli su immagine)
 }
 
 // Risposta dopo il salvataggio (Main → Renderer)

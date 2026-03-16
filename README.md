@@ -4,7 +4,7 @@ App desktop per la **pseudoanonimizzazione offline** di documenti legali italian
 
 Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a server esterni. Tutto il processing avviene localmente sul tuo Mac, PC Windows o Linux.
 
-**Versione attuale: 1.3.1**
+**Versione attuale: 1.3.2**
 
 > **L'app è stata creata in vibe coding e non sono un esperto programmatore — procedi con cautela nell'utilizzo.**
 
@@ -54,10 +54,10 @@ Scarica il file per il tuo sistema dalla pagina [Releases](https://github.com/av
 
 | File | Sistema |
 |---|---|
-| `Anonimator-1.3.1-arm64.dmg` | Mac Apple Silicon (M1/M2/M3/M4) |
-| `Anonimator-1.3.1-x64.dmg` | Mac Intel |
-| `Anonimator-1.3.1-windows-x64-setup.exe` | Windows 10/11 a 64 bit |
-| `Anonimator-1.3.1-linux-x64.AppImage` | Linux a 64 bit |
+| `Anonimator-1.3.2-arm64.dmg` | Mac Apple Silicon (M1/M2/M3/M4) |
+| `Anonimator-1.3.2-x64.dmg` | Mac Intel |
+| `Anonimator-1.3.2-windows-x64-setup.exe` | Windows 10/11 a 64 bit |
+| `Anonimator-1.3.2-linux-x64.AppImage` | Linux a 64 bit |
 
 ### Per tutti i sistemi
 
@@ -173,7 +173,7 @@ tests/          # Test unitari
 
 ### Bug da correggere
 
-- [ ] **PDF scansionati: output vuoto/corrotto** — quando il PDF è una scansione (immagini raster), il file anonimizzato risulta vuoto o non si apre. Il generatore PDF usa MuPDF per cercare il testo nel layer testuale, ma su PDF scansionati il testo non esiste in quel layer. Fix pianificato: fallback automatico a output TXT con testo OCR anonimizzato.
+- [x] **PDF scansionati: output vuoto/corrotto** — risolto in v1.3.2. Il generatore ora usa OCR word-level (MuPDF + Tesseract) per localizzare le entità e sovrappone rettangoli grigi direttamente sull'immagine raster del PDF.
 - [x] **NER non disponibile su Windows 10 / ARM64** — risolto l'errore tecnico `Cannot read properties of undefined (reading 'create')` tramite pre-caricamento del modulo nativo e disabilitazione del proxy worker.
 - [ ] **DOCX: problemi di estrazione delle entità** — alcune entità non vengono rilevate correttamente su file .docx reali; verificare parser e pipeline NER su documenti complessi
 - [ ] **PDF: pseudonimi brevi spezzati su due righe** — "F. S." viene diviso quando il testo originale è vicino al margine destro (`pdfGenerator.ts`)

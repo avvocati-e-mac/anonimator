@@ -2,7 +2,7 @@
 
 Documentazione tecnica per sviluppatori. Descrive architettura, flussi di dati, logica di anonimizzazione e componenti del software.
 
-**Versione documentata:** 1.3.1
+**Versione documentata:** 1.3.2
 **Stack:** Electron 40 + React 18 + TypeScript (strict mode)
 **Scopo:** Pseudonimizzazione locale di documenti legali italiani (PDF, DOCX, ODT, TXT, immagini). Nessuna connessione di rete durante l'elaborazione.
 
@@ -434,15 +434,19 @@ parsePdfWithOcr(filePath: string): Promise<ParseResult> // PDF scansionato
 ```
 
 **Per PDF scansionato:**
-1. Per ogni pagina, renderizza in PNG a 150 DPI usando `node-canvas`
+1. Per ogni pagina, renderizza in PNG a 150 DPI usando **MuPDF** (`page.toPixmap()`)
 2. Esegue OCR sull'immagine PNG
 3. Aggrega il testo e la confidenza media
 4. Se la confidenza di una pagina è < 60%, aggiunge un warning
+5. Restituisce `{ ...result, isScanned: true }` — propagato fino al Renderer
 
 **Per immagine singola:**
 1. Crea un worker tesseract con lingua 'ita'
-2. Carica il tessdata da `app.getAppPath()/resources/tessdata/ita.traineddata`
-3. Riconosce il testo e restituisce `{text, confidence}`
+2. Il file `ita.traineddata` viene letto in memoria con `readFile()` e passato come `{ code, data }` — bypassa `node-fetch` e il path-loading di tesseract.js (necessario in Electron)
+3. Il `workerPath` viene risolto con path assoluto: `app.asar.unpacked` in produzione, `createRequire.resolve()` in dev
+4. Riconosce il testo e restituisce `{text, confidence}`
+
+**Nota su `isScanned`:** il flag `isScanned: true` propagato da `parsers/index.ts` viene incluso nel `DocumentAnalysisResult` e passato con `AnonymizeRequest`. Il generatore di output lo usa per scegliere tra `generatePdf` (PDF nativo) e `generatePdfScanned` (PDF scansionato con bounding box OCR).
 
 ### 6.6 Parser Markdown (`parsers/markdownParser.ts`)
 
@@ -868,11 +872,22 @@ Molto simile a DOCX, ma con la struttura XML di OpenDocument. Il testo può esse
 - Per gli span: cerca il tag completo `<text:span...>TESTO</text:span>`
 - Per il testo diretto: cerca il testo tra i tag adiacenti
 
-### 9.4 Strategia PDF — redazione a due fasi
+### 9.4 Strategia PDF — due percorsi in base al tipo di PDF
 
 File: `outputGenerators/pdfGenerator.ts`
 
-La strategia più complessa. I PDF non hanno una struttura "paragrafo → testo" modificabile come XML. Il testo è posizionato con coordinate assolute.
+La funzione `generatePdf()` riceve un flag `options.isScanned` e instrada verso due strategie distinte:
+
+```typescript
+generatePdf(filePath, entities, { isScanned: true })   // → generatePdfScanned()
+generatePdf(filePath, entities, { isScanned: false })  // → redazione MuPDF + overlay pdf-lib
+```
+
+---
+
+#### 9.4a PDF nativo — redazione a due fasi (MuPDF + pdf-lib)
+
+Per PDF con layer testuale. Il testo è posizionato con coordinate assolute.
 
 **Fase 1 — Redazione con MuPDF:**
 
@@ -901,34 +916,44 @@ Per ogni box di redazione registrato nella Fase 1:
   1. Converti coordinate MuPDF (Y=0 in alto) → pdf-lib (Y=0 in basso):
      pdfY = pageHeight - box.y1
 
-  2. Disegna rettangolo grigio chiaro:
-     page.drawRectangle({
-       x: box.x0, y: pdfY,
-       width: box.x1 - box.x0,
-       height: box.y1 - box.y0,
-       color: rgb(0.92, 0.92, 0.92)  // grigio chiaro
-     })
+  2. Disegna rettangolo grigio scuro:
+     page.drawRectangle({ color: rgb(0.15, 0.15, 0.15) })
 
   3. Calcola dimensione font (proporzionale all'altezza del box):
      fontSize = clamp(altezza × 0.75, min: 5pt, max: 10pt)
 
-  4. Centra e disegna lo pseudonimo:
-     textWidth = font.widthOfTextAtSize(pseudonym, fontSize)
-     textX = box.x0 + (width - textWidth) / 2
-     textY = pdfY + (height - fontSize) / 2
-     page.drawText(pseudonym, {
-       x: textX, y: textY,
-       size: fontSize,
-       color: rgb(0.2, 0.2, 0.2)  // grigio scuro
-     })
+  4. Centra e disegna lo pseudonimo in grigio chiaro:
+     page.drawText(pseudonym, { color: rgb(0.95, 0.95, 0.95) })
 ```
 
-**Confronto visivo prima/dopo:**
+---
+
+#### 9.4b PDF scansionato — overlay OCR word-level (`generatePdfScanned`)
+
+Per PDF con solo immagini raster (nessun layer testuale). La strategia è:
+
+```
+Per ogni pagina:
+  1. MuPDF renderizza la pagina in PNG a 150 DPI (matrix = scale(150/72))
+  2. Tesseract OCR con blocks=true → word-level bounding boxes (pixel)
+  3. Per ogni entità confermata:
+     a. Cerca le parole OCR consecutive che formano il testo dell'entità
+        (normalizzazione: rimuove punteggiatura esterna, uppercase, spazi)
+     b. Vincolo: le parole devono essere sulla stessa riga
+        (center Y distante ≤ 1.5× altezza parola)
+     c. Calcola bbox unione delle parole matched (pixel → punti PDF via scale)
+     d. Aggiunge padding di 1pt
+  4. pdf-lib disegna rettangolo grigio scuro + pseudonimo centrato
+```
+
+**Coordinate:** i pixel OCR vengono convertiti in punti PDF dividendo per `scale` (150/72 ≈ 2.08) e sommando `bounds[0]`/`bounds[1]` della pagina MuPDF. L'asse Y viene ribaltato per pdf-lib (`pdfY = pageHeight - y1Pt`).
+
+**Confronto visivo prima/dopo (entrambe le strategie):**
 
 ```
 PRIMA:  "Il sig. Mario Rossi, residente in Via Roma 15..."
 DOPO:   "Il sig. [███M. R.███], residente in [████IND_001████]..."
-                  ▲ grigio chiaro        ▲ grigio chiaro
+                  ▲ grigio scuro         ▲ grigio scuro
 ```
 
 Il font usato è Helvetica (Standard PDF, non richiede embedding di font aggiuntivi).
@@ -950,13 +975,20 @@ Il font usato è Helvetica (Standard PDF, non richiede embedding di font aggiunt
 │ ODT      │ Come DOCX ma con namespace OpenDocument.                │
 │          │ Gestisce <text:span> e testo diretto.                   │
 │          │                                                         │
-│ PDF      │ Due fasi:                                               │
-│          │ 1) MuPDF: cerca il testo, crea annotazioni Redact,      │
+│ PDF      │ Due strategie in base al flag isScanned:                 │
+│ (nativo) │ 1) MuPDF: cerca il testo, crea annotazioni Redact,      │
 │          │    rimuove i glifi dal PDF (redazione irreversibile).    │
 │          │ 2) pdf-lib: sovrappone rettangoli grigi con lo          │
 │          │    pseudonimo centrato in Helvetica.                     │
 │          │                                                         │
-│ Immagini │ Non supportata la generazione output (solo analisi).    │
+│ PDF      │ 1) MuPDF renderizza ogni pagina in PNG a 150 DPI.       │
+│ (scans.) │ 2) Tesseract OCR → word-level bounding boxes (pixel).   │
+│          │ 3) pdf-lib: rettangolo grigio + pseudonimo sulle parole  │
+│          │    che corrispondono alle entità (coordinate convertite  │
+│          │    da pixel OCR a punti PDF con padding 1pt).            │
+│          │                                                         │
+│ Immagini │ Come PDF scansionato (isScanned=true). Output PDF con   │
+│          │ le entità oscurate tramite bounding box OCR word-level.  │
 └──────────┴─────────────────────────────────────────────────────────┘
 ```
 
@@ -1322,13 +1354,29 @@ asarUnpack: [
   'node_modules/@img/**/*',
   'node_modules/tesseract.js/**/*',
   'node_modules/tesseract.js-core/**/*',
+  // Dipendenze dirette di tesseract.js: il worker-script le richiede al
+  // top-level via require() — devono essere fuori dall'asar
+  'node_modules/node-fetch/**/*',
+  'node_modules/whatwg-url/**/*',
+  'node_modules/tr46/**/*',
+  'node_modules/webidl-conversions/**/*',
+  'node_modules/bmp-js/**/*',
+  'node_modules/idb-keyval/**/*',
+  'node_modules/is-electron/**/*',
+  'node_modules/is-url/**/*',
+  'node_modules/regenerator-runtime/**/*',
+  'node_modules/wasm-feature-detect/**/*',
+  'node_modules/zlibjs/**/*',
+  'node_modules/detect-libc/**/*',
   'node_modules/semver/**/*'                 // richiesto da sharp/libvips.js su ARM64
 ]
 ```
 
 Il pattern `onnxruntime-node/**` (senza `/*` finale) è intenzionale: su Windows 10, `binding.js` deve essere fisicamente nella cartella `asar.unpacked` perché il sistema non fa il fallover automatico da asar per i file `.js` (solo per `.node`).
 
-`semver` è aggiunto ad `asarUnpack` perché `sharp/libvips.js` lo importa su macOS ARM64. Senza questo, il modulo veniva cercato dentro asar ma non trovato, disabilitando il NER BERT.
+`semver` è aggiunto ad `asarUnpack` perché `sharp/libvips.js` lo importa su macOS ARM64.
+
+Le dipendenze di `tesseract.js` (da `node-fetch` a `zlibjs`) sono necessarie perché il worker-script `tesseract.js/src/worker-script/node/index.js` le carica con `require()` al top-level, prima di qualsiasi logica applicativa. Essendo il worker-script in `asar.unpacked`, non riesce a trovare moduli rimasti inside `asar`.
 
 ### Patch `Module._resolveFilename` (Windows + macOS ARM64)
 
