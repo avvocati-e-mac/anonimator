@@ -1,6 +1,5 @@
 import { createWorker } from 'tesseract.js'
-import { join, dirname } from 'path'
-import { pathToFileURL } from 'url'
+import { join } from 'path'
 import { createRequire } from 'module'
 import { tmpdir } from 'os'
 import { randomBytes } from 'crypto'
@@ -18,50 +17,42 @@ export interface OcrPageResult {
 }
 
 /**
- * Risolve i path assoluti per Tesseract.js worker e core WASM.
+ * Risolve il path assoluto del worker-script Tesseract.js.
  *
  * In modalità packaged (app.isPackaged === true), i moduli sono in
  * `app.asar.unpacked` grazie alla config asarUnpack in electron-builder.config.js.
- * In dev, si usa `createRequire` per risolvere i path reali da node_modules.
+ * In dev, si usa `createRequire` per risolvere il path reale da node_modules.
  *
- * - workerPath: path filesystem (Node `new Worker(path)` richiede path, non URL)
- * - corePath:   file:// URL (Tesseract.js lo usa con fetch per caricare i WASM)
+ * - workerPath: filesystem path puro (Node `new Worker(path)` non accetta file:// URL)
+ * - corePath non è necessario in Node: getCore usa require() diretto su tesseract.js-core
  */
-function resolveTesseractPaths(): { workerPath: string; corePath: string } {
+function resolveWorkerPath(): string {
   const _require = createRequire(import.meta.url)
   if (app.isPackaged) {
-    const base = join(process.resourcesPath, 'app.asar.unpacked', 'node_modules')
-    return {
-      workerPath: join(base, 'tesseract.js/src/worker-script/node/index.js'),
-      corePath: pathToFileURL(join(base, 'tesseract.js-core')).href,
-    }
-  } else {
-    const workerFsPath = _require.resolve('tesseract.js/src/worker-script/node/index.js')
-    const coreDir = dirname(_require.resolve('tesseract.js-core/tesseract-core-simd.wasm'))
-    return {
-      workerPath: workerFsPath,
-      corePath: pathToFileURL(coreDir).href,
-    }
+    return join(process.resourcesPath, 'app.asar.unpacked', 'node_modules',
+      'tesseract.js/src/worker-script/node/index.js')
   }
+  return _require.resolve('tesseract.js/src/worker-script/node/index.js')
 }
 
 async function ocrSingleImage(source: string | Buffer, pageLabel: string): Promise<OcrPageResult> {
   const tessDataDir = getTessdataPath()
-  const { workerPath, corePath } = resolveTesseractPaths()
+  const workerPath = resolveWorkerPath()
 
   log.info('OCR Tesseract paths', {
     isPackaged: app.isPackaged,
     workerPath,
-    corePath,
     langPath: tessDataDir
   })
 
   const worker = await createWorker('ita', 1, {
     workerPath,
-    corePath,
-    langPath: pathToFileURL(tessDataDir).href,
+    langPath: tessDataDir,
     cacheMethod: 'none' as const,
     gzip: false,
+    errorHandler: (err: unknown) => {
+      log.error('OCR worker error (handled)', { error: String(err) })
+    },
     logger: (m: { status: string; progress: number }) => {
       if (m.status === 'recognizing text') {
         const pct = Math.round(m.progress * 100)
