@@ -8,6 +8,7 @@ import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import { app } from 'electron'
 import type { DetectedEntity } from '@shared/types'
 import { getTessdataPath } from '../services/nerService'
+import log from 'electron-log'
 
 interface RedactionBox {
   page: number      // 0-based
@@ -212,16 +213,28 @@ async function generatePdfScanned(
       await fs.writeFile(tempPath, pngBuffer)
       tempFiles.push(tempPath)
 
-      // OCR con word-level bounding boxes
+      // OCR con blocks=true per ottenere word-level bounding boxes
       const result = await worker.recognize(tempPath, {}, {
-        blocks: false, text: false, hocr: false, tsv: false,
-        // @ts-expect-error — 'words' non è nel tipo ma è supportato da tesseract.js v5
-        words: true,
+        blocks: true, text: false, hocr: false, tsv: false,
       })
 
-      const words: Array<{ text: string; bbox: { x0: number; y0: number; x1: number; y1: number } }> =
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (result.data as any).words ?? []
+      // Estrai tutte le parole da tutti i blocchi/paragrafi/linee
+      type TessWord = { text: string; bbox: { x0: number; y0: number; x1: number; y1: number } }
+      const words: TessWord[] = []
+      for (const block of result.data.blocks ?? []) {
+        for (const para of block.paragraphs ?? []) {
+          for (const line of para.lines ?? []) {
+            for (const word of line.words ?? []) {
+              if (word.text.trim()) words.push({ text: word.text, bbox: word.bbox })
+            }
+          }
+        }
+      }
+
+      log.info(`PDF scansionato pag ${i + 1}: parole OCR estratte`, {
+        wordCount: words.length,
+        sample: words.slice(0, 5).map((w) => w.text)
+      })
 
       const pdfPage = pdfPages[i]
       if (!pdfPage) continue
