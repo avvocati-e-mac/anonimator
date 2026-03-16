@@ -128,6 +128,19 @@ module.exports = {
     'node_modules/@img/**/*',
     'node_modules/tesseract.js/**/*',
     'node_modules/tesseract.js-core/**/*',
+    // Dipendenze dirette di tesseract.js: il worker-script le richiede al
+    // top-level via require() — devono essere fuori dall'asar
+    'node_modules/node-fetch/**/*',
+    'node_modules/whatwg-url/**/*',
+    'node_modules/tr46/**/*',
+    'node_modules/webidl-conversions/**/*',
+    'node_modules/bmp-js/**/*',
+    'node_modules/idb-keyval/**/*',
+    'node_modules/is-electron/**/*',
+    'node_modules/is-url/**/*',
+    'node_modules/regenerator-runtime/**/*',
+    'node_modules/wasm-feature-detect/**/*',
+    'node_modules/zlibjs/**/*',
     'node_modules/detect-libc/**/*',
     'node_modules/semver/**/*'
   ]
