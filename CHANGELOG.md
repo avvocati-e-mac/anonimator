@@ -7,10 +7,16 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ## [1.3.2] - 2026-03-16
 
+### Novità
+- **Anonimizzazione PDF scansionati**: i PDF che contengono solo immagini raster (scansioni) vengono ora anonimizzati correttamente. Il generatore usa MuPDF per rendere ogni pagina in PNG a 150 DPI, Tesseract per ottenere le bounding box word-level, e sovrappone rettangoli grigi con il pseudonimo centrato sopra le parole che corrispondono alle entità confermate. In precedenza il file di output risultava vuoto o non anonimizzato.
+
 ### Fix
-- **OCR — rendering PDF scansionati corretto**: il rendering delle pagine PDF in immagini per l'OCR ora usa MuPDF (già utilizzato nel generatore di output) invece di `pdfjs-dist + node-canvas`. `node-canvas` non era una dipendenza diretta e causava il fallback silenzioso a testo vuoto su PDF puramente scansionati.
-- **OCR — path Tesseract.js nell'app packaged**: aggiunta la funzione `resolveTesseractPaths()` che distingue `app.isPackaged` per costruire i path assoluti corretti di worker JS e WASM core. In modalità packed i file vengono cercati in `app.asar.unpacked` (già configurato in `asarUnpack`); in dev vengono risolti tramite `createRequire`. Risolve il problema per cui Tesseract.js non trovava il worker o i WASM dopo il packaging.
-- **OCR — `gzip: false`**: aggiunta l'opzione per evitare errori di decompressione sul file `ita.traineddata` già non compresso scaricato in precedenza.
+- **OCR — rendering PDF scansionati corretto**: il rendering delle pagine PDF in immagini per l'OCR ora usa MuPDF invece di `pdfjs-dist + node-canvas`. `node-canvas` non era una dipendenza diretta e causava il fallback silenzioso a testo vuoto su PDF puramente scansionati.
+- **OCR — caricamento `ita.traineddata` in-memory**: il file dei dati di training viene letto da disco e passato direttamente a Tesseract come buffer in memoria, bypassando completamente `node-fetch` (che non funziona correttamente in ambiente Electron Node). Risolve il crash "Cannot find module 'node-fetch'" nelle versioni precedenti.
+- **OCR — path worker Tesseract.js nell'app packaged**: il worker JS viene risolto con path assoluto distinto tra modalità dev (`createRequire`) e app packaged (`process.resourcesPath/app.asar.unpacked`). Risolve il fallimento silenzioso del worker OCR dopo il packaging.
+- **OCR — `gzip: false`**: aggiunta l'opzione per evitare errori di decompressione sul file `ita.traineddata` già non compresso.
+- **OCR — patch tesseract.js 5.1.1**: corretto bug upstream in `worker-script/index.js` dove `l.data` veniva usato al posto di `l.code` per identificare la lingua nel passo di `initialize()`. Fix applicato tramite `patch-package`.
+- **Build — `asarUnpack` dipendenze tesseract.js**: aggiunte all'`asarUnpack` tutte le dipendenze dirette di `tesseract.js` (`node-fetch`, `whatwg-url`, `tr46`, `webidl-conversions`, `bmp-js`, `idb-keyval`, `is-electron`, `is-url`, `regenerator-runtime`, `wasm-feature-detect`, `zlibjs`). Il worker-script le richiede al top-level e devono essere accessibili fuori dall'asar nell'app packaged.
 
 ---
 
