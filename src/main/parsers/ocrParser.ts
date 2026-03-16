@@ -59,7 +59,7 @@ async function ocrSingleImage(source: string | Buffer, pageLabel: string): Promi
   const worker = await createWorker('ita', 1, {
     workerPath,
     corePath,
-    langPath: tessDataDir,
+    langPath: pathToFileURL(tessDataDir).href,
     cacheMethod: 'none' as const,
     gzip: false,
     logger: (m: { status: string; progress: number }) => {
