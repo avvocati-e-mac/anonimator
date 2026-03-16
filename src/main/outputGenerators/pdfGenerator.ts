@@ -239,18 +239,23 @@ async function generatePdfScanned(
       const pdfPage = pdfPages[i]
       if (!pdfPage) continue
 
+      // Normalizza: rimuove punteggiatura esterna e spazi extra
+      const normalize = (s: string) => s.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '').toUpperCase().replace(/\s+/g, ' ').trim()
+
       // Per ogni entità confermata, cerca corrispondenze nelle parole OCR
       const entityHits = new Set<string>()
       for (const entity of confirmed) {
-        const searchText = entity.originalText.toUpperCase()
+        const searchText = normalize(entity.originalText)
         // Raggruppa parole consecutive in finestre per trovare frasi multi-parola
         for (let w = 0; w < words.length; w++) {
           // Prova a formare la frase con parole consecutive
           let phrase = ''
           let wEnd = w
-          for (let j = w; j < words.length && phrase.length <= searchText.length + 5; j++) {
-            phrase = (phrase ? phrase + ' ' : '') + words[j].text.toUpperCase()
-            if (phrase.replace(/\s+/g, ' ').trim() === searchText.replace(/\s+/g, ' ').trim()) {
+          for (let j = w; j < words.length && phrase.length <= searchText.length + 10; j++) {
+            const wordNorm = normalize(words[j].text)
+            if (!wordNorm) continue
+            phrase = phrase ? phrase + ' ' + wordNorm : wordNorm
+            if (phrase === searchText) {
               // Match trovato: calcola bbox unione delle parole w..j
               const x0Px = Math.min(...words.slice(w, j + 1).map((wd) => wd.bbox.x0))
               const y0Px = Math.min(...words.slice(w, j + 1).map((wd) => wd.bbox.y0))
