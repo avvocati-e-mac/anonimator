@@ -12,7 +12,8 @@ import { generateMarkdown } from './markdownGenerator'
 export async function generateOutput(
   filePath: string,
   format: DocumentFormat,
-  entities: DetectedEntity[]
+  entities: DetectedEntity[],
+  options: { isScanned?: boolean } = {}
 ): Promise<SaveResult> {
   switch (format) {
     case 'txt':
@@ -26,7 +27,7 @@ export async function generateOutput(
 
     case 'pdf':
     case 'image': // le immagini sono già state OCR-izzate → output come PDF
-      return generatePdf(filePath, entities)
+      return generatePdf(filePath, entities, { isScanned: options.isScanned })
 
     case 'markdown':
       return generateMarkdown(filePath, entities)

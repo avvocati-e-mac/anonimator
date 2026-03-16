@@ -1,7 +1,13 @@
 import fs from 'fs/promises'
 import path from 'path'
+import { join } from 'path'
+import { tmpdir } from 'os'
+import { randomBytes } from 'crypto'
+import { createRequire } from 'module'
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
+import { app } from 'electron'
 import type { DetectedEntity } from '@shared/types'
+import { getTessdataPath } from '../services/nerService'
 
 interface RedactionBox {
   page: number      // 0-based
@@ -20,8 +26,12 @@ interface RedactionBox {
  */
 export async function generatePdf(
   filePath: string,
-  entities: DetectedEntity[]
+  entities: DetectedEntity[],
+  options: { isScanned?: boolean } = {}
 ): Promise<{ outputPath: string; entitiesReplaced: number }> {
+  if (options.isScanned) {
+    return generatePdfScanned(filePath, entities)
+  }
   const mupdf = (await import('mupdf')).default as typeof import('mupdf')
 
   const fileBuffer = await fs.readFile(filePath)
@@ -126,6 +136,165 @@ export async function generatePdf(
 
   await fs.writeFile(outputPath, finalBytes)
   return { outputPath, entitiesReplaced: new Set(redactionBoxes.map((b) => b.pseudo)).size }
+}
+
+/**
+ * Anonimizza un PDF scansionato (immagini raster).
+ * Strategia: per ogni pagina, renderizza con MuPDF → OCR con Tesseract (word-level boxes)
+ * → sovrappone rettangoli grigi sulle parole che corrispondono alle entità da oscurare.
+ */
+async function generatePdfScanned(
+  filePath: string,
+  entities: DetectedEntity[]
+): Promise<{ outputPath: string; entitiesReplaced: number }> {
+  const { createWorker } = await import('tesseract.js')
+  const mupdf = (await import('mupdf')).default as typeof import('mupdf')
+
+  const confirmed = entities
+    .filter((e) => e.confirmed)
+    .sort((a, b) => b.originalText.length - a.originalText.length)
+
+  if (confirmed.length === 0) {
+    // Nessuna entità da oscurare: copia il file originale come output
+    const dir = path.dirname(filePath)
+    const base = path.basename(filePath, path.extname(filePath))
+    const outputPath = path.join(dir, `${base}_anonimizzato.pdf`)
+    await fs.copyFile(filePath, outputPath)
+    return { outputPath, entitiesReplaced: 0 }
+  }
+
+  const OCR_DPI = 150
+  const PDF_POINTS_PER_INCH = 72
+  const scale = OCR_DPI / PDF_POINTS_PER_INCH
+
+  const tessDataDir = getTessdataPath()
+  const trainedDataBuffer = await fs.readFile(join(tessDataDir, 'ita.traineddata'))
+  const langData: import('tesseract.js').Lang = { code: 'ita', data: trainedDataBuffer as unknown }
+
+  const _require = createRequire(import.meta.url)
+  const workerPath = app.isPackaged
+    ? join(process.resourcesPath, 'app.asar.unpacked', 'node_modules',
+        'tesseract.js/src/worker-script/node/index.js')
+    : _require.resolve('tesseract.js/src/worker-script/node/index.js')
+
+  const worker = await createWorker([langData], 1, {
+    workerPath,
+    cacheMethod: 'none' as const,
+    gzip: false,
+    errorHandler: (err: unknown) => { /* silenzioso — già gestito nel catch */ void err },
+  })
+
+  const fileBuffer = await fs.readFile(filePath)
+  const doc = new mupdf.PDFDocument(fileBuffer as unknown as ArrayBuffer)
+  const pageCount = doc.countPages()
+
+  // Carica il PDF originale in pdf-lib per disegnare i rettangoli
+  const pdfDoc = await PDFDocument.load(fileBuffer)
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
+  const pdfPages = pdfDoc.getPages()
+
+  let entitiesReplaced = 0
+  const tempFiles: string[] = []
+
+  try {
+    for (let i = 0; i < pageCount; i++) {
+      const page = doc.loadPage(i) as import('mupdf').PDFPage
+      const bounds = page.getBounds() as [number, number, number, number]
+      const pageHeightPt = bounds[3] - bounds[1]
+
+      // Renderizza pagina in PNG via MuPDF
+      const matrix = mupdf.Matrix.scale(scale, scale)
+      const pixmap = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false)
+      const pngBuffer = Buffer.from(pixmap.asPNG())
+
+      // Scrivi temp file PNG per Tesseract
+      const tempPath = join(tmpdir(), `ocr_redact_${randomBytes(8).toString('hex')}.png`)
+      await fs.writeFile(tempPath, pngBuffer)
+      tempFiles.push(tempPath)
+
+      // OCR con word-level bounding boxes
+      const result = await worker.recognize(tempPath, {}, {
+        blocks: false, text: false, hocr: false, tsv: false,
+        // @ts-expect-error — 'words' non è nel tipo ma è supportato da tesseract.js v5
+        words: true,
+      })
+
+      const words: Array<{ text: string; bbox: { x0: number; y0: number; x1: number; y1: number } }> =
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (result.data as any).words ?? []
+
+      const pdfPage = pdfPages[i]
+      if (!pdfPage) continue
+
+      // Per ogni entità confermata, cerca corrispondenze nelle parole OCR
+      const entityHits = new Set<string>()
+      for (const entity of confirmed) {
+        const searchText = entity.originalText.toUpperCase()
+        // Raggruppa parole consecutive in finestre per trovare frasi multi-parola
+        for (let w = 0; w < words.length; w++) {
+          // Prova a formare la frase con parole consecutive
+          let phrase = ''
+          let wEnd = w
+          for (let j = w; j < words.length && phrase.length <= searchText.length + 5; j++) {
+            phrase = (phrase ? phrase + ' ' : '') + words[j].text.toUpperCase()
+            if (phrase.replace(/\s+/g, ' ').trim() === searchText.replace(/\s+/g, ' ').trim()) {
+              // Match trovato: calcola bbox unione delle parole w..j
+              const x0Px = Math.min(...words.slice(w, j + 1).map((wd) => wd.bbox.x0))
+              const y0Px = Math.min(...words.slice(w, j + 1).map((wd) => wd.bbox.y0))
+              const x1Px = Math.max(...words.slice(w, j + 1).map((wd) => wd.bbox.x1))
+              const y1Px = Math.max(...words.slice(w, j + 1).map((wd) => wd.bbox.y1))
+
+              // Converti da pixel OCR a punti PDF
+              const x0Pt = (x0Px / scale) + bounds[0]
+              const y0Pt = (y0Px / scale) + bounds[1]
+              const x1Pt = (x1Px / scale) + bounds[0]
+              const y1Pt = (y1Px / scale) + bounds[1]
+
+              const rectW = x1Pt - x0Pt
+              const rectH = y1Pt - y0Pt
+
+              // pdf-lib: y=0 in basso
+              const pdfY = pageHeightPt - y1Pt
+
+              // Rettangolo grigio di copertura
+              pdfPage.drawRectangle({
+                x: x0Pt, y: pdfY, width: rectW, height: rectH,
+                color: rgb(0.15, 0.15, 0.15),
+                borderWidth: 0,
+              })
+
+              // Pseudonimo
+              const fontSize = Math.min(Math.max(rectH * 0.65, 5), 9)
+              const textWidth = font.widthOfTextAtSize(entity.pseudonym, fontSize)
+              pdfPage.drawText(entity.pseudonym, {
+                x: x0Pt + Math.max((rectW - textWidth) / 2, 1),
+                y: pdfY + (rectH - fontSize) / 2,
+                size: fontSize, font, color: rgb(0.95, 0.95, 0.95),
+              })
+
+              entityHits.add(entity.originalText)
+              wEnd = j
+              break
+            }
+          }
+          w = wEnd
+        }
+      }
+      entitiesReplaced = entityHits.size
+    }
+  } finally {
+    await worker.terminate()
+    for (const f of tempFiles) {
+      await fs.unlink(f).catch(() => { /* ignora */ })
+    }
+  }
+
+  const finalBytes = await pdfDoc.save()
+  const dir = path.dirname(filePath)
+  const base = path.basename(filePath, path.extname(filePath))
+  const outputPath = path.join(dir, `${base}_anonimizzato.pdf`)
+  await fs.writeFile(outputPath, finalBytes)
+  return { outputPath, entitiesReplaced }
 }
 
 function quadsToBbox(quads: number[][]): [number, number, number, number] {

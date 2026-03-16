@@ -44,7 +44,8 @@ const AnonymizeRequestSchema = z.object({
       occurrences: z.number().int().nonnegative(),
       confirmed: z.boolean()
     })
-  )
+  ),
+  isScanned: z.boolean().optional()
 })
 
 const EntityTypeEnum = z.enum([
@@ -99,7 +100,7 @@ export function registerIpcHandlers(): void {
       log.info('Inizio elaborazione documento', { format })
 
       sendProgress('parsing', 30, 'Estrazione testo...')
-      const { text, pageCount, warnings: parseWarnings } = await extractText(filePath, format)
+      const { text, pageCount, warnings: parseWarnings, isScanned: docIsScanned } = await extractText(filePath, format)
 
       // Fase 2: analisi NER (BERT + regex, opzionalmente LLM)
       sendProgress('ner', 50, 'Riconoscimento entità...')
@@ -134,7 +135,8 @@ export function registerIpcHandlers(): void {
         format,
         pageCount,
         entities: enrichedEntities,
-        warnings: [...parseWarnings, ...nerWarnings]
+        warnings: [...parseWarnings, ...nerWarnings],
+        isScanned: docIsScanned ?? false
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -151,17 +153,17 @@ export function registerIpcHandlers(): void {
       return { error: 'Dati non validi.' }
     }
 
-    const { filePath, entities } = parsed.data
+    const { filePath, entities, isScanned } = parsed.data
     const confirmed = entities.filter((e) => e.confirmed)
     const format = detectFormat(filePath)
 
     try {
       sendProgress('parsing', 20, 'Preparazione anonimizzazione...')
-      log.info('Anonimizzazione richiesta', { format, entitiesConfirmed: confirmed.length })
+      log.info('Anonimizzazione richiesta', { format, entitiesConfirmed: confirmed.length, isScanned })
 
       sendProgress('parsing', 50, 'Sostituzione entità...')
       const typedEntities = entities as import('@shared/types').DetectedEntity[]
-      const { outputPath, entitiesReplaced } = await generateOutput(filePath, format, typedEntities)
+      const { outputPath, entitiesReplaced } = await generateOutput(filePath, format, typedEntities, { isScanned })
 
       // Aggiorna il sessionManager con i pseudonimi confermati
       for (const entity of typedEntities.filter((e) => e.confirmed)) {
@@ -194,14 +196,14 @@ export function registerIpcHandlers(): void {
     const results: import('@shared/types').BatchResultItem[] = []
 
     for (const req of parsed.data) {
-      const { filePath, entities } = req
+      const { filePath, entities, isScanned } = req
       const format = detectFormat(filePath)
       const fileName = filePath.split('/').pop() ?? filePath
 
       try {
         sendProgress('parsing', 0, `Anonimizzazione: ${fileName}...`)
         const typedEntities = entities as import('@shared/types').DetectedEntity[]
-        const { outputPath, entitiesReplaced } = await generateOutput(filePath, format, typedEntities)
+        const { outputPath, entitiesReplaced } = await generateOutput(filePath, format, typedEntities, { isScanned })
 
         for (const entity of typedEntities.filter((e) => e.confirmed)) {
           sessionManager.getOrCreatePseudonym(entity.originalText, entity.type)

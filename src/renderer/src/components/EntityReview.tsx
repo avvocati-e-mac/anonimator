@@ -251,7 +251,11 @@ export default function EntityReview(): React.JSX.Element {
     })
 
     try {
-      const result = await window.electronAPI.anonymizeDocument({ filePath, entities })
+      const result = await window.electronAPI.anonymizeDocument({
+        filePath,
+        entities,
+        isScanned: analysisResult?.isScanned ?? false,
+      })
 
       if ('error' in result && result.error) {
         setError(String(result.error))

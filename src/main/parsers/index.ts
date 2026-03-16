@@ -10,6 +10,7 @@ export interface ParseResult {
   text: string
   pageCount: number
   warnings: string[]
+  isScanned?: boolean  // true se il testo è stato estratto via OCR (PDF scansionato o immagine)
 }
 
 /**
@@ -49,14 +50,17 @@ export async function extractText(filePath: string, format: DocumentFormat): Pro
     case 'pdf': {
       const pdfResult = await parsePdf(filePath)
       if (pdfResult.isScanned) {
-        // PDF scansionato: rilancia con OCR
-        return parsePdfWithOcr(filePath)
+        // PDF scansionato: rilancia con OCR, propaga isScanned=true
+        const ocrResult = await parsePdfWithOcr(filePath)
+        return { ...ocrResult, isScanned: true }
       }
       return pdfResult
     }
 
-    case 'image':
-      return parseImage(filePath)
+    case 'image': {
+      const imgResult = await parseImage(filePath)
+      return { ...imgResult, isScanned: true }
+    }
 
     case 'markdown':
       return parseMarkdown(filePath)
