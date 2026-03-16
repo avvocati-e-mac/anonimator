@@ -32,14 +32,14 @@ function resolveTesseractPaths(): { workerPath: string; corePath: string } {
   if (app.isPackaged) {
     const base = join(process.resourcesPath, 'app.asar.unpacked', 'node_modules')
     return {
-      workerPath: pathToFileURL(join(base, 'tesseract.js/src/worker-script/node/index.js')).href,
+      workerPath: join(base, 'tesseract.js/src/worker-script/node/index.js'),
       corePath: pathToFileURL(join(base, 'tesseract.js-core')).href,
     }
   } else {
     const workerFsPath = _require.resolve('tesseract.js/src/worker-script/node/index.js')
     const coreDir = dirname(_require.resolve('tesseract.js-core/tesseract-core-simd.wasm'))
     return {
-      workerPath: pathToFileURL(workerFsPath).href,
+      workerPath: workerFsPath,
       corePath: pathToFileURL(coreDir).href,
     }
   }
