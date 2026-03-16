@@ -5,6 +5,15 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.3.2] - 2026-03-16
+
+### Fix
+- **OCR — rendering PDF scansionati corretto**: il rendering delle pagine PDF in immagini per l'OCR ora usa MuPDF (già utilizzato nel generatore di output) invece di `pdfjs-dist + node-canvas`. `node-canvas` non era una dipendenza diretta e causava il fallback silenzioso a testo vuoto su PDF puramente scansionati.
+- **OCR — path Tesseract.js nell'app packaged**: aggiunta la funzione `resolveTesseractPaths()` che distingue `app.isPackaged` per costruire i path assoluti corretti di worker JS e WASM core. In modalità packed i file vengono cercati in `app.asar.unpacked` (già configurato in `asarUnpack`); in dev vengono risolti tramite `createRequire`. Risolve il problema per cui Tesseract.js non trovava il worker o i WASM dopo il packaging.
+- **OCR — `gzip: false`**: aggiunta l'opzione per evitare errori di decompressione sul file `ita.traineddata` già non compresso scaricato in precedenza.
+
+---
+
 ## [1.3.1] - 2026-03-14
 
 ### Fix
