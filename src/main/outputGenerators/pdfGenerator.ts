@@ -251,22 +251,29 @@ async function generatePdfScanned(
           // Prova a formare la frase con parole consecutive
           let phrase = ''
           let wEnd = w
+          const firstWordCenterY = (words[w].bbox.y0 + words[w].bbox.y1) / 2
           for (let j = w; j < words.length && phrase.length <= searchText.length + 10; j++) {
             const wordNorm = normalize(words[j].text)
             if (!wordNorm) continue
+            // Salta se la parola è su una riga diversa (centro Y distante più di 1.5x altezza parola)
+            const wordCenterY = (words[j].bbox.y0 + words[j].bbox.y1) / 2
+            const wordHeight = words[j].bbox.y1 - words[j].bbox.y0
+            if (Math.abs(wordCenterY - firstWordCenterY) > wordHeight * 1.5) break
             phrase = phrase ? phrase + ' ' + wordNorm : wordNorm
             if (phrase === searchText) {
               // Match trovato: calcola bbox unione delle parole w..j
-              const x0Px = Math.min(...words.slice(w, j + 1).map((wd) => wd.bbox.x0))
-              const y0Px = Math.min(...words.slice(w, j + 1).map((wd) => wd.bbox.y0))
-              const x1Px = Math.max(...words.slice(w, j + 1).map((wd) => wd.bbox.x1))
-              const y1Px = Math.max(...words.slice(w, j + 1).map((wd) => wd.bbox.y1))
+              const matchWords = words.slice(w, j + 1)
+              const x0Px = Math.min(...matchWords.map((wd) => wd.bbox.x0))
+              const y0Px = Math.min(...matchWords.map((wd) => wd.bbox.y0))
+              const x1Px = Math.max(...matchWords.map((wd) => wd.bbox.x1))
+              const y1Px = Math.max(...matchWords.map((wd) => wd.bbox.y1))
 
-              // Converti da pixel OCR a punti PDF
-              const x0Pt = (x0Px / scale) + bounds[0]
-              const y0Pt = (y0Px / scale) + bounds[1]
-              const x1Pt = (x1Px / scale) + bounds[0]
-              const y1Pt = (y1Px / scale) + bounds[1]
+              // Converti da pixel OCR a punti PDF, con padding di 1pt
+              const PAD = 1
+              const x0Pt = (x0Px / scale) + bounds[0] - PAD
+              const y0Pt = (y0Px / scale) + bounds[1] - PAD
+              const x1Pt = (x1Px / scale) + bounds[0] + PAD
+              const y1Pt = (y1Px / scale) + bounds[1] + PAD
 
               const rectW = x1Pt - x0Pt
               const rectH = y1Pt - y0Pt
