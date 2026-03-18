@@ -141,7 +141,19 @@ function findReplacements(paraText: string, entities: DetectedEntity[]): Replace
 
 /**
  * Applica le sostituzioni a un singolo paragrafo DOCX.
- * Modifica i <w:t> coinvolti in ordine inverso per non invalidare gli offset.
+ *
+ * Strategia corretta (redistribuzione):
+ * 1. Estrae i segmenti <w:t> con le loro posizioni nel testo concatenato
+ * 2. Calcola tutte le sostituzioni sul testo concatenato
+ * 3. Applica le sostituzioni al testo concatenato (da destra a sinistra per
+ *    preservare gli offset), producendo un nuovo testo concatenato
+ * 4. Ridistribuisce il nuovo testo concatenato nei <w:t> originali:
+ *    - Il primo <w:t> coinvolto riceve tutta la porzione di testo che lo riguarda
+ *    - I <w:t> successivi coinvolti vengono svuotati
+ *    - I <w:t> non coinvolti rimangono invariati
+ *
+ * Questo approccio gestisce correttamente N entità in un singolo <w:t> perché
+ * lavora sempre sul testo originale, non su un XML già parzialmente modificato.
  */
 function processSingleParagraph(paraXml: string, entities: DetectedEntity[]): { xml: string; count: number } {
   const segments = extractTextSegments(paraXml)
@@ -151,81 +163,107 @@ function processSingleParagraph(paraXml: string, entities: DetectedEntity[]): { 
   const replacements = findReplacements(paraText, entities)
   if (replacements.length === 0) return { xml: paraXml, count: 0 }
 
-  let result = paraXml
-  let count = 0
+  // `replacements` è già ordinato desc da findReplacements.
+  // Strategia: applica tutte le patch al testo concatenato del paragrafo (da destra a
+  // sinistra, per preservare gli offset). Poi ridistribuisce il testo risultante nei
+  // <w:t> usando la struttura originale dei segmenti come schema di "contenitori".
+  //
+  // Approccio contenitori:
+  //   Ogni segmento definisce un intervallo [start, end) nel testo originale.
+  //   Dopo le sostituzioni, il testo del paragrafo cambia lunghezza. Teniamo traccia
+  //   degli spostamenti con una mappa offset[], poi estraiamo la porzione di testo
+  //   nuovo che "appartiene" a ciascun segmento in base al contenitore originale.
+  //
+  //   Per semplificare, usiamo un approccio diverso: per ogni segmento, raccogliamo
+  //   tutte le patch che lo toccano e le applichiamo localmente sul suo testo,
+  //   trattando le patch multi-segmento in modo speciale.
 
-  for (const rep of replacements) {
-    // Trova i segmenti coinvolti in questa sostituzione
-    const involved = segments.filter((s) => s.start < rep.end && s.end > rep.start)
-    if (involved.length === 0) continue
+  // Ordina le patch per posizione crescente
+  const patchesAsc = [...replacements]
+    .sort((a, b) => a.start - b.start)
+    .map((r) => ({ start: r.start, end: r.end, replacement: r.pseudonym }))
 
-    // Applica in ordine inverso (dall'ultimo al primo) per non invalidare gli indici
-    // Dobbiamo ricalcolare gli offset nel result corrente: usiamo un approccio
-    // che trova i tag in ordine inverso
-    const toModify = [...involved].reverse()
-
-    let xmlCursor = result
-    // Prima svuota tutti i tag coinvolti tranne il primo (che riceverà il pseudonimo)
-    // Lavoriamo dall'ultimo al secondo perché gli indici cambiano
-    for (let i = 0; i < toModify.length; i++) {
-      const seg = toModify[i]
-      const isFirst = i === toModify.length - 1 // il "primo" coinvolto è l'ultimo in ordine inverso
-
-      // Ricostruiamo la regex per trovare questo specifico tag nel xml corrente
-      // Usiamo il contenuto del testo come chiave di ricerca (può avere duplicati,
-      // ma l'approccio inverso riduce i falsi positivi)
-      const escapedText = seg.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      const tagContent = escapeXml(seg.text)
-      const escapedTagContent = tagContent.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-
-      // Troviamo TUTTE le occorrenze di questo w:t nel xml e prendiamo quella
-      // corrispondente alla posizione corretta. Usiamo un indice basato sull'ordine
-      // di apparizione.
-      const allSegmentsWithSameText = segments.filter((s) => s.text === seg.text)
-      const occurrenceIndex = allSegmentsWithSameText.indexOf(seg)
-
-      const wtSearchRegex = new RegExp(`(<w:t(?:\\s[^>]*)?>)${escapedTagContent}(<\\/w:t>)`, 'g')
-      let matchIndex = 0
-      let found = false
-      xmlCursor = xmlCursor.replace(wtSearchRegex, (full, open, close) => {
-        if (matchIndex === occurrenceIndex) {
-          found = true
-          matchIndex++
-          if (isFirst) {
-            return `${open}${escapeXml(rep.pseudonym)}${close}`
-          } else {
-            return `${open}${close}`
-          }
-        }
-        matchIndex++
-        return full
-      })
-
-      if (!found) {
-        // Fallback: cerca per testo grezzo (senza XML escape) — testo già ASCII
-        const escapedRaw = escapedText
-        const rawRegex = new RegExp(`(<w:t(?:\\s[^>]*)?>)${escapedRaw}(<\\/w:t>)`, 'g')
-        let rawIdx = 0
-        xmlCursor = xmlCursor.replace(rawRegex, (full, open, close) => {
-          if (rawIdx === occurrenceIndex) {
-            rawIdx++
-            if (isFirst) {
-              return `${open}${escapeXml(rep.pseudonym)}${close}`
-            } else {
-              return `${open}${close}`
-            }
-          }
-          rawIdx++
-          return full
-        })
-      }
+  // Rappresentiamo il paragrafo come array di token: testo-letterale o sostituzione.
+  // I token di sostituzione sono INDIVISIBILI (il pseudonimo va tutto nel primo segmento
+  // coinvolto); i token di testo letterale sono DIVISIBILI (possono essere spezzati
+  // tra più segmenti).
+  interface Token { origStart: number; origEnd: number; text: string; isSubstitution: boolean }
+  const tokens: Token[] = []
+  let cursor = 0
+  for (const patch of patchesAsc) {
+    if (cursor < patch.start) {
+      tokens.push({ origStart: cursor, origEnd: patch.start, text: paraText.slice(cursor, patch.start), isSubstitution: false })
     }
-
-    result = xmlCursor
-    count++
+    tokens.push({ origStart: patch.start, origEnd: patch.end, text: patch.replacement, isSubstitution: true })
+    cursor = patch.end
+  }
+  if (cursor < paraText.length) {
+    tokens.push({ origStart: cursor, origEnd: paraText.length, text: paraText.slice(cursor), isSubstitution: false })
   }
 
-  return { xml: result, count }
+  // Per ogni segmento, raccogli i token che si sovrappongono con il range [seg.start, seg.end).
+  // Regola per token di sostituzione (indivisibili):
+  //   - Va assegnato TUTTO al primo segmento che lo tocca.
+  //   - I segmenti successivi che ricadono nel range originale della patch ricevono ''.
+  // Regola per token di testo (divisibili):
+  //   - Prendi solo la porzione che rientra nel range del segmento.
+
+  // Prima passiamo a tracciare a quale segmento è già stato assegnato ogni token di sostituzione
+  const substitutionAssignedTo = new Map<Token, number>() // token → indice segmento primo assegnatario
+  for (const tok of tokens) {
+    if (!tok.isSubstitution) continue
+    const firstSegIdx = segments.findIndex((s) => s.start < tok.origEnd && s.end > tok.origStart)
+    if (firstSegIdx !== -1) substitutionAssignedTo.set(tok, firstSegIdx)
+  }
+
+  const newSegmentTexts: string[] = segments.map((seg, segIdx) => {
+    let segText = ''
+    for (const tok of tokens) {
+      // Nessuna sovrapposizione tra il range originale del token e il segmento
+      if (tok.origEnd <= seg.start || tok.origStart >= seg.end) continue
+
+      if (tok.isSubstitution) {
+        // Token di sostituzione: assegna il testo solo al primo segmento coinvolto
+        if (substitutionAssignedTo.get(tok) === segIdx) {
+          segText += tok.text
+        }
+        // Gli altri segmenti coinvolti ricevono '' (niente da aggiungere)
+      } else {
+        // Token di testo letterale: divisibile, prendi la porzione che appartiene al segmento
+        const relStart = Math.max(0, seg.start - tok.origStart)
+        const relEnd = Math.min(tok.text.length, seg.end - tok.origStart)
+        segText += tok.text.slice(relStart, relEnd)
+      }
+    }
+    return segText
+  })
+
+  // Step 3: Ricostruisce l'XML sostituendo il contenuto di ogni <w:t> dall'ultimo al primo
+  // (lavorare in ordine inverso preserva gli indici tagStart/tagEnd)
+  let xmlResult = paraXml
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const seg = segments[i]
+    const newText = newSegmentTexts[i]
+    if (newText === seg.text) continue // invariato: salta
+
+    const before = xmlResult.slice(0, seg.tagStart)
+    const after = xmlResult.slice(seg.tagEnd)
+
+    // Ricostruisce il tag preservando gli attributi originali (es. xml:space="preserve")
+    const originalTag = xmlResult.slice(seg.tagStart, seg.tagEnd)
+    const openTagMatch = /^(<w:t(?:\s[^>]*)?>)/.exec(originalTag)
+    const openTag = openTagMatch ? openTagMatch[1] : '<w:t>'
+
+    // Aggiunge xml:space="preserve" se il nuovo testo ha spazi iniziali/finali
+    const needsPreserve = (newText.startsWith(' ') || newText.endsWith(' ')) && !openTag.includes('xml:space')
+    const finalOpenTag = needsPreserve
+      ? openTag.replace(/^<w:t/, '<w:t xml:space="preserve"')
+      : openTag
+
+    xmlResult = before + finalOpenTag + escapeXml(newText) + '</w:t>' + after
+  }
+
+  return { xml: xmlResult, count: patchesAsc.length }
 }
 
 /**
