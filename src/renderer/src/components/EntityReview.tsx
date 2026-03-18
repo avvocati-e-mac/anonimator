@@ -7,39 +7,9 @@ import {
 import { useDropzone } from 'react-dropzone'
 import { useSessionStore } from '../store/sessionStore'
 import { ENTITY_CONFIG } from '../utils/entityConfig'
+import { sanitizeDocxHtml } from '../utils/docxPreview'
 import AddEntityModal from './AddEntityModal'
 import type { DetectedEntity, EntityType } from '@shared/types'
-
-// Sanitizza l'HTML prodotto da mammoth: rimuove tag non semantici e attributi
-// potenzialmente pericolosi. mammoth non produce script o event handler, ma è
-// buona pratica garantire che solo tag semantici noti arrivino a dangerouslySetInnerHTML.
-const ALLOWED_TAGS = new Set([
-  'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-  'strong', 'em', 'u', 's', 'br',
-  'ul', 'ol', 'li',
-  'table', 'thead', 'tbody', 'tr', 'th', 'td',
-  'blockquote', 'a',
-])
-
-function sanitizeDocxHtml(html: string): string {
-  // Rimuove tag non nella whitelist (preserva il loro contenuto testuale)
-  return html.replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)[^>]*>/g, (match, tag: string) => {
-    const lower = tag.toLowerCase()
-    if (!ALLOWED_TAGS.has(lower)) return ''
-    // Rimuove tutti gli attributi eccetto href su <a> (senza javascript:)
-    if (lower === 'a') {
-      const hrefMatch = /href="([^"]*)"/.exec(match)
-      if (hrefMatch && !hrefMatch[1].trim().toLowerCase().startsWith('javascript')) {
-        return `<a href="${hrefMatch[1]}" rel="noopener noreferrer">`
-      }
-      return '<a>'
-    }
-    // Per i tag di chiusura, restituisce il tag pulito
-    if (match.startsWith('</')) return `</${lower}>`
-    // Per i tag void o di apertura, restituisce senza attributi
-    return `<${lower}>`
-  })
-}
 
 const ACCEPTED_MIME: Record<string, string[]> = {
   'application/pdf': ['.pdf'],
