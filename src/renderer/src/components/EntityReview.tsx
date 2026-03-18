@@ -7,9 +7,51 @@ import {
 import { useDropzone } from 'react-dropzone'
 import { useSessionStore } from '../store/sessionStore'
 import { ENTITY_CONFIG } from '../utils/entityConfig'
-import { sanitizeDocxHtml } from '../utils/docxPreview'
+import { sanitizeDocxHtml, buildHighlightHtml, buildAnonymizedHtml } from '../utils/docxPreview'
+import type { PreviewMode } from '../utils/docxPreview'
 import AddEntityModal from './AddEntityModal'
 import type { DetectedEntity, EntityType } from '@shared/types'
+
+// ─── Componente header pannello anteprima con tab bar ────────────────────────
+
+function PreviewPanelHeader({
+  mode,
+  onModeChange,
+}: {
+  mode: PreviewMode
+  onModeChange: (m: PreviewMode) => void
+}): React.JSX.Element {
+  return (
+    <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+      <div className="flex items-center gap-1.5">
+        <FileText size={13} className="text-slate-400 flex-shrink-0" />
+        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Anteprima</span>
+      </div>
+      <div className="flex rounded-md overflow-hidden border border-slate-200 dark:border-slate-600 text-xs">
+        <button
+          onClick={() => onModeChange('original')}
+          className={`px-2.5 py-1 transition-colors ${
+            mode === 'original'
+              ? 'bg-blue-600 text-white'
+              : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600'
+          }`}
+        >
+          Originale
+        </button>
+        <button
+          onClick={() => onModeChange('anonymized')}
+          className={`px-2.5 py-1 transition-colors border-l border-slate-200 dark:border-slate-600 ${
+            mode === 'anonymized'
+              ? 'bg-blue-600 text-white'
+              : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600'
+          }`}
+        >
+          Anonimizzato
+        </button>
+      </div>
+    </div>
+  )
+}
 
 const ACCEPTED_MIME: Record<string, string[]> = {
   'application/pdf': ['.pdf'],
@@ -182,13 +224,21 @@ export default function EntityReview(): React.JSX.Element {
   const [isAddingEntity, setIsAddingEntity] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [showPreview, setShowPreview] = useState(true)
+  const [previewMode, setPreviewMode] = useState<PreviewMode>('original')
 
   const rawPreviewHtml = analysisResult?.previewHtml
-  const sanitizedPreviewHtml = useMemo(
+  const sanitizedBase = useMemo(
     () => (rawPreviewHtml ? sanitizeDocxHtml(rawPreviewHtml) : undefined),
     [rawPreviewHtml]
   )
-  const hasPreview = Boolean(sanitizedPreviewHtml && sanitizedPreviewHtml.trim().length > 0)
+  // Ricalcola ogni volta che cambiano le entità o la modalità — rendering live
+  const renderedPreviewHtml = useMemo(() => {
+    if (!sanitizedBase) return undefined
+    if (previewMode === 'anonymized') return buildAnonymizedHtml(sanitizedBase, entities)
+    return buildHighlightHtml(sanitizedBase, entities)
+  }, [sanitizedBase, entities, previewMode])
+
+  const hasPreview = Boolean(renderedPreviewHtml && renderedPreviewHtml.trim().length > 0)
 
   const confirmedCount = entities.filter((e) => e.confirmed).length
   const warnings = analysisResult?.warnings ?? []
@@ -415,13 +465,10 @@ export default function EntityReview(): React.JSX.Element {
             {/* Anteprima — su mobile appare qui (dentro colonna sinistra), collassabile */}
             {hasPreview && showPreview && (
               <div className="lg:hidden rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
-                <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
-                  <FileText size={14} className="text-slate-400" />
-                  <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Documento originale</span>
-                </div>
+                <PreviewPanelHeader mode={previewMode} onModeChange={setPreviewMode} />
                 <div
-                  className="px-4 py-3 max-h-64 overflow-y-auto prose prose-sm dark:prose-invert max-w-none text-slate-700 dark:text-slate-300"
-                  dangerouslySetInnerHTML={{ __html: sanitizedPreviewHtml ?? '' }}
+                  className="px-4 py-3 max-h-64 overflow-y-auto prose prose-sm dark:prose-invert max-w-none"
+                  dangerouslySetInnerHTML={{ __html: renderedPreviewHtml ?? '' }}
                 />
               </div>
             )}
@@ -468,13 +515,10 @@ export default function EntityReview(): React.JSX.Element {
           {hasPreview && (
             <div className="hidden lg:block sticky top-5">
               <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
-                <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
-                  <FileText size={14} className="text-slate-400" />
-                  <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Documento originale</span>
-                </div>
+                <PreviewPanelHeader mode={previewMode} onModeChange={setPreviewMode} />
                 <div
-                  className="px-4 py-3 max-h-[70vh] overflow-y-auto prose prose-sm dark:prose-invert max-w-none text-slate-700 dark:text-slate-300"
-                  dangerouslySetInnerHTML={{ __html: sanitizedPreviewHtml ?? '' }}
+                  className="px-4 py-3 max-h-[70vh] overflow-y-auto prose prose-sm dark:prose-invert max-w-none"
+                  dangerouslySetInnerHTML={{ __html: renderedPreviewHtml ?? '' }}
                 />
               </div>
             </div>
