@@ -100,7 +100,7 @@ export function registerIpcHandlers(): void {
       log.info('Inizio elaborazione documento', { format })
 
       sendProgress('parsing', 30, 'Estrazione testo...')
-      const { text, pageCount, warnings: parseWarnings, isScanned: docIsScanned } = await extractText(filePath, format)
+      const { text, pageCount, warnings: parseWarnings, isScanned: docIsScanned, previewHtml } = await extractText(filePath, format)
 
       // Fase 2: analisi NER (BERT + regex, opzionalmente LLM)
       sendProgress('ner', 50, 'Riconoscimento entità...')
@@ -136,7 +136,9 @@ export function registerIpcHandlers(): void {
         pageCount,
         entities: enrichedEntities,
         warnings: [...parseWarnings, ...nerWarnings],
-        isScanned: docIsScanned ?? false
+        isScanned: docIsScanned ?? false,
+        // previewHtml presente solo per DOCX — mai loggarne il contenuto
+        ...(previewHtml ? { previewHtml } : {}),
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

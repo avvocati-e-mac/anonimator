@@ -4,7 +4,7 @@ App desktop per la **pseudoanonimizzazione offline** di documenti legali italian
 
 Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a server esterni. Tutto il processing avviene localmente sul tuo Mac, PC Windows o Linux.
 
-**Versione attuale: 1.3.2**
+**Versione attuale: 1.4.0**
 
 > **L'app è stata creata in vibe coding e non sono un esperto programmatore — procedi con cautela nell'utilizzo.**
 
@@ -54,10 +54,10 @@ Scarica il file per il tuo sistema dalla pagina [Releases](https://github.com/av
 
 | File | Sistema |
 |---|---|
-| `Anonimator-1.3.2-arm64.dmg` | Mac Apple Silicon (M1/M2/M3/M4) |
-| `Anonimator-1.3.2-x64.dmg` | Mac Intel |
-| `Anonimator-1.3.2-windows-x64-setup.exe` | Windows 10/11 a 64 bit |
-| `Anonimator-1.3.2-linux-x64.AppImage` | Linux a 64 bit |
+| `Anonimator-1.4.0-arm64.dmg` | Mac Apple Silicon (M1/M2/M3/M4) |
+| `Anonimator-1.4.0-x64.dmg` | Mac Intel |
+| `Anonimator-1.4.0-windows-x64-setup.exe` | Windows 10/11 a 64 bit |
+| `Anonimator-1.4.0-linux-x64.AppImage` | Linux a 64 bit |
 
 ### Per tutti i sistemi
 
@@ -175,7 +175,8 @@ tests/          # Test unitari
 
 - [x] **PDF scansionati: output vuoto/corrotto** — risolto in v1.3.2. Il generatore ora usa OCR word-level (MuPDF + Tesseract) per localizzare le entità e sovrappone rettangoli grigi direttamente sull'immagine raster del PDF.
 - [x] **NER non disponibile su Windows 10 / ARM64** — risolto l'errore tecnico `Cannot read properties of undefined (reading 'create')` tramite pre-caricamento del modulo nativo e disabilitazione del proxy worker.
-- [ ] **DOCX: problemi di estrazione delle entità** — alcune entità non vengono rilevate correttamente su file .docx reali; verificare parser e pipeline NER su documenti complessi
+- [x] **DOCX: parser riscritto con mammoth** — estrattore testo sostituito con mammoth; run-split, tabelle, content controls e tracked changes gestiti nativamente
+- [x] **DOCX: multi-entità nello stesso paragrafo** — fix docxGenerator: algoritmo token-based garantisce la sostituzione corretta di N entità nello stesso `<w:t>` senza perdita di testo
 - [ ] **PDF: pseudonimi brevi spezzati su due righe** — "F. S." viene diviso quando il testo originale è vicino al margine destro (`pdfGenerator.ts`)
 - [ ] **PDF: footer "1 di ??" invece del totale pagine** — `pdf-lib` non legge il numero totale di pagine dal PDF originale; richiede lettura da MuPDF
 - [ ] **PDF: redaction su token con apostrofo** — es. "D'Angiolino" viene spezzato sull'apostrofo durante la redaction, il testo non viene oscurato completamente

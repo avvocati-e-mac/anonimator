@@ -2,7 +2,7 @@
 
 Documentazione tecnica per sviluppatori. Descrive architettura, flussi di dati, logica di anonimizzazione e componenti del software.
 
-**Versione documentata:** 1.3.2
+**Versione documentata:** 1.4.0
 **Stack:** Electron 40 + React 18 + TypeScript (strict mode)
 **Scopo:** Pseudonimizzazione locale di documenti legali italiani (PDF, DOCX, ODT, TXT, immagini). Nessuna connessione di rete durante l'elaborazione.
 
@@ -350,36 +350,33 @@ parseTxt(filePath: string): Promise<ParseResult>
 
 ### 6.2 Parser DOCX (`parsers/docxParser.ts`)
 
-Un file DOCX è un archivio ZIP contenente XML. Il parser:
+A partire dalla v1.4.0 il parser usa **`mammoth`** (licenza BSD-2-Clause) per l'estrazione del testo, sostituendo la navigazione XML manuale basata su `adm-zip` + `fast-xml-parser`.
 
-1. Apre l'archivio con `adm-zip`
-2. Estrae `word/document.xml`
-3. Parsa l'XML con `fast-xml-parser` (preservando attributi)
-4. Naviga la struttura: `w:document → w:body → w:p (paragrafi) → w:r (run) → w:t (testo)`
-5. Concatena i run di ogni paragrafo, separando i paragrafi con `\n`
-6. Gestisce tabelle ricorsivamente: `w:tbl → w:tr → w:tc` (celle contengono paragrafi)
+**Flusso:**
 
-```
-┌─ DOCX (ZIP) ─────────────────────────────────────┐
-│                                                    │
-│  word/document.xml                                 │
-│  ┌─ w:body ─────────────────────────────────────┐  │
-│  │                                               │  │
-│  │  ┌─ w:p (paragrafo) ─────────────────────┐   │  │
-│  │  │  w:r  →  w:t "Il sig. "               │   │  │
-│  │  │  w:r  →  w:t "Mario"                  │   │  │
-│  │  │  w:r  →  w:t " Rossi è..."            │   │  │
-│  │  │  Testo risultante: "Il sig. Mario Rossi│è."│  │
-│  │  └───────────────────────────────────────┘   │  │
-│  │                                               │  │
-│  │  ┌─ w:tbl (tabella) ─────────────────────┐   │  │
-│  │  │  w:tr → w:tc → w:p → run → testo      │   │  │
-│  │  └───────────────────────────────────────┘   │  │
-│  └───────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────┘
-```
+1. `mammoth.extractRawText({ path })` → testo piano con run-split gestito nativamente
+2. `mammoth.convertToHtml({ path })` → HTML formattato per l'anteprima in EntityReview (eseguito in parallelo via `Promise.allSettled`)
+3. Se `extractRawText` fallisce → errore bloccante con messaggio all'utente
+4. Se `convertToHtml` fallisce → warning nel log, `previewHtml` = `undefined`, parsing non interrotto
 
-**Nota critica — run-split:** In un DOCX, una singola parola può essere spezzata in più `<w:r>` (per cambi di formattazione, correzioni ortografiche, ecc.). Ad esempio "ROSSI" potrebbe essere `<w:r><w:t>ROS</w:t></w:r><w:r><w:t>SI</w:t></w:r>`. Il parser concatena i run prima di passare il testo al NER, ma il generatore di output deve gestire questa frammentazione durante la sostituzione (vedi sezione 9.2).
+**Strutture DOCX gestite da mammoth (rispetto al parser manuale precedente):**
+
+| Struttura | Supporto |
+|-----------|----------|
+| Paragrafi standard (`w:p` + `w:r` + `w:t`) | ✅ |
+| Run-split (testo spezzato su più `<w:t>`) | ✅ nativo |
+| Tabelle (`w:tbl → w:tr → w:tc`) | ✅ |
+| Content controls (`w:sdt`) | ✅ |
+| Hyperlink (`w:hyperlink`) | ✅ |
+| Tracked changes (`w:ins`/`w:del`) | ✅ |
+| Header/footer (`word/header*.xml`) | ✅ |
+| Note a piè di pagina | ✅ |
+
+**Nota — run-split:** Il problema di testo spezzato su più `<w:t>` (es. `ROS` + `SI` per `ROSSI`) era il limite principale del parser XML manuale. `mammoth` lo risolve nativamente. Il generatore di output (`docxGenerator.ts`) usa ancora `adm-zip` + XML diretto per la sostituzione — è **indipendente** da questo parser e rimane invariato (vedi sezione 9.2).
+
+**Campo `previewHtml`:**
+
+`parseDocx` restituisce ora anche `previewHtml?: string` nella `ParseResult`. Il campo è `undefined` per tutti gli altri parser (TXT, ODT, PDF, immagini, Markdown). Il contenuto HTML è sanitizzato in `src/renderer/src/utils/docxPreview.ts` prima del rendering tramite `dangerouslySetInnerHTML`.
 
 ### 6.3 Parser ODT (`parsers/odtParser.ts`)
 
@@ -811,50 +808,50 @@ I file DOCX sono archivi ZIP con XML interno. La sfida principale è che il test
 
 Qui "MARIO ROSSI" è spezzato in due run (`MAR` + `IO ROSSI`), magari perché Word ha applicato il grassetto solo alla prima parte.
 
-**Algoritmo di sostituzione per paragrafo:**
+**Algoritmo di sostituzione per paragrafo (token-based, v1.4.0):**
 
 ```
 Per ogni <w:p> nel documento XML:
 
   1. ESTRAI tutti i segmenti <w:t> con le loro posizioni nel testo concatenato
 
-     Segmento 0: "MAR"       offset 0, length 3
-     Segmento 1: "IO ROSSI"  offset 3, length 8
+     Segmento 0: "MAR"       offset 0–2
+     Segmento 1: "IO ROSSI"  offset 3–10
      Testo concatenato: "MARIO ROSSI"
 
-  2. CERCA tutte le occorrenze delle entità nel testo concatenato
+  2. CERCA tutte le occorrenze delle entità nel testo concatenato (findReplacements)
+     → restituisce patch ordinate per posizione crescente
 
-     Match: "MARIO ROSSI" a posizione 0, lunghezza 11
+  3. COSTRUISCI i token del paragrafo:
+     - Token testo letterale: porzione del testo originale tra due patch
+     - Token sostituzione: il pseudonimo (INDIVISIBILE)
 
-  3. ORDINA le sostituzioni per posizione DECRESCENTE
-     (modificando da destra a sinistra, gli offset precedenti restano validi)
+     Es. con due entità "MARIO ROSSI" e "LUIGI BIANCHI":
+     Token 0 (testo):    "Firma: "           origStart=0,  origEnd=7
+     Token 1 (subst):    "M. R."             origStart=7,  origEnd=18   ← "MARIO ROSSI"
+     Token 2 (testo):    " e "               origStart=18, origEnd=21
+     Token 3 (subst):    "L. B."             origStart=21, origEnd=34   ← "LUIGI BIANCHI"
+     Token 4 (testo):    " presenti"         origStart=34, origEnd=43
 
-  4. Per ogni sostituzione, IDENTIFICA i segmenti coinvolti:
-     - Segmento 0 (offset 0-2): coinvolto
-     - Segmento 1 (offset 3-10): coinvolto
+  4. Per ogni segmento <w:t>, raccogli i token che si sovrappongono al suo range:
+     - Token TESTO:       prendi la porzione proporzionale al range del segmento
+     - Token SOSTITUZIONE: assegna l'intero pseudonimo al PRIMO segmento coinvolto
+                           gli altri segmenti nel range ricevono stringa vuota
 
-  5. MODIFICA i segmenti in ordine inverso:
-     - Ultimo segmento (1): svuota la porzione coinvolta → "IO ROSSI" diventa ""
-     - Primo segmento (0): sostituisci con lo pseudonimo → "MAR" diventa "M. R."
-
-  6. APPLICA le modifiche all'XML cercando il tag <w:t> esatto
-     con tracking dell'indice di occorrenza per evitare duplicati
+  5. RICOSTRUISCI l'XML sostituendo il contenuto di ogni <w:t> dall'ultimo al primo
+     (ordine inverso per preservare gli indici tagStart/tagEnd)
+     - Aggiunge xml:space="preserve" se il nuovo testo ha spazi iniziali/finali
 ```
 
-**Risultato XML:**
+**Perché il vecchio approccio (pre-v1.4.0) era sbagliato:**
 
-```xml
-<w:p>
-  <w:r><w:rPr><w:b/></w:rPr><w:t>M. R.</w:t></w:r>
-  <w:r><w:t></w:t></w:r>
-</w:p>
-```
+Il vecchio algoritmo cercava ogni entità nell'XML già modificato dalle sostituzioni precedenti. Dopo la prima sostituzione il `<w:t>` conteneva il pseudonimo: le entità successive non trovavano più il testo originale e venivano silenziosamente ignorate.
 
 **Funzioni helper:**
 
 - `extractTextSegments(paragraphXml)` — trova tutti i `<w:t>` con offset nel testo concatenato
-- `findReplacements(concatenatedText, entities)` — trova tutte le occorrenze con regex case-insensitive
-- `processSingleParagraph(paragraphXml, entities)` — applica le sostituzioni a un paragrafo
+- `findReplacements(concatenatedText, entities)` — trova tutte le occorrenze con regex case-insensitive, ordinate per posizione decrescente
+- `processSingleParagraph(paragraphXml, entities)` — algoritmo token-based, gestisce N entità per paragrafo
 - `processParagraphs(documentXml, entities)` — trova tutti i `<w:p>` nel documento con regex e processa ciascuno
 - `normalizeQuotes(text)` — converte virgolette tipografiche in ASCII
 - `escapeXml(text)` / `unescapeXml(text)` — encoding/decoding delle entità XML (`&amp;`, `&lt;`, ecc.)
@@ -1087,6 +1084,11 @@ L'app React è strutturata come una macchina a stati con 7 schermate, gestite da
   - **Testo originale cliccabile**: click (o comparsa icona matita in hover) → input inline editabile. `Enter`/blur per confermare, `Esc` per annullare. `title="Modifica il testo da cercare nel documento"`. Aggiorna `originalText` nello store — il generator usa il testo corretto
   - Pseudonimo editabile (click → input inline, Enter/blur per confermare, Esc per annullare)
   - Conteggio occorrenze (×N se > 1)
+- **Pannello anteprima DOCX** (v1.4.0+): visibile solo quando `analysisResult.previewHtml` è una stringa non vuota (cioè solo per file `.docx`):
+  - Su schermi ≥ 1024px: layout a due colonne (`lg:grid lg:grid-cols-2`), pannello anteprima sticky a destra con `max-h-[70vh] overflow-y-auto`
+  - Su schermi < 1024px: pannello collassabile sopra la lista entità, con pulsante toggle "Mostra/Nascondi anteprima"
+  - HTML sanitizzato tramite `sanitizeDocxHtml()` in `utils/docxPreview.ts` (whitelist tag semantici, nessuna dipendenza esterna)
+  - Per PDF, ODT, TXT e immagini il pannello non appare (nessuna regressione)
 - Sezione warning collassabile (se il parser ha generato avvertimenti)
 - **Mini drop zone** (visibile solo quando `filePath === null`, cioè sessione ripristinata o dizionario importato da DropZone):
   - Appare sopra la lista entità con il testo "Trascina il documento da anonimizzare, oppure clicca per selezionarlo"
@@ -1407,7 +1409,9 @@ File: `tests/` — Framework: Vitest
 |-----------|---------------|
 | `nerRegex.test.ts` | Pattern regex per CF, P.IVA, IBAN, email, telefono + 8 pattern legali italiani |
 | `entityUtils.test.ts` | Deduplicazione e merge entità |
-| `parsers.test.ts` | Funzionamento dei parser |
+| `parsers.test.ts` | Funzionamento dei parser (inclusi 5 test mammoth: run-split, tabella, heading, corrotto) |
+| `docxGenerator.test.ts` | Sostituzione DOCX: singola entità, run-split, multi-entità stesso `<w:t>`, entità non confermata, caratteri XML speciali |
+| `docxPreview.test.ts` | Sanitizzazione HTML, `hasVisiblePreview`, `buildHighlightHtml`, `buildAnonymizedHtml` |
 | `sessionManager.test.ts` | Generazione pseudonimi, gestione conflitti, reset |
 | `pdfParser.test.ts` | Estrazione testo da PDF |
 | `llmService.test.ts` | Parsing structured output, filtro falsi positivi, callback `onError` su errore 500, assenza chiamata su successo |

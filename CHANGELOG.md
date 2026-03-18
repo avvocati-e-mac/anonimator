@@ -5,6 +5,18 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.4.0] - 2026-03-18
+
+### Novità
+- **Anteprima documento DOCX in EntityReview**: durante la revisione delle entità di un file `.docx`, viene mostrato un pannello con il documento originale formattato (heading, grassetto, corsivo, tabelle). Due modalità selezionabili: "Originale" (entità evidenziate con colori per tipo, sbiadite se escluse) e "Anonimizzato" (pseudonimi al posto delle entità confermate, aggiornato in tempo reale al variare delle selezioni). Su schermi ≥ 1024px il pannello appare in colonna affiancata alla lista entità; su schermi più piccoli è collapsabile. Il pannello non appare per formati diversi da DOCX (nessuna regressione per PDF, ODT, TXT, immagini).
+
+### Fix
+- **Parser DOCX — run-split su documenti complessi**: sostituita la navigazione XML manuale (`adm-zip` + `fast-xml-parser`) con `mammoth` per la fase di estrazione testo. `mammoth` gestisce nativamente il run-split (testo spezzato su più `<w:t>`), tabelle complesse, content controls (`w:sdt`), hyperlink e tracked changes. Il generatore di output (`docxGenerator.ts`) rimane invariato.
+- **Generatore DOCX — multi-entità nello stesso `<w:t>`**: riscritta la funzione `processSingleParagraph` con un algoritmo token-based. In precedenza, quando un paragrafo conteneva più entità nello stesso tag `<w:t>`, solo l'ultima sostituzione sopravviveva. Ora tutte le entità vengono sostituite correttamente preservando il testo circostante.
+- **Messaggi warning NER migliorati**: i messaggi di avviso quando il modello NER non è disponibile ora specificano chiaramente che vengono rilevati solo dati strutturati (CF, P.IVA, IBAN, email, telefono) e invitano a verificare manualmente nomi e luoghi o a scaricare il modello.
+
+---
+
 ## [1.3.2] - 2026-03-16
 
 ### Novità

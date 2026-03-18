@@ -1,14 +1,57 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react'
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import {
   ShieldCheck, Check,
   AlertTriangle, ChevronDown, ChevronUp,
-  Plus, Download, Upload, Pencil
+  Plus, Download, Upload, Pencil, FileText
 } from 'lucide-react'
 import { useDropzone } from 'react-dropzone'
 import { useSessionStore } from '../store/sessionStore'
 import { ENTITY_CONFIG } from '../utils/entityConfig'
+import { sanitizeDocxHtml, buildHighlightHtml, buildAnonymizedHtml } from '../utils/docxPreview'
+import type { PreviewMode } from '../utils/docxPreview'
 import AddEntityModal from './AddEntityModal'
 import type { DetectedEntity, EntityType } from '@shared/types'
+
+// ─── Componente header pannello anteprima con tab bar ────────────────────────
+
+function PreviewPanelHeader({
+  mode,
+  onModeChange,
+}: {
+  mode: PreviewMode
+  onModeChange: (m: PreviewMode) => void
+}): React.JSX.Element {
+  return (
+    <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+      <div className="flex items-center gap-1.5">
+        <FileText size={13} className="text-slate-400 flex-shrink-0" />
+        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Anteprima</span>
+      </div>
+      <div className="flex rounded-md overflow-hidden border border-slate-200 dark:border-slate-600 text-xs">
+        <button
+          onClick={() => onModeChange('original')}
+          className={`px-2.5 py-1 transition-colors ${
+            mode === 'original'
+              ? 'bg-blue-600 text-white'
+              : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600'
+          }`}
+        >
+          Originale
+        </button>
+        <button
+          onClick={() => onModeChange('anonymized')}
+          className={`px-2.5 py-1 transition-colors border-l border-slate-200 dark:border-slate-600 ${
+            mode === 'anonymized'
+              ? 'bg-blue-600 text-white'
+              : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-600'
+          }`}
+        >
+          Anonimizzato
+        </button>
+      </div>
+    </div>
+  )
+}
 
 const ACCEPTED_MIME: Record<string, string[]> = {
   'application/pdf': ['.pdf'],
@@ -180,6 +223,22 @@ export default function EntityReview(): React.JSX.Element {
   const [showAddModal, setShowAddModal] = useState(false)
   const [isAddingEntity, setIsAddingEntity] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [showPreview, setShowPreview] = useState(true)
+  const [previewMode, setPreviewMode] = useState<PreviewMode>('original')
+
+  const rawPreviewHtml = analysisResult?.previewHtml
+  const sanitizedBase = useMemo(
+    () => (rawPreviewHtml ? sanitizeDocxHtml(rawPreviewHtml) : undefined),
+    [rawPreviewHtml]
+  )
+  // Ricalcola ogni volta che cambiano le entità o la modalità — rendering live
+  const renderedPreviewHtml = useMemo(() => {
+    if (!sanitizedBase) return undefined
+    if (previewMode === 'anonymized') return buildAnonymizedHtml(sanitizedBase, entities)
+    return buildHighlightHtml(sanitizedBase, entities)
+  }, [sanitizedBase, entities, previewMode])
+
+  const hasPreview = Boolean(renderedPreviewHtml && renderedPreviewHtml.trim().length > 0)
 
   const confirmedCount = entities.filter((e) => e.confirmed).length
   const warnings = analysisResult?.warnings ?? []
@@ -348,82 +407,123 @@ export default function EntityReview(): React.JSX.Element {
 
       {/* Corpo scrollabile */}
       <main className="flex-1 overflow-y-auto px-6 py-5">
-        <div className="max-w-2xl mx-auto space-y-4">
+        {/* Layout a due colonne su schermi >= 1024px quando c'è l'anteprima */}
+        <div className={hasPreview ? 'lg:grid lg:grid-cols-2 lg:gap-6 lg:items-start' : ''}>
 
-          {/* Mini drop zone — visibile solo quando sessione ripristinata o analisi in corso */}
-          {(isRestoredSession || isAnalyzing) && (
-            <div
-              {...getRootProps()}
-              className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center gap-2 cursor-pointer transition-colors
-                ${isDragActive
-                  ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/30'
-                  : 'border-slate-300 bg-white hover:border-blue-400 dark:border-slate-600 dark:bg-slate-800 dark:hover:border-blue-500'}
-                ${isAnalyzing ? 'opacity-60 pointer-events-none' : ''}
-              `}
-            >
-              <input {...getInputProps()} />
-              <Upload size={28} className={isDragActive ? 'text-blue-500' : 'text-slate-400'} />
-              <p className="text-sm font-medium text-center text-slate-700 dark:text-slate-300">
-                {isAnalyzing
-                  ? 'Analisi in corso...'
-                  : isDragActive
-                    ? 'Rilascia il documento qui'
-                    : 'Trascina il documento da anonimizzare, oppure clicca per selezionarlo'}
-              </p>
-              <p className="text-xs text-slate-400 dark:text-slate-500">
-                PDF · DOCX · ODT · TXT · PNG · JPG
+          {/* Colonna sinistra: controlli + lista entità */}
+          <div className="space-y-4 max-w-2xl mx-auto lg:max-w-none">
+
+            {/* Mini drop zone — visibile solo quando sessione ripristinata o analisi in corso */}
+            {(isRestoredSession || isAnalyzing) && (
+              <div
+                {...getRootProps()}
+                className={`border-2 border-dashed rounded-xl p-6 flex flex-col items-center gap-2 cursor-pointer transition-colors
+                  ${isDragActive
+                    ? 'border-blue-400 bg-blue-50 dark:bg-blue-950/30'
+                    : 'border-slate-300 bg-white hover:border-blue-400 dark:border-slate-600 dark:bg-slate-800 dark:hover:border-blue-500'}
+                  ${isAnalyzing ? 'opacity-60 pointer-events-none' : ''}
+                `}
+              >
+                <input {...getInputProps()} />
+                <Upload size={28} className={isDragActive ? 'text-blue-500' : 'text-slate-400'} />
+                <p className="text-sm font-medium text-center text-slate-700 dark:text-slate-300">
+                  {isAnalyzing
+                    ? 'Analisi in corso...'
+                    : isDragActive
+                      ? 'Rilascia il documento qui'
+                      : 'Trascina il documento da anonimizzare, oppure clicca per selezionarlo'}
+                </p>
+                <p className="text-xs text-slate-400 dark:text-slate-500">
+                  PDF · DOCX · ODT · TXT · PNG · JPG
+                </p>
+              </div>
+            )}
+
+            {/* Titolo e contatori */}
+            <div>
+              <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
+                Revisione entità rilevate
+              </h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+                {entities.length === 0
+                  ? 'Nessuna entità rilevata nel documento.'
+                  : `${entities.length} entità trovate — ${confirmedCount} selezionate per l'anonimizzazione.`}
               </p>
             </div>
-          )}
 
-          {/* Titolo e contatori */}
-          <div>
-            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">
-              Revisione entità rilevate
-            </h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-              {entities.length === 0
-                ? 'Nessuna entità rilevata nel documento.'
-                : `${entities.length} entità trovate — ${confirmedCount} selezionate per l'anonimizzazione.`}
-            </p>
+            {/* Toggle anteprima — visibile solo su schermi < 1024px quando c'è l'anteprima */}
+            {hasPreview && (
+              <button
+                onClick={() => setShowPreview(!showPreview)}
+                className="lg:hidden flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                <FileText size={15} />
+                {showPreview ? 'Nascondi anteprima' : 'Mostra anteprima'}
+              </button>
+            )}
+
+            {/* Anteprima — su mobile appare qui (dentro colonna sinistra), collassabile */}
+            {hasPreview && showPreview && (
+              <div className="lg:hidden rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <PreviewPanelHeader mode={previewMode} onModeChange={setPreviewMode} />
+                <div
+                  className="px-4 py-3 max-h-64 overflow-y-auto prose prose-sm dark:prose-invert max-w-none"
+                  dangerouslySetInnerHTML={{ __html: renderedPreviewHtml ?? '' }}
+                />
+              </div>
+            )}
+
+            {/* Warnings */}
+            {warnings.length > 0 && (
+              <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg overflow-hidden">
+                <button
+                  className="w-full flex items-center gap-2 px-4 py-3 text-left"
+                  onClick={() => setShowWarnings(!showWarnings)}
+                >
+                  <AlertTriangle size={16} className="text-amber-500 flex-shrink-0" />
+                  <span className="text-sm font-medium text-amber-800 dark:text-amber-300 flex-1">
+                    {warnings.length} avviso{warnings.length > 1 ? 'i' : ''}
+                  </span>
+                  {showWarnings
+                    ? <ChevronUp size={16} className="text-amber-500" />
+                    : <ChevronDown size={16} className="text-amber-500" />}
+                </button>
+                {showWarnings && (
+                  <ul className="px-4 pb-3 space-y-1">
+                    {warnings.map((w, i) => (
+                      <li key={i} className="text-sm text-amber-700 dark:text-amber-400">{w}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            {/* Lista entità */}
+            {entities.length > 0 && (
+              <div className="space-y-1">
+                {entities.map((entity) => (
+                  <EntityRow key={entity.id} entity={entity} />
+                ))}
+              </div>
+            )}
+
+            {/* Spazio per non coprire il footer */}
+            <div className="h-4" />
           </div>
 
-          {/* Warnings */}
-          {warnings.length > 0 && (
-            <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg overflow-hidden">
-              <button
-                className="w-full flex items-center gap-2 px-4 py-3 text-left"
-                onClick={() => setShowWarnings(!showWarnings)}
-              >
-                <AlertTriangle size={16} className="text-amber-500 flex-shrink-0" />
-                <span className="text-sm font-medium text-amber-800 dark:text-amber-300 flex-1">
-                  {warnings.length} avviso{warnings.length > 1 ? 'i' : ''}
-                </span>
-                {showWarnings
-                  ? <ChevronUp size={16} className="text-amber-500" />
-                  : <ChevronDown size={16} className="text-amber-500" />}
-              </button>
-              {showWarnings && (
-                <ul className="px-4 pb-3 space-y-1">
-                  {warnings.map((w, i) => (
-                    <li key={i} className="text-sm text-amber-700 dark:text-amber-400">{w}</li>
-                  ))}
-                </ul>
-              )}
+          {/* Colonna destra: pannello anteprima — visibile solo su >= 1024px */}
+          {hasPreview && (
+            <div className="hidden lg:block sticky top-5">
+              <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+                <PreviewPanelHeader mode={previewMode} onModeChange={setPreviewMode} />
+                <div
+                  className="px-4 py-3 max-h-[70vh] overflow-y-auto prose prose-sm dark:prose-invert max-w-none"
+                  dangerouslySetInnerHTML={{ __html: renderedPreviewHtml ?? '' }}
+                />
+              </div>
             </div>
           )}
 
-          {/* Lista entità */}
-          {entities.length > 0 && (
-            <div className="space-y-1">
-              {entities.map((entity) => (
-                <EntityRow key={entity.id} entity={entity} />
-              ))}
-            </div>
-          )}
-
-          {/* Spazio per non coprire il footer */}
-          <div className="h-4" />
         </div>
       </main>
 

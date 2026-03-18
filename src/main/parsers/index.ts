@@ -11,6 +11,7 @@ export interface ParseResult {
   pageCount: number
   warnings: string[]
   isScanned?: boolean  // true se il testo è stato estratto via OCR (PDF scansionato o immagine)
+  previewHtml?: string // solo per DOCX: HTML formattato generato da mammoth (undefined per tutti gli altri formati)
 }
 
 /**

@@ -429,9 +429,9 @@ export async function analyzeText(
       const path = require('path')
       const modelExists = fs.existsSync(path.join(modelPath, 'onnx', 'model_quantized.onnx'))
       if (modelExists) {
-        warnings.push('Modello NER presente ma non caricabile correttamente (errore tecnico).')
+        warnings.push('Il modello NER è presente ma non si è avviato correttamente. Rilevati solo dati strutturati (CF, P.IVA, IBAN, email, telefono). Verifica manualmente nomi e luoghi.')
       } else {
-        warnings.push('Riconoscimento automatico nomi parziale. Verificare manualmente.')
+        warnings.push('Modello NER non trovato. Rilevati solo dati strutturati (CF, P.IVA, IBAN, email, telefono). Verifica manualmente nomi e luoghi.')
       }
     }
   } else {
@@ -440,9 +440,9 @@ export async function analyzeText(
     const path = require('path')
     const modelExists = fs.existsSync(path.join(modelPath, 'onnx', 'model_quantized.onnx'))
     if (modelExists) {
-        warnings.push('Errore nel caricamento del motore NER. Solo dati strutturati rilevati.')
+      warnings.push('Il modello NER è presente ma non si è avviato correttamente. Rilevati solo dati strutturati (CF, P.IVA, IBAN, email, telefono). Verifica manualmente nomi e luoghi.')
     } else {
-        warnings.push('Modello NER non disponibile. Solo dati strutturati rilevati automaticamente.')
+      warnings.push('Modello NER non scaricato. Rilevati solo dati strutturati (CF, P.IVA, IBAN, email, telefono). Per attivare il riconoscimento automatico di nomi e luoghi, scarica il modello dalla schermata iniziale.')
     }
   }
 

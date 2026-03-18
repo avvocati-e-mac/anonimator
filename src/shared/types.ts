@@ -76,7 +76,8 @@ export interface DocumentAnalysisResult {
   pageCount: number
   entities: DetectedEntity[]
   warnings: string[]
-  isScanned?: boolean  // true per PDF scansionati (testo estratto via OCR, nessun layer testo nativo)
+  isScanned?: boolean   // true per PDF scansionati (testo estratto via OCR, nessun layer testo nativo)
+  previewHtml?: string  // solo per DOCX: HTML formattato generato da mammoth per l'anteprima in EntityReview
 }
 
 // Richiesta di anonimizzazione (Renderer → Main)
