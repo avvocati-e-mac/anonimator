@@ -350,36 +350,33 @@ parseTxt(filePath: string): Promise<ParseResult>
 
 ### 6.2 Parser DOCX (`parsers/docxParser.ts`)
 
-Un file DOCX è un archivio ZIP contenente XML. Il parser:
+A partire dalla v1.4.0 il parser usa **`mammoth`** (licenza BSD-2-Clause) per l'estrazione del testo, sostituendo la navigazione XML manuale basata su `adm-zip` + `fast-xml-parser`.
 
-1. Apre l'archivio con `adm-zip`
-2. Estrae `word/document.xml`
-3. Parsa l'XML con `fast-xml-parser` (preservando attributi)
-4. Naviga la struttura: `w:document → w:body → w:p (paragrafi) → w:r (run) → w:t (testo)`
-5. Concatena i run di ogni paragrafo, separando i paragrafi con `\n`
-6. Gestisce tabelle ricorsivamente: `w:tbl → w:tr → w:tc` (celle contengono paragrafi)
+**Flusso:**
 
-```
-┌─ DOCX (ZIP) ─────────────────────────────────────┐
-│                                                    │
-│  word/document.xml                                 │
-│  ┌─ w:body ─────────────────────────────────────┐  │
-│  │                                               │  │
-│  │  ┌─ w:p (paragrafo) ─────────────────────┐   │  │
-│  │  │  w:r  →  w:t "Il sig. "               │   │  │
-│  │  │  w:r  →  w:t "Mario"                  │   │  │
-│  │  │  w:r  →  w:t " Rossi è..."            │   │  │
-│  │  │  Testo risultante: "Il sig. Mario Rossi│è."│  │
-│  │  └───────────────────────────────────────┘   │  │
-│  │                                               │  │
-│  │  ┌─ w:tbl (tabella) ─────────────────────┐   │  │
-│  │  │  w:tr → w:tc → w:p → run → testo      │   │  │
-│  │  └───────────────────────────────────────┘   │  │
-│  └───────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────┘
-```
+1. `mammoth.extractRawText({ path })` → testo piano con run-split gestito nativamente
+2. `mammoth.convertToHtml({ path })` → HTML formattato per l'anteprima in EntityReview (eseguito in parallelo via `Promise.allSettled`)
+3. Se `extractRawText` fallisce → errore bloccante con messaggio all'utente
+4. Se `convertToHtml` fallisce → warning nel log, `previewHtml` = `undefined`, parsing non interrotto
 
-**Nota critica — run-split:** In un DOCX, una singola parola può essere spezzata in più `<w:r>` (per cambi di formattazione, correzioni ortografiche, ecc.). Ad esempio "ROSSI" potrebbe essere `<w:r><w:t>ROS</w:t></w:r><w:r><w:t>SI</w:t></w:r>`. Il parser concatena i run prima di passare il testo al NER, ma il generatore di output deve gestire questa frammentazione durante la sostituzione (vedi sezione 9.2).
+**Strutture DOCX gestite da mammoth (rispetto al parser manuale precedente):**
+
+| Struttura | Supporto |
+|-----------|----------|
+| Paragrafi standard (`w:p` + `w:r` + `w:t`) | ✅ |
+| Run-split (testo spezzato su più `<w:t>`) | ✅ nativo |
+| Tabelle (`w:tbl → w:tr → w:tc`) | ✅ |
+| Content controls (`w:sdt`) | ✅ |
+| Hyperlink (`w:hyperlink`) | ✅ |
+| Tracked changes (`w:ins`/`w:del`) | ✅ |
+| Header/footer (`word/header*.xml`) | ✅ |
+| Note a piè di pagina | ✅ |
+
+**Nota — run-split:** Il problema di testo spezzato su più `<w:t>` (es. `ROS` + `SI` per `ROSSI`) era il limite principale del parser XML manuale. `mammoth` lo risolve nativamente. Il generatore di output (`docxGenerator.ts`) usa ancora `adm-zip` + XML diretto per la sostituzione — è **indipendente** da questo parser e rimane invariato (vedi sezione 9.2).
+
+**Campo `previewHtml`:**
+
+`parseDocx` restituisce ora anche `previewHtml?: string` nella `ParseResult`. Il campo è `undefined` per tutti gli altri parser (TXT, ODT, PDF, immagini, Markdown). Il contenuto HTML è sanitizzato in `src/renderer/src/utils/docxPreview.ts` prima del rendering tramite `dangerouslySetInnerHTML`.
 
 ### 6.3 Parser ODT (`parsers/odtParser.ts`)
 
@@ -1087,6 +1084,11 @@ L'app React è strutturata come una macchina a stati con 7 schermate, gestite da
   - **Testo originale cliccabile**: click (o comparsa icona matita in hover) → input inline editabile. `Enter`/blur per confermare, `Esc` per annullare. `title="Modifica il testo da cercare nel documento"`. Aggiorna `originalText` nello store — il generator usa il testo corretto
   - Pseudonimo editabile (click → input inline, Enter/blur per confermare, Esc per annullare)
   - Conteggio occorrenze (×N se > 1)
+- **Pannello anteprima DOCX** (v1.4.0+): visibile solo quando `analysisResult.previewHtml` è una stringa non vuota (cioè solo per file `.docx`):
+  - Su schermi ≥ 1024px: layout a due colonne (`lg:grid lg:grid-cols-2`), pannello anteprima sticky a destra con `max-h-[70vh] overflow-y-auto`
+  - Su schermi < 1024px: pannello collassabile sopra la lista entità, con pulsante toggle "Mostra/Nascondi anteprima"
+  - HTML sanitizzato tramite `sanitizeDocxHtml()` in `utils/docxPreview.ts` (whitelist tag semantici, nessuna dipendenza esterna)
+  - Per PDF, ODT, TXT e immagini il pannello non appare (nessuna regressione)
 - Sezione warning collassabile (se il parser ha generato avvertimenti)
 - **Mini drop zone** (visibile solo quando `filePath === null`, cioè sessione ripristinata o dizionario importato da DropZone):
   - Appare sopra la lista entità con il testo "Trascina il documento da anonimizzare, oppure clicca per selezionarlo"

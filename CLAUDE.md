@@ -188,8 +188,9 @@ File dropped
 - `pdfjs-dist` - extract text + coordinates from native PDFs
 - `mupdf` - PDF redaction (removes text glyphs from PDF)
 - `pdf-lib` - PDF manipulation (overlay grey rectangles + pseudonyms)
-- `adm-zip` - parse/rebuild DOCX/ODT (ZIP + XML)
-- `fast-xml-parser` - parse XML content inside DOCX/ODT archives
+- `mammoth` - DOCX text extraction and HTML preview generation (BSD-2-Clause). Used only in `docxParser.ts` for `extractRawText` + `convertToHtml`. Handles run-split, tables, content controls, hyperlinks natively.
+- `adm-zip` - rebuild DOCX/ODT for output generation (ZIP + XML). Still used in `docxGenerator.ts` and `odtGenerator.ts` for writing anonymized output.
+- `fast-xml-parser` - parse XML content inside ODT archives (used in `odtParser.ts`)
 - `tesseract.js` - offline OCR (tessdata downloaded at first run)
 
 **NER (Named Entity Recognition):**

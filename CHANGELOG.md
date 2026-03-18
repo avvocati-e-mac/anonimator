@@ -5,6 +5,16 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.4.0] - 2026-03-18
+
+### Novità
+- **Anteprima documento DOCX in EntityReview**: durante la revisione delle entità di un file `.docx`, viene mostrato un pannello con il documento originale formattato (heading, grassetto, corsivo, tabelle). Su schermi ≥ 1024px il pannello appare in colonna affiancata alla lista entità; su schermi più piccoli è collassabile con un pulsante "Mostra/Nascondi anteprima". Il pannello non appare per formati diversi da DOCX (nessuna regressione per PDF, ODT, TXT, immagini).
+
+### Fix
+- **Parser DOCX — run-split su documenti complessi**: sostituita la navigazione XML manuale (`adm-zip` + `fast-xml-parser`) con `mammoth` per la fase di estrazione testo. `mammoth` gestisce nativamente il run-split (testo spezzato su più `<w:t>`), tabelle complesse, content controls (`w:sdt`), hyperlink e tracked changes. Il generatore di output (`docxGenerator.ts`) rimane invariato.
+
+---
+
 ## [1.3.2] - 2026-03-16
 
 ### Novità
