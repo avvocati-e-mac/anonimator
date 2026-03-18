@@ -92,6 +92,56 @@ Test Files  14 passed (14)
   Duration  6.45s
 ```
 
+---
+
+## Sessione 044 — Fase 5 (continuazione): Fix docxGenerator multi-entità
+**Data:** 2026-03-18
+
+### Bug rilevato durante i test manuali
+
+Il file `docxGenerator.ts` produceva output corrotto quando un paragrafo conteneva
+più entità. Solo l'ultima sostituzione sopravviveva, le precedenti venivano perse.
+
+**Root cause:** `processSingleParagraph` cercava il testo delle entità nel `xmlCursor`
+già modificato dalle sostituzioni precedenti. Dopo la prima patch, le altre entità non
+trovavano più il loro testo originale → silently dropped.
+
+### Fix applicato
+
+**Algoritmo token-based** (token = unità indivisibile di testo):
+1. Scompone il paragrafo in token: `{ origStart, origEnd, text, isSubstitution }`
+2. Token di sostituzione = **INDIVISIBILI**: assegnati interamente al primo `<w:t>` coinvolto
+3. Token di testo letterale = **DIVISIBILI**: porzione proporzionale al range del segmento
+4. Ricostruisce l'XML lavorando dall'ultimo segmento al primo (preserva gli indici)
+
+Gestisce correttamente:
+- N entità nello stesso `<w:t>` ✅
+- Entità che attraversano più `<w:t>` (run-split) ✅
+- Entità non confermate ignorate ✅
+- Testo non-entità preservato ✅
+- Caratteri XML escaped correttamente ✅
+
+### Nuovi file
+
+- `tests/docxGenerator.test.ts` — **NUOVO**: 10 test di regressione (sostituzione singola,
+  multi-entità stesso `<w:t>`, run-split multi-entità, priorità entità lunga, entità non
+  confermata, caratteri XML speciali)
+
+### Commit aggiunto
+
+| # | Hash | Messaggio |
+|---|------|-----------|
+| 8 | `b073dba` | `fix(docxGenerator): correggi sostituzione multi-entità nello stesso <w:t>` |
+
+### Esito finale `npm test`
+
+```
+Test Files  15 passed (15)
+     Tests  199 passed (199)   (+10 nuovi test docxGenerator)
+  Start at  19:26:14
+  Duration  6.64s
+```
+
 Comando per rieseguire:
 ```bash
 npm test -- --reporter=verbose
@@ -125,7 +175,7 @@ npm test -- --reporter=verbose
 
 ---
 
-## TODO aperti (non affrontati in questa sessione)
+## TODO aperti
 
 - [ ] **Anteprima ODT**: mammoth supporta solo DOCX. Per ODT servirebbe una soluzione
   diversa (es. conversione con LibreOffice headless o parser HTML custom).
