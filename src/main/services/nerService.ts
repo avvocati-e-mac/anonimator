@@ -290,6 +290,39 @@ function aggregateBioTokens(items: TokenClassificationSingle[]): AggregatedEntit
  * - Estrae ogni token con lunghezza > 3 caratteri non in LEGAL_STOP_WORDS
  * - Se il token appare ≥ 2 volte nel testo standalone E non è già coperto: aggiunge entità co-ref
  */
+/** Soglia minima BERT per tentare il boost (entità sotto soglia ma con segnale residuo) */
+const BOOST_MIN_SCORE = 0.35
+
+/**
+ * Promuove entità BERT sotto-soglia se lo stesso testo è confermato da un'entità
+ * regex contestuale Step 0b (source 'regex').
+ * La conferma regex è sufficiente per promuovere l'entità indipendentemente dallo score BERT esatto,
+ * dato che lo score non è più disponibile dopo buildEntity.
+ * Le entità promosse ricevono source 'boosted'.
+ * Solo i pattern Step 0b (contestuali legali) fanno da booster — NON CF/IBAN/email/telefono.
+ */
+export function applyContextualBoost(
+  bertLow: DetectedEntity[],
+  regexContextual: DetectedEntity[]
+): DetectedEntity[] {
+  const boosted: DetectedEntity[] = []
+
+  for (const bertEntity of bertLow) {
+    // Cerca conferma in regex contestuale — stesso testo (case-insensitive)
+    // Solo entità regex di tipo PERSONA/ORG/LOC (contestuali) fanno da booster
+    const nerLikeTypes = new Set<EntityType>(['PERSONA', 'ORGANIZZAZIONE', 'LUOGO'])
+    const confirmed = regexContextual.some(r =>
+      nerLikeTypes.has(r.type) &&
+      r.originalText.toLowerCase() === bertEntity.originalText.toLowerCase()
+    )
+    if (!confirmed) continue
+
+    boosted.push({ ...bertEntity, source: 'boosted' })
+  }
+
+  return boosted
+}
+
 export function expandCoReferences(entities: DetectedEntity[], text: string): DetectedEntity[] {
   const existingTexts = new Set(entities.map(e => e.originalText.toLowerCase()))
   const additions: DetectedEntity[] = []
@@ -412,11 +445,18 @@ export async function analyzeText(
     }
   }
 
+  // Raccoglie entità regex Step 0b per il boost cross-layer
+  // (già in allEntities, ma servono separatamente per il confronto testo)
+  const regexContextualEntities = allEntities.filter(e => e.source === 'regex')
+
   const pipe = await getNerPipeline()
   if (pipe) {
     try {
       const chunks = splitTextIntoChunks(text, 400)
       const BATCH = 4
+      // Entità BERT sotto soglia (0.35–threshold) accumulate per il boost
+      const bertLowScore: DetectedEntity[] = []
+
       for (let i = 0; i < chunks.length; i += BATCH) {
         const batch = chunks.slice(i, i + BATCH)
         const results = await Promise.all(batch.map((chunk) => pipe(chunk)))
@@ -427,7 +467,6 @@ export async function analyzeText(
           const aggregated = aggregateBioTokens(flat)
           for (const { word, label, score } of aggregated) {
             const threshold = SCORE_THRESHOLDS[label] ?? 0.50
-            if (score < threshold) continue
             const entityType = LABEL_TO_ENTITY_TYPE[label]
             if (!entityType) continue
             const cleaned = word.trim().replace(/^#+/, '')
@@ -437,14 +476,31 @@ export async function analyzeText(
             if (NAME_STOPWORDS.has(cleanedFirstWord)) continue
             if (PKI_NOISE.has(cleaned.toLowerCase())) continue
             if (entityType === 'ORGANIZZAZIONE' && PUBLIC_INSTITUTION_PREFIXES.has(cleanedFirstWord)) continue
-            // Veto filter: entità PERSONA che coincidono esattamente con un ruolo processuale
             if (entityType === 'PERSONA' && LEGAL_STOP_WORDS.has(cleaned.toLowerCase())) continue
-            if (foundTexts.has(cleaned.toLowerCase())) continue
-            foundTexts.add(cleaned.toLowerCase())
-            allEntities.push(buildEntity(cleaned, entityType, 'ner'))
+
+            if (score >= threshold) {
+              if (foundTexts.has(cleaned.toLowerCase())) continue
+              foundTexts.add(cleaned.toLowerCase())
+              allEntities.push(buildEntity(cleaned, entityType, 'ner'))
+            } else if (score >= BOOST_MIN_SCORE) {
+              // Sotto soglia ma con segnale residuo: candidato per boost
+              if (!foundTexts.has(cleaned.toLowerCase())) {
+                bertLowScore.push(buildEntity(cleaned, entityType, 'ner'))
+              }
+            }
           }
         }
       }
+
+      // Score boosting: promuovi entità BERT sotto soglia confermate da regex contestuale
+      const boosted = applyContextualBoost(bertLowScore, regexContextualEntities)
+      for (const entity of boosted) {
+        if (!foundTexts.has(entity.originalText.toLowerCase())) {
+          foundTexts.add(entity.originalText.toLowerCase())
+          allEntities.push(entity)
+        }
+      }
+
       nerUsed = true
     } catch (err) {
       log.error('Errore durante inferenza NER', { error: err })
