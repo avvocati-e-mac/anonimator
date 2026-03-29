@@ -730,20 +730,31 @@ function splitTextIntoLlmChunks(text: string, maxChars: number): string[] {
   return chunks
 }
 
-function splitTextIntoChunks(text: string, targetWords: number): string[] {
-  const words = text.split(/\s+/)
-  if (words.length <= targetWords) return [text]
+/**
+ * Crea chunk con sliding window e overlap.
+ * Chunk N:   token [0 … chunkSize-1]
+ * Chunk N+1: token [stride … stride+chunkSize-1]  (overlap di 'overlap' token)
+ * Garantisce che entità a cavallo del boundary vengano catturate dal chunk successivo.
+ */
+export function createOverlappingChunks(
+  tokens: string[],
+  chunkSize = 400,
+  overlap = 40
+): string[] {
+  if (tokens.length <= chunkSize) return [tokens.join(' ')]
+  const stride = chunkSize - overlap
   const chunks: string[] = []
-  let start = 0
-  while (start < words.length) {
-    let end = Math.min(start + targetWords, words.length)
-    if (end < words.length) {
-      for (let i = end; i > end - 20 && i > start; i--) {
-        if (/[.?!]$/.test(words[i - 1])) { end = i; break }
-      }
-    }
-    chunks.push(words.slice(start, end).join(' '))
-    start = end
+  for (let i = 0; i < tokens.length; i += stride) {
+    const slice = tokens.slice(i, i + chunkSize)
+    if (slice.length > 0) chunks.push(slice.join(' '))
+    if (i + chunkSize >= tokens.length) break
   }
   return chunks
 }
+
+function splitTextIntoChunks(text: string, targetWords: number): string[] {
+  // Usa sliding window con overlap per evitare entità spezzate a cavallo di boundary
+  const tokens = text.split(/\s+/).filter(t => t.length > 0)
+  return createOverlappingChunks(tokens, targetWords, 40)
+}
+
