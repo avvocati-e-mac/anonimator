@@ -10,6 +10,7 @@ import {
   DIFENSORE_PATTERN,
   ALLCAPS_NAME_PATTERN,
   DATA_NASCITA_PATTERN,
+  LUOGO_NASCITA_PATTERN,
   INDIRIZZO_PATTERN_STANDARD,
   INDIRIZZO_PATTERN_CORSO,
   NUMERO_DOCUMENTO_PATTERN,
@@ -317,5 +318,95 @@ describe('Pattern D2 — PKI_FIRMA (firma digitale)', () => {
   it('non cattura senza keyword "Emesso"', () => {
     const m = match(PKI_FIRMA_PATTERN, 'Firmato Da: ROSSI MARIO')
     expect(m).toHaveLength(0)
+  })
+})
+
+// ─── Fix sessione 047 — entità mancanti contratto di locazione ───────────────
+
+describe('Pattern B1 fix — DATA_NASCITA (date letterali italiane)', () => {
+  it('cattura data letterale dopo "nato a Napoli il"', () => {
+    const m = match(DATA_NASCITA_PATTERN, 'nato a Napoli il 23 luglio 1968')
+    expect(m.some(v => v === '23 luglio 1968')).toBe(true)
+  })
+  it('cattura data letterale dopo "nata a Salerno il"', () => {
+    const m = match(DATA_NASCITA_PATTERN, 'nata a Salerno il 12 gennaio 1985')
+    expect(m.some(v => v === '12 gennaio 1985')).toBe(true)
+  })
+  it('cattura data letterale dopo "nato a Milano il" (mese agosto)', () => {
+    const m = match(DATA_NASCITA_PATTERN, 'nato a Milano il 07 agosto 1971')
+    expect(m.some(v => v === '07 agosto 1971')).toBe(true)
+  })
+  it('NON cattura data letterale senza contesto nascita', () => {
+    const m = match(DATA_NASCITA_PATTERN, 'udienza del 15 marzo 2024')
+    expect(m).toHaveLength(0)
+  })
+  it('continua a catturare date numeriche (regressione)', () => {
+    const m = match(DATA_NASCITA_PATTERN, 'nato il 15/03/1978')
+    expect(m.some(v => v === '15/03/1978')).toBe(true)
+  })
+})
+
+describe('Pattern B0 — LUOGO_NASCITA', () => {
+  it('cattura città dopo "nato a ... il"', () => {
+    const m = match(LUOGO_NASCITA_PATTERN, 'nato a Napoli il 23 luglio 1968')
+    expect(m).toContain('Napoli')
+  })
+  it('cattura città dopo "nata a ... il"', () => {
+    const m = match(LUOGO_NASCITA_PATTERN, 'nata a Salerno il 12 gennaio 1985')
+    expect(m).toContain('Salerno')
+  })
+  it('cattura città composta (Reggio Calabria)', () => {
+    const m = match(LUOGO_NASCITA_PATTERN, 'nato a Reggio Calabria il 05/06/1990')
+    expect(m.some(v => v.trim() === 'Reggio Calabria')).toBe(true)
+  })
+  it('NON cattura città in contesto generico senza "il" finale', () => {
+    const m = match(LUOGO_NASCITA_PATTERN, "la Corte d'Appello di Napoli ha deciso")
+    expect(m).toHaveLength(0)
+  })
+  it('NON cattura senza "il" data seguente (solo "nato a Napoli, residente")', () => {
+    const m = match(LUOGO_NASCITA_PATTERN, 'nato a Napoli, residente a Roma')
+    expect(m).toHaveLength(0)
+  })
+})
+
+describe('Pattern B2 fix — INDIRIZZO (CAP flessibile e keyword estese)', () => {
+  it('cattura Via con CAP dopo trattino "Via Roma, 112 - 10121 Torino"', () => {
+    const m = match(INDIRIZZO_PATTERN_STANDARD, 'residente in Via Roma, 112 - 10121 Torino')
+    expect(m).toHaveLength(1)
+  })
+  it('cattura Viale con "residente attualmente" e CAP dopo trattino', () => {
+    const m = match(INDIRIZZO_PATTERN_STANDARD, 'residente attualmente in Viale Piemonte, 34 - 10138 Torino')
+    expect(m).toHaveLength(1)
+  })
+  it('cattura Corso con keyword "sito in"', () => {
+    const m = match(INDIRIZZO_PATTERN_CORSO, 'sito in Corso Buenos Aires, 15 10129 Torino')
+    expect(m).toHaveLength(1)
+  })
+  it('continua a catturare Via con CAP alla fine senza trattino (regressione)', () => {
+    const m = match(INDIRIZZO_PATTERN_STANDARD, 'residente in Via Roma 15, 00100')
+    expect(m).toHaveLength(1)
+  })
+  it('continua a NON catturare Via senza CAP (regressione)', () => {
+    const m = match(INDIRIZZO_PATTERN_STANDARD, 'residente in Via Roma 15')
+    expect(m).toHaveLength(0)
+  })
+  it('NON cattura "sito" senza CAP (falso positivo)', () => {
+    const m = match(INDIRIZZO_PATTERN_STANDARD, 'sito internet Via Roma')
+    expect(m).toHaveLength(0)
+  })
+})
+
+describe('Pattern B3 fix — NUMERO_DOCUMENTO (spazio nel codice)', () => {
+  it('cattura numero C.I. con spazio "CA 5528847"', () => {
+    const m = match(NUMERO_DOCUMENTO_PATTERN, "Carta d'identità n. CA 5528847")
+    expect(m.some(v => v.replace(/\s/, '') === 'CA5528847' || v === 'CA 5528847')).toBe(true)
+  })
+  it('continua a catturare numero C.I. senza spazio (regressione)', () => {
+    const m = match(NUMERO_DOCUMENTO_PATTERN, "carta d'identità n. AB1234567")
+    expect(m.some(v => v === 'AB1234567')).toBe(true)
+  })
+  it('continua a catturare passaporto senza spazio (regressione)', () => {
+    const m = match(NUMERO_DOCUMENTO_PATTERN, 'passaporto: YA9876543')
+    expect(m.some(v => v === 'YA9876543')).toBe(true)
   })
 })

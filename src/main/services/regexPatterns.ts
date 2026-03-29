@@ -52,9 +52,13 @@ export const ALLCAPS_NAME_PATTERN = new RegExp(
   'gm'
 )
 
-/** nato/nata/data di nascita + data */
+/** nato/nata/data di nascita + data (numerica o letterale italiana) */
 export const DATA_NASCITA_PATTERN =
-  /(?:nato|nata|n\.)[\s,]+(?:a\s+\S+\s+)?il\s+(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})|(?:data(?:\s+di)?\s+nascita|d\.d\.n\.)[:\s]+(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})/gi
+  /(?:nato|nata|n\.)[\s,]+(?:a\s+\S+\s+)?il\s+(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4}|\d{1,2}\s+(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+\d{4})|(?:data(?:\s+di)?\s+nascita|d\.d\.n\.)[:\s]+(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4}|\d{1,2}\s+(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+\d{4})/gi
+
+/** nato/nata a <Città> il — cattura il luogo di nascita con contesto esplicito */
+export const LUOGO_NASCITA_PATTERN =
+  /(?:nato|nata)\s+a\s+([A-ZÀ-Üa-zà-ü][A-Za-zÀ-ÿ\s]{1,30}?)\s+il\b/gi
 
 /**
  * Indirizzo con prefisso contestuale (residente/domiciliato/con sede).
@@ -63,7 +67,7 @@ export const DATA_NASCITA_PATTERN =
  * per evitare falsi positivi su "corso di indagini".
  */
 export const INDIRIZZO_PATTERN_STANDARD =
-  /(?:residente|domiciliato|domiciliata|con\s+sede)\s+(?:in\s+)?(?:Via|Viale|Piazza|Largo|Vicolo|Str\.|Loc\.|Fraz\.|V\.le)\s+[A-Za-z\u00C0-\u00FF\s0-9,.']{3,50},?\s*\d{5}/gi
+  /(?:residente(?:\s+attualmente)?|domiciliato|domiciliata|con\s+sede|sito)\s+(?:in\s+)?(?:Via|Viale|Piazza|Largo|Vicolo|Str\.|Loc\.|Fraz\.|V\.le)\s+[A-Za-z\u00C0-\u00FF\s0-9,.']{3,50}(?:\s*[-–,]\s*\d{5}|\s*,?\s*\d{5})/gi
 
 /**
  * "Corso" come indirizzo SOLO se preceduto dal contesto di residenza/domicilio
@@ -72,7 +76,7 @@ export const INDIRIZZO_PATTERN_STANDARD =
  * "residente in Corso Roma 15, 00100" → matcha.
  */
 export const INDIRIZZO_PATTERN_CORSO =
-  /(?:residente|domiciliato|domiciliata|con\s+sede)\s+(?:in\s+)?[Cc]orso\s+[A-ZÀ-Ü][A-Za-zÀ-ÿ\s]{2,40}\d+[,\s]*\d{5}/gi
+  /(?:residente(?:\s+attualmente)?|domiciliato|domiciliata|con\s+sede|sito)\s+(?:in\s+)?[Cc]orso\s+[A-ZÀ-Ü][A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+){0,5},?\s*\d+[,\s]*(?:[-–]\s*)?\d{5}/gi
 
 /**
  * Pattern combinato (per retrocompatibilità con codice che usa INDIRIZZO_PATTERN).
@@ -84,7 +88,7 @@ export const INDIRIZZO_PATTERN =
 
 /** carta d'identità/passaporto/patente + codice documento */
 export const NUMERO_DOCUMENTO_PATTERN =
-  /(?:carta(?:\s+d[i']\s*identit[àa])?|passaporto|patente|C\.I\.E?\.?)[\s:,n.°]+([A-Z]{2}[0-9]{5,7}[A-Z]?)|(?:n(?:umero)?\.?\s*doc(?:umento)?[:\s]+)([A-Z]{2}[0-9]{5,7}[A-Z]?)/gi
+  /(?:carta(?:\s+d[i']\s*identit[àa])?|passaporto|patente|C\.I\.E?\.?)[\s:,n.°]+([A-Z]{2}\s?[0-9]{5,7}[A-Z]?)|(?:n(?:umero)?\.?\s*doc(?:umento)?[:\s]+)([A-Z]{2}\s?[0-9]{5,7}[A-Z]?)/gi
 
 /** Contraente/Assicurato/Beneficiario + nome (polizze assicurative) */
 export const POLIZZA_PARTE_PATTERN =
@@ -112,6 +116,7 @@ export const STRUCTURED_LEGAL_PATTERNS: { pattern: RegExp; type: EntityType }[] 
   { pattern: PROCESSO_PARTE_PATTERN,    type: 'PERSONA' },
   { pattern: DIFENSORE_PATTERN,         type: 'PERSONA' },
   { pattern: ALLCAPS_NAME_PATTERN,      type: 'PERSONA' },
+  { pattern: LUOGO_NASCITA_PATTERN,     type: 'LUOGO_NASCITA' },
   { pattern: DATA_NASCITA_PATTERN,      type: 'DATA_NASCITA' },
   { pattern: INDIRIZZO_PATTERN_STANDARD, type: 'INDIRIZZO' },
   { pattern: INDIRIZZO_PATTERN_CORSO,   type: 'INDIRIZZO' },

@@ -48,6 +48,7 @@ export type EntityType =
   | 'EMAIL'
   | 'TELEFONO'
   | 'DATA_NASCITA'
+  | 'LUOGO_NASCITA'
   | 'INDIRIZZO'
   | 'NUMERO_DOCUMENTO'
 
