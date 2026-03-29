@@ -79,12 +79,12 @@ export const INDIRIZZO_PATTERN_CORSO =
   /(?:residente(?:\s+attualmente)?|domiciliato|domiciliata|con\s+sede|sito)\s+(?:in\s+)?[Cc]orso\s+[A-ZÀ-Ü][A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+){0,5},?\s*\d+[,\s]*(?:[-–]\s*)?\d{5}/gi
 
 /**
- * Pattern combinato (per retrocompatibilità con codice che usa INDIRIZZO_PATTERN).
- * Unisce STANDARD e CORSO in un'unica regex (via alternanza).
- * @deprecated Preferire INDIRIZZO_PATTERN_STANDARD + INDIRIZZO_PATTERN_CORSO separatamente.
+ * Pattern combinato legacy — non usato nel codice principale.
+ * Mantenuto solo per retrocompatibilità con eventuali test/script esterni.
+ * @deprecated Usare INDIRIZZO_PATTERN_STANDARD + INDIRIZZO_PATTERN_CORSO separatamente.
  */
 export const INDIRIZZO_PATTERN =
-  /(?:residente|domiciliato|domiciliata|con\s+sede)\s+(?:in\s+)?(?:Via|Viale|Corso|Piazza|Largo|Vicolo|Str\.|Loc\.|Fraz\.|V\.le)\s+[A-Za-z\u00C0-\u00FF\s0-9,.']{3,50},?\s*\d{5}/gi
+  /(?:residente(?:\s+attualmente)?|domiciliato|domiciliata|con\s+sede|sito)\s+(?:in\s+)?(?:Via|Viale|Corso|Piazza|Largo|Vicolo|Str\.|Loc\.|Fraz\.|V\.le)\s+[A-Za-z\u00C0-\u00FF\s0-9,.']{3,50}(?:\s*[-–,]\s*\d{5}|\s*,?\s*\d{5})/gi
 
 /** carta d'identità/passaporto/patente + codice documento */
 export const NUMERO_DOCUMENTO_PATTERN =
@@ -101,6 +101,15 @@ export const CONTRATTO_PARTE_PATTERN =
 /** Paziente/CTU/CTP/Perito + nome (perizie) */
 export const PERIZIA_SOGGETTO_PATTERN =
   /(?:Paziente|CTU|C\.T\.U\.|CTP|C\.T\.P\.|Perito|Esaminato|Esaminata)[:\s]+([A-Z][A-Za-z\u00C0-\u00FF']+(?:\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3})/gi
+
+/**
+ * Titolo professionale + nome (min 2 token, iniziali maiuscole obbligatorie).
+ * Copre: Ing., Dott./Dott.ssa, Dr./Dr.ssa, Prof./Prof.ssa, Sig./Sig.ra, Avv., Arch., Geom.
+ * NON usa flag 'i' per evitare che minuscole seguenti al titolo vengano catturate.
+ * NON matcha nome singolo (es. "Ing. Rossi") — troppo ambiguo senza cognome.
+ */
+export const TITOLO_NOME_PATTERN =
+  /(?:Ing\.|Dott\.(?:ssa)?|Dr\.(?:ssa)?|Prof\.(?:ssa)?|Sig\.(?:ra)?|Avv\.|Arch\.|Geom\.)\s+([A-ZÀ-Ü][A-Za-zÀ-ÿ']+(?:\s+[A-ZÀ-Ü][A-Za-zÀ-ÿ']+){1,3})/g
 
 /** Elenco avvocati separati da virgola */
 export const AVV_LISTA_PATTERN =
@@ -124,6 +133,7 @@ export const STRUCTURED_LEGAL_PATTERNS: { pattern: RegExp; type: EntityType }[] 
   { pattern: POLIZZA_PARTE_PATTERN,     type: 'PERSONA' },
   { pattern: CONTRATTO_PARTE_PATTERN,   type: 'PERSONA' },
   { pattern: PERIZIA_SOGGETTO_PATTERN,  type: 'PERSONA' },
+  { pattern: TITOLO_NOME_PATTERN,       type: 'PERSONA' },
 ]
 
 // ─── Step 1 — Pattern strutturati (dati personali formali) ──────────────────
@@ -149,9 +159,9 @@ export const CODICE_FISCALE_PATTERN_STRICT =
 export const PARTITA_IVA_PATTERN =
   /\b(?:P\.?\s?IVA\s*:?\s*)?([0-9]{11})\b/gi
 
-/** IBAN italiano */
+/** IBAN italiano — gestisce sia formato compatto che con spazi ogni 4 char */
 export const IBAN_PATTERN =
-  /\bIT[0-9]{2}[A-Z][0-9]{22}\b/gi
+  /\bIT[0-9]{2}(?:\s?[A-Z0-9]){23}\b/gi
 
 /** Indirizzo email */
 export const EMAIL_PATTERN =

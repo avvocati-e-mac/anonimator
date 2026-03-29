@@ -17,6 +17,7 @@ import {
   POLIZZA_PARTE_PATTERN,
   CONTRATTO_PARTE_PATTERN,
   PERIZIA_SOGGETTO_PATTERN,
+  TITOLO_NOME_PATTERN,
   AVV_LISTA_PATTERN,
   PKI_FIRMA_PATTERN,
 } from '../src/main/services/regexPatterns'
@@ -91,11 +92,22 @@ describe('Regex PARTITA_IVA', () => {
 })
 
 describe('Regex IBAN', () => {
-  it('riconosce IBAN italiano', () => {
-    expect(match(IBAN_PATTERN, 'IBAN: IT60X0542811101000000123456')).toContain('IT60X0542811101000000123456')
+  it('riconosce IBAN italiano compatto (27 char)', () => {
+    expect(match(IBAN_PATTERN, 'IBAN: IT89H0306909606100000117200')).toContain('IT89H0306909606100000117200')
+  })
+  it('riconosce IBAN italiano con spazi ogni 4 char', () => {
+    const m = match(IBAN_PATTERN, 'bonifico su IBAN: IT89 H030 6909 6061 0000 0117 200')
+    expect(m.some(v => v.replace(/\s/g, '') === 'IT89H0306909606100000117200')).toBe(true)
+  })
+  it('riconosce IBAN con spazi (contratto reale)', () => {
+    const m = match(IBAN_PATTERN, 'conto corrente IBAN: IT89 H030 6909 6061 0000 0117 200.')
+    expect(m).toHaveLength(1)
   })
   it('non riconosce IBAN straniero', () => {
     expect(match(IBAN_PATTERN, 'DE89370400440532013000')).toHaveLength(0)
+  })
+  it('non riconosce IT + troppo corto', () => {
+    expect(match(IBAN_PATTERN, 'IT44 non è un iban')).toHaveLength(0)
   })
 })
 
@@ -408,5 +420,40 @@ describe('Pattern B3 fix — NUMERO_DOCUMENTO (spazio nel codice)', () => {
   it('continua a catturare passaporto senza spazio (regressione)', () => {
     const m = match(NUMERO_DOCUMENTO_PATTERN, 'passaporto: YA9876543')
     expect(m.some(v => v === 'YA9876543')).toBe(true)
+  })
+})
+
+describe('Pattern E1 — TITOLO_NOME (professionisti e testimoni con titolo)', () => {
+  it('cattura nome dopo Ing.', () => {
+    const m = match(TITOLO_NOME_PATTERN, 'Testimone: Ing. Stefano Moretti Ricci, nato a Milano')
+    expect(m).toContain('Stefano Moretti Ricci')
+  })
+  it('cattura nome dopo Dott.', () => {
+    const m = match(TITOLO_NOME_PATTERN, '- Dott. Roberto Lamberti Esposito, consulente finanziario')
+    expect(m).toContain('Roberto Lamberti Esposito')
+  })
+  it('cattura nome dopo Sig.ra', () => {
+    const m = match(TITOLO_NOME_PATTERN, '- Sig.ra Anna Maria Colombo, impiegata bancaria')
+    expect(m).toContain('Anna Maria Colombo')
+  })
+  it('cattura nome dopo Dr.', () => {
+    const m = match(TITOLO_NOME_PATTERN, 'Dr. Antonio Barone, specialista in psicologia')
+    expect(m).toContain('Antonio Barone')
+  })
+  it('cattura nome da frase contestuale', () => {
+    const m = match(TITOLO_NOME_PATTERN, 'certificato medico rilasciato dal Dott. Paolo Ferrero')
+    expect(m).toContain('Paolo Ferrero')
+  })
+  it('NON cattura titolo senza nome proprio (seguito da numero/abbreviazione)', () => {
+    const m = match(TITOLO_NOME_PATTERN, 'riferimento Dr. n. 123')
+    expect(m).toHaveLength(0)
+  })
+  it('NON cattura nome singolo senza cognome (troppo ambiguo)', () => {
+    const m = match(TITOLO_NOME_PATTERN, 'Ing. Rossi è presente')
+    expect(m).toHaveLength(0)
+  })
+  it('NON cattura minuscole dopo titolo (Dott. ssa)', () => {
+    const m = match(TITOLO_NOME_PATTERN, 'Dott. ssa incompleto')
+    expect(m).toHaveLength(0)
   })
 })
