@@ -60,6 +60,9 @@ export interface DetectedEntity {
   occurrences: number
   confirmed: boolean // l'utente ha confermato l'anonimizzazione
   fileCount?: number // numero di file in cui appare (usato nel batch review)
+  /** Origine dell'entità — usato internamente nel Main per filtri e boosting.
+   *  Il Renderer riceve questo campo ma non lo usa per la UI. */
+  source?: 'regex' | 'ner' | 'llm' | 'coref' | 'boosted'
 }
 
 // Stato di avanzamento durante il processing

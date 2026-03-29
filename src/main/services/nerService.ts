@@ -24,6 +24,7 @@ import {
   CODICE_FISCALE_PATTERN_LENIENT,
   CODICE_FISCALE_PATTERN_STRICT,
 } from './regexPatterns'
+import { LEGAL_STOP_WORDS } from './legalStopWords'
 
 // Flag per la validazione strict del Codice Fiscale.
 // Default: false — perché l'OCR può distorcere lettere (B→8, O→0),
@@ -206,14 +207,15 @@ async function getNerPipeline(): Promise<NerPipelineFn | null> {
   }
 }
 
-function buildEntity(originalText: string, type: EntityType): DetectedEntity {
+function buildEntity(originalText: string, type: EntityType, source: DetectedEntity['source'] = 'regex'): DetectedEntity {
   return {
     id: `${type}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     type,
     originalText,
     pseudonym: '',
     occurrences: 0,
-    confirmed: type !== 'LUOGO'
+    confirmed: type !== 'LUOGO',
+    source,
   }
 }
 
@@ -386,9 +388,11 @@ export async function analyzeText(
             if (NAME_STOPWORDS.has(cleanedFirstWord)) continue
             if (PKI_NOISE.has(cleaned.toLowerCase())) continue
             if (entityType === 'ORGANIZZAZIONE' && PUBLIC_INSTITUTION_PREFIXES.has(cleanedFirstWord)) continue
+            // Veto filter: entità PERSONA che coincidono esattamente con un ruolo processuale
+            if (entityType === 'PERSONA' && LEGAL_STOP_WORDS.has(cleaned.toLowerCase())) continue
             if (foundTexts.has(cleaned.toLowerCase())) continue
             foundTexts.add(cleaned.toLowerCase())
-            allEntities.push(buildEntity(cleaned, entityType))
+            allEntities.push(buildEntity(cleaned, entityType, 'ner'))
           }
         }
       }
@@ -461,7 +465,7 @@ export async function analyzeText(
             const type: EntityType = /^([A-Z]\.\s*)+$/.test(replacement.trim()) ? 'PERSONA' : 'ORGANIZZAZIONE'
             foundTexts.add(trimmed.toLowerCase())
             const pseudonym = sessionManager.registerLlmPseudonym(trimmed, replacement.trim(), type)
-            allEntities.push({ ...buildEntity(trimmed, type), pseudonym })
+            allEntities.push({ ...buildEntity(trimmed, type, 'llm'), pseudonym })
           }
         }
       }
