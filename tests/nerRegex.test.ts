@@ -1,44 +1,26 @@
 import { describe, it, expect } from 'vitest'
+import {
+  CODICE_FISCALE_PATTERN_LENIENT,
+  PARTITA_IVA_PATTERN,
+  IBAN_PATTERN,
+  EMAIL_PATTERN,
+  TELEFONO_PATTERN,
+  PROCESSO_PARTE_PATTERN,
+  DIFENSORE_PATTERN,
+  ALLCAPS_NAME_PATTERN,
+  DATA_NASCITA_PATTERN,
+  INDIRIZZO_PATTERN_STANDARD,
+  INDIRIZZO_PATTERN_CORSO,
+  NUMERO_DOCUMENTO_PATTERN,
+  POLIZZA_PARTE_PATTERN,
+  CONTRATTO_PARTE_PATTERN,
+  PERIZIA_SOGGETTO_PATTERN,
+  AVV_LISTA_PATTERN,
+  PKI_FIRMA_PATTERN,
+} from '../src/main/services/regexPatterns'
 
 // Testa i pattern regex direttamente — senza caricare il modello NER
 // (il modello BERT richiede un file ~400MB non presente in CI)
-
-const PATTERNS = {
-  CODICE_FISCALE: /\b[A-Z]{6}[0-9]{2}[A-Z][0-9]{2}[A-Z][0-9]{3}[A-Z]\b/gi,
-  PARTITA_IVA: /\b(?:P\.?\s?IVA\s*:?\s*)?([0-9]{11})\b/gi,
-  IBAN: /\bIT[0-9]{2}[A-Z][0-9]{22}\b/gi,
-  EMAIL: /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/gi,
-  TELEFONO: /\b(?:\+39[\s\-]?)?(?:0[0-9]{1,3}[\s\-]?[0-9]{5,8}|3[0-9]{2}[\s\-]?[0-9]{6,7})\b/g,
-  // Nuovi pattern strutturati legali
-  PROCESSO_PARTE: new RegExp(
-    '(?:^|\\n)\\s*(?:ricorrente|resistente|appellante|appellato|intimato|' +
-    'controricorrente|opponente|opposto|attore|convenuto|debitore|creditore|' +
-    'fallito|fallendo|istante|intervenuto)[:\\s,]+' +
-    "([A-ZÀ-Ü][A-ZÀ-Üa-zà-ü']+(?:\\s+[A-ZÀ-Ü][A-ZÀ-Üa-zà-ü']+){1,3})",
-    'gi'
-  ),
-  DIFENSORE: new RegExp(
-    '(?:difeso|difesa|rappresentato|rappresentata|assistito|assistita)\\s+' +
-    "(?:dall?['\\u2019])?(?:avv\\.?|avvocato|procuratore)\\s+" +
-    "([A-Z][A-Za-z\u00C0-\u00FF']+(?:\\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3})",
-    'gi'
-  ),
-  ALLCAPS_NAME: new RegExp(
-    '(?:^|\\n)([A-Z\u00C0-\u00DC][A-Z\u00C0-\u00DC\']{1,25}' +
-    '(?:\\s+[A-Z\u00C0-\u00DC][A-Z\u00C0-\u00DC]{1,25}){1,2})' +
-    '(?:\\s*$|\\s*[+]|\\s*[-\u2013]\\s*(?:$|\\n))',
-    'gm'
-  ),
-  DATA_NASCITA: /(?:nato|nata|n\.)[\s,]+(?:a\s+\S+\s+)?il\s+(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})|(?:data(?:\s+di)?\s+nascita|d\.d\.n\.)[:\s]+(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})/gi,
-  INDIRIZZO: /(?:residente|domiciliato|domiciliata|con\s+sede)\s+(?:in\s+)?(?:Via|Viale|Corso|Piazza|Largo|Vicolo|Str\.|Loc\.|Fraz\.|V\.le)\s+[A-Za-z\u00C0-\u00FF\s0-9,.']{3,50},?\s*\d{5}/gi,
-  NUMERO_DOCUMENTO: /(?:carta(?:\s+d[i']\s*identit[àa])?|passaporto|patente|C\.I\.E?\.?)[\s:,n.°]+([A-Z]{2}[0-9]{5,7}[A-Z]?)|(?:n(?:umero)?\.?\s*doc(?:umento)?[:\s]+)([A-Z]{2}[0-9]{5,7}[A-Z]?)/gi,
-  POLIZZA_PARTE: /(?:Contraente|Assicurato|Assicurata|Beneficiario|Intestatario)[:\s]+([A-Z][A-Za-z\u00C0-\u00FF']+(?:\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3})/gi,
-  CONTRATTO_PARTE: /(?:tra|fra)\s+([A-Z][A-Za-z\u00C0-\u00FF']+(?:\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3}),\s+(?:nato|nata|residente|domiciliato|codice\s+fiscale|con\s+sede)/gi,
-  PERIZIA_SOGGETTO: /(?:Paziente|CTU|C\.T\.U\.|CTP|C\.T\.P\.|Perito|Esaminato|Esaminata)[:\s]+([A-Z][A-Za-z\u00C0-\u00FF']+(?:\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3})/gi,
-  // Blocco D
-  AVV_LISTA: /avvocat[oi]\s+((?:[A-Z][A-Za-z\u00C0-\u00FF']+(?:\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3})(?:\s*,\s*(?:[A-Z][A-Za-z\u00C0-\u00FF']+(?:\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3}))*)/gi,
-  PKI_FIRMA: /Firmato\s+Da:\s+([A-Z][A-Z\u00C0-\u00DC]+\s+[A-Z][A-Z\u00C0-\u00DC]+)\s+Emesso/gi,
-}
 
 function match(pattern: RegExp, text: string): string[] {
   pattern.lastIndex = 0
@@ -51,49 +33,53 @@ function match(pattern: RegExp, text: string): string[] {
   })
 }
 
-describe('Regex CODICE_FISCALE', () => {
+describe('Regex CODICE_FISCALE (lenient)', () => {
   it('riconosce CF valido', () => {
-    expect(match(PATTERNS.CODICE_FISCALE, 'il sig. RSSMRA80A01H501U è nato a Roma')).toContain('RSSMRA80A01H501U')
+    expect(match(CODICE_FISCALE_PATTERN_LENIENT, 'il sig. RSSMRA80A01H501U è nato a Roma')).toContain('RSSMRA80A01H501U')
   })
   it('non riconosce sequenze troppo corte', () => {
-    expect(match(PATTERNS.CODICE_FISCALE, 'ABC123')).toHaveLength(0)
+    expect(match(CODICE_FISCALE_PATTERN_LENIENT, 'ABC123')).toHaveLength(0)
+  })
+  it('riconosce CF con lettera mese invalida (pattern lenient)', () => {
+    // 'Q' non è una lettera di mese valida, ma il pattern lenient lo accetta
+    expect(match(CODICE_FISCALE_PATTERN_LENIENT, 'RSSMRQ80A01H501U')).toContain('RSSMRQ80A01H501U')
   })
 })
 
 describe('Regex PARTITA_IVA', () => {
   it('riconosce P.IVA con prefisso', () => {
-    const m = match(PATTERNS.PARTITA_IVA, 'P.IVA: 12345678901')
+    const m = match(PARTITA_IVA_PATTERN, 'P.IVA: 12345678901')
     expect(m).toContain('12345678901')
   })
   it('riconosce 11 cifre bare', () => {
-    expect(match(PATTERNS.PARTITA_IVA, 'codice 12345678901 contribuente')).toContain('12345678901')
+    expect(match(PARTITA_IVA_PATTERN, 'codice 12345678901 contribuente')).toContain('12345678901')
   })
 })
 
 describe('Regex IBAN', () => {
   it('riconosce IBAN italiano', () => {
-    expect(match(PATTERNS.IBAN, 'IBAN: IT60X0542811101000000123456')).toContain('IT60X0542811101000000123456')
+    expect(match(IBAN_PATTERN, 'IBAN: IT60X0542811101000000123456')).toContain('IT60X0542811101000000123456')
   })
   it('non riconosce IBAN straniero', () => {
-    expect(match(PATTERNS.IBAN, 'DE89370400440532013000')).toHaveLength(0)
+    expect(match(IBAN_PATTERN, 'DE89370400440532013000')).toHaveLength(0)
   })
 })
 
 describe('Regex EMAIL', () => {
   it('riconosce email standard', () => {
-    expect(match(PATTERNS.EMAIL, 'contattare mario.rossi@studio-legale.it per info')).toContain('mario.rossi@studio-legale.it')
+    expect(match(EMAIL_PATTERN, 'contattare mario.rossi@studio-legale.it per info')).toContain('mario.rossi@studio-legale.it')
   })
 })
 
 describe('Regex TELEFONO', () => {
   it('riconosce cellulare italiano', () => {
-    expect(match(PATTERNS.TELEFONO, 'tel. 333 1234567')).toHaveLength(1)
+    expect(match(TELEFONO_PATTERN, 'tel. 333 1234567')).toHaveLength(1)
   })
   it('riconosce fisso con prefisso', () => {
-    expect(match(PATTERNS.TELEFONO, 'ufficio: 06 12345678')).toHaveLength(1)
+    expect(match(TELEFONO_PATTERN, 'ufficio: 06 12345678')).toHaveLength(1)
   })
   it('riconosce +39', () => {
-    expect(match(PATTERNS.TELEFONO, '+39 347 1234567')).toHaveLength(1)
+    expect(match(TELEFONO_PATTERN, '+39 347 1234567')).toHaveLength(1)
   })
 })
 
@@ -101,128 +87,149 @@ describe('Regex TELEFONO', () => {
 
 describe('Pattern A1 — PROCESSO_PARTE', () => {
   it('cattura nome dopo "ricorrente:"', () => {
-    const m = match(PATTERNS.PROCESSO_PARTE, '\nricorrente: Lasagni Barbara')
+    const m = match(PROCESSO_PARTE_PATTERN, '\nricorrente: Lasagni Barbara')
     expect(m).toContain('Lasagni Barbara')
   })
   it('cattura nome dopo "appellante,"', () => {
-    const m = match(PATTERNS.PROCESSO_PARTE, '\nappellante, Mario Rossi')
+    const m = match(PROCESSO_PARTE_PATTERN, '\nappellante, Mario Rossi')
     expect(m).toContain('Mario Rossi')
   })
   it('non cattura parole singole', () => {
-    const m = match(PATTERNS.PROCESSO_PARTE, '\nricorrente: Mario')
+    const m = match(PROCESSO_PARTE_PATTERN, '\nricorrente: Mario')
     expect(m).toHaveLength(0)
   })
 })
 
 describe('Pattern A2 — DIFENSORE', () => {
   it("cattura nome dopo \"difesa dall'avv.\"", () => {
-    const m = match(PATTERNS.DIFENSORE, "difesa dall'avv. Giovanni Ferrari")
+    const m = match(DIFENSORE_PATTERN, "difesa dall'avv. Giovanni Ferrari")
     expect(m).toContain('Giovanni Ferrari')
   })
   it('cattura nome dopo "assistito avvocato"', () => {
-    const m = match(PATTERNS.DIFENSORE, 'assistito avvocato Carla Bianchi')
+    const m = match(DIFENSORE_PATTERN, 'assistito avvocato Carla Bianchi')
     expect(m).toContain('Carla Bianchi')
   })
   it('non cattura senza keyword difensore', () => {
-    const m = match(PATTERNS.DIFENSORE, 'avv. Giovanni Ferrari')
+    const m = match(DIFENSORE_PATTERN, 'avv. Giovanni Ferrari')
     expect(m).toHaveLength(0)
   })
 })
 
 describe('Pattern A3 — ALLCAPS_NAME (tutto maiuscolo su riga)', () => {
   it('cattura nome tutto-maiuscolo su riga propria', () => {
-    const m = match(PATTERNS.ALLCAPS_NAME, '\nLASAGNI BARBARA\n')
+    const m = match(ALLCAPS_NAME_PATTERN, '\nLASAGNI BARBARA\n')
     expect(m).toContain('LASAGNI BARBARA')
   })
   it('cattura nome tutto-maiuscolo seguito da trattino', () => {
-    const m = match(PATTERNS.ALLCAPS_NAME, '\nROSSI MARIO -\n')
+    const m = match(ALLCAPS_NAME_PATTERN, '\nROSSI MARIO -\n')
     expect(m).toContain('ROSSI MARIO')
   })
   it('non cattura singole parole maiuscole', () => {
     // Solo 1 token: deve avere 2-3 token per essere un nome
-    const m = match(PATTERNS.ALLCAPS_NAME, '\nROSSI\n')
+    const m = match(ALLCAPS_NAME_PATTERN, '\nROSSI\n')
     expect(m).toHaveLength(0)
   })
 })
 
 describe('Pattern B1 — DATA_NASCITA', () => {
   it('cattura data dopo "nato il"', () => {
-    const m = match(PATTERNS.DATA_NASCITA, 'nato il 15/03/1978 a Roma')
+    const m = match(DATA_NASCITA_PATTERN, 'nato il 15/03/1978 a Roma')
     expect(m.some(v => v === '15/03/1978')).toBe(true)
   })
   it('cattura data dopo "Data di nascita:"', () => {
-    const m = match(PATTERNS.DATA_NASCITA, 'Data di nascita: 15.03.1978')
+    const m = match(DATA_NASCITA_PATTERN, 'Data di nascita: 15.03.1978')
     expect(m.some(v => v === '15.03.1978')).toBe(true)
   })
   it('non cattura testo senza contesto data-nascita', () => {
-    const m = match(PATTERNS.DATA_NASCITA, 'il documento del 15/03/1978')
+    const m = match(DATA_NASCITA_PATTERN, 'il documento del 15/03/1978')
     expect(m).toHaveLength(0)
   })
 })
 
-describe('Pattern B2 — INDIRIZZO', () => {
+describe('Pattern B2 — INDIRIZZO_STANDARD (Via/Viale/Piazza/ecc.)', () => {
   it('cattura indirizzo con CAP dopo "residente in"', () => {
-    const m = match(PATTERNS.INDIRIZZO, 'residente in Via Roma 15, 00100')
+    const m = match(INDIRIZZO_PATTERN_STANDARD, 'residente in Via Roma 15, 00100')
     expect(m).toHaveLength(1)
   })
-  it('cattura indirizzo dopo "domiciliato in Corso"', () => {
-    const m = match(PATTERNS.INDIRIZZO, 'domiciliato in Corso Garibaldi 3, 20100')
+  it('cattura indirizzo con Piazza', () => {
+    const m = match(INDIRIZZO_PATTERN_STANDARD, 'domiciliato in Piazza Garibaldi 3, 20100')
     expect(m).toHaveLength(1)
   })
   it('non cattura indirizzo senza CAP', () => {
-    const m = match(PATTERNS.INDIRIZZO, 'residente in Via Roma 15')
+    const m = match(INDIRIZZO_PATTERN_STANDARD, 'residente in Via Roma 15')
+    expect(m).toHaveLength(0)
+  })
+  it('non cattura Corso (delegato a INDIRIZZO_PATTERN_CORSO)', () => {
+    // INDIRIZZO_PATTERN_STANDARD non include "Corso" — evita falsi positivi
+    const m = match(INDIRIZZO_PATTERN_STANDARD, 'nel corso di indagini, residente in Via Roma 15, 00100')
+    // Deve trovare Via Roma ma non "corso di indagini"
+    expect(m).toHaveLength(1)
+  })
+})
+
+describe('Pattern B2b — INDIRIZZO_CORSO', () => {
+  it('cattura "Corso Roma 15" come indirizzo dopo "residente in"', () => {
+    const m = match(INDIRIZZO_PATTERN_CORSO, 'residente in Corso Roma 15, 00100')
+    expect(m).toHaveLength(1)
+  })
+  it('NON cattura "corso di indagini" senza contesto residenza', () => {
+    const m = match(INDIRIZZO_PATTERN_CORSO, 'nel corso di indagini')
+    expect(m).toHaveLength(0)
+  })
+  it('NON cattura "corso di istruzione"', () => {
+    const m = match(INDIRIZZO_PATTERN_CORSO, 'corso di istruzione')
     expect(m).toHaveLength(0)
   })
 })
 
 describe('Pattern B3 — NUMERO_DOCUMENTO', () => {
   it("cattura numero carta d'identità", () => {
-    const m = match(PATTERNS.NUMERO_DOCUMENTO, "carta d'identità n. AB1234567")
+    const m = match(NUMERO_DOCUMENTO_PATTERN, "carta d'identità n. AB1234567")
     expect(m.some(v => v === 'AB1234567')).toBe(true)
   })
   it('cattura numero passaporto', () => {
-    const m = match(PATTERNS.NUMERO_DOCUMENTO, 'passaporto: YA9876543')
+    const m = match(NUMERO_DOCUMENTO_PATTERN, 'passaporto: YA9876543')
     expect(m.some(v => v === 'YA9876543')).toBe(true)
   })
   it('non cattura sequenze senza contesto documento', () => {
-    const m = match(PATTERNS.NUMERO_DOCUMENTO, 'codice AB1234567')
+    const m = match(NUMERO_DOCUMENTO_PATTERN, 'codice AB1234567')
     expect(m).toHaveLength(0)
   })
 })
 
 describe('Pattern C1 — POLIZZA_PARTE', () => {
   it('cattura nome dopo "Contraente:"', () => {
-    const m = match(PATTERNS.POLIZZA_PARTE, 'Contraente: Mario Rossi')
+    const m = match(POLIZZA_PARTE_PATTERN, 'Contraente: Mario Rossi')
     expect(m).toContain('Mario Rossi')
   })
   it('cattura nome dopo "Assicurato:"', () => {
-    const m = match(PATTERNS.POLIZZA_PARTE, 'Assicurato: Carla Ferrari')
+    const m = match(POLIZZA_PARTE_PATTERN, 'Assicurato: Carla Ferrari')
     expect(m).toContain('Carla Ferrari')
   })
 })
 
 describe('Pattern C2 — CONTRATTO_PARTE', () => {
   it('cattura nome in formula contrattuale "tra X, nato"', () => {
-    const m = match(PATTERNS.CONTRATTO_PARTE, 'tra Mario Rossi, nato il 1980')
+    const m = match(CONTRATTO_PARTE_PATTERN, 'tra Mario Rossi, nato il 1980')
     expect(m).toContain('Mario Rossi')
   })
   it('cattura nome in formula "fra X, residente"', () => {
-    const m = match(PATTERNS.CONTRATTO_PARTE, 'fra Luca Bianchi, residente a Milano')
+    const m = match(CONTRATTO_PARTE_PATTERN, 'fra Luca Bianchi, residente a Milano')
     expect(m).toContain('Luca Bianchi')
   })
   it('non cattura se manca la keyword post-virgola', () => {
-    const m = match(PATTERNS.CONTRATTO_PARTE, 'tra Mario Rossi, un avvocato')
+    const m = match(CONTRATTO_PARTE_PATTERN, 'tra Mario Rossi, un avvocato')
     expect(m).toHaveLength(0)
   })
 })
 
 describe('Pattern C3 — PERIZIA_SOGGETTO', () => {
   it('cattura nome dopo "Paziente:"', () => {
-    const m = match(PATTERNS.PERIZIA_SOGGETTO, 'Paziente: Giuseppe Verdi')
+    const m = match(PERIZIA_SOGGETTO_PATTERN, 'Paziente: Giuseppe Verdi')
     expect(m).toContain('Giuseppe Verdi')
   })
   it('cattura nome dopo "CTU:"', () => {
-    const m = match(PATTERNS.PERIZIA_SOGGETTO, 'CTU: Anna Maria Conti')
+    const m = match(PERIZIA_SOGGETTO_PATTERN, 'CTU: Anna Maria Conti')
     expect(m).toContain('Anna Maria Conti')
   })
 })
@@ -231,7 +238,7 @@ describe('Pattern C3 — PERIZIA_SOGGETTO', () => {
 
 /** Estrae nomi multipli da un blocco AVV_LISTA (split su virgola) */
 function matchAvvLista(text: string): string[] {
-  const p = PATTERNS.AVV_LISTA
+  const p = AVV_LISTA_PATTERN
   p.lastIndex = 0
   const results: string[] = []
   for (const m of text.matchAll(p)) {
@@ -266,16 +273,16 @@ describe('Pattern D1 — AVV_LISTA (avvocati in lista)', () => {
 describe('Pattern D2 — PKI_FIRMA (firma digitale)', () => {
   it('cattura firmatari da riga PKI reale', () => {
     const text = 'Firmato Da: PASSINETTI LUISA Emesso Da: ARUBAPEC S.P.A. NG CA 3 - Firmato Da: BERTUZZI MARIO Emesso Da: ARUBAPEC'
-    const m = match(PATTERNS.PKI_FIRMA, text)
+    const m = match(PKI_FIRMA_PATTERN, text)
     expect(m).toContain('PASSINETTI LUISA')
     expect(m).toContain('BERTUZZI MARIO')
   })
   it('cattura singolo firmatario', () => {
-    const m = match(PATTERNS.PKI_FIRMA, 'Firmato Da: ROSSI MARIO Emesso Da: CA CERT')
+    const m = match(PKI_FIRMA_PATTERN, 'Firmato Da: ROSSI MARIO Emesso Da: CA CERT')
     expect(m).toContain('ROSSI MARIO')
   })
   it('non cattura senza keyword "Emesso"', () => {
-    const m = match(PATTERNS.PKI_FIRMA, 'Firmato Da: ROSSI MARIO')
+    const m = match(PKI_FIRMA_PATTERN, 'Firmato Da: ROSSI MARIO')
     expect(m).toHaveLength(0)
   })
 })

@@ -15,6 +15,13 @@ import { DEFAULT_LLM_CONFIG } from '@shared/types'
 import { inferChunkSize } from '@shared/modelSizeUtils'
 import { detectNamesWithLlm } from './llmService'
 import { sessionManager } from './sessionManager'
+import {
+  SENTENCE_HEADER_PATTERN,
+  STRUCTURED_LEGAL_PATTERNS,
+  AVV_LISTA_PATTERN,
+  PKI_FIRMA_PATTERN,
+  REGEX_PATTERNS,
+} from './regexPatterns'
 
 let _pipelineFactory: TransformersPipelineFn | null = null
 let _transformersLoadAttempted = false
@@ -104,67 +111,6 @@ const ALLCAPS_BLOCKLIST = new Set([
 
 const SCORE_THRESHOLDS: Record<string, number> = { PER: 0.50, ORG: 0.60, LOC: 0.65 }
 
-const JUDICIAL_ROLES =
-  'presidente|consigliere|rel\\.?\\s*consigliere|giudice|sostituto\\s+procuratore|' +
-  'procuratore|cancelliere|segretario|relatore|estensore|componente'
-
-const SENTENCE_HEADER_PATTERN = new RegExp(
-  '(?:(?:dott\\.?(?:ssa)?|avv\\.?|prof\\.?|ing\\.?)\\s+)?' +
-  "([A-ZÀ-Ü][A-ZÀ-Üa-zà-ü]*'?[A-ZÀ-Üa-zà-ü]*(?:\\s+[A-ZÀ-Ü][A-ZÀ-Üa-zà-ü']+){1,3})" +
-  '\\s*[-–]\\s*(?:' + JUDICIAL_ROLES + ')\\s*[-–]',
-  'gi'
-)
-
-const REGEX_PATTERNS: { type: EntityType; pattern: RegExp }[] = [
-  { type: 'CODICE_FISCALE', pattern: /\b[A-Z]{6}[0-9]{2}[A-Z][0-9]{2}[A-Z][0-9]{3}[A-Z]\b/gi },
-  { type: 'PARTITA_IVA', pattern: /\b(?:P\.?\s?IVA\s*:?\s*)?([0-9]{11})\b/gi },
-  { type: 'IBAN', pattern: /\bIT[0-9]{2}[A-Z][0-9]{22}\b/gi },
-  { type: 'EMAIL', pattern: /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/gi },
-  { type: 'TELEFONO', pattern: /\b(?:\+39[\s\-]?)?(?:0[0-9]{1,3}[\s\-]?[0-9]{5,8}|3[0-9]{2}[\s\-]?[0-9]{6,7})\b/g }
-]
-
-const PROCESSO_PARTE_PATTERN = new RegExp(
-  '(?:^|\\n)\\s*(?:ricorrente|resistente|appellante|appellato|intimato|' +
-  'controricorrente|opponente|opposto|attore|convenuto|debitore|creditore|' +
-  'fallito|fallendo|istante|intervenuto)[:\\s,]+' +
-  "([A-ZÀ-Ü][A-ZÀ-Üa-zà-ü']+(?:\\s+[A-ZÀ-Ü][A-ZÀ-Üa-zà-ü']+){1,3})",
-  'gi'
-)
-
-const DIFENSORE_PATTERN = new RegExp(
-  '(?:difeso|difesa|rappresentato|rappresentata|assistito|assistita)\\s+' +
-  "(?:dall?['\\u2019])?(?:avv\\.?|avvocato|procuratore)\\s+" +
-  "([A-Z][A-Za-z\u00C0-\u00FF']+(?:\\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3})",
-  'gi'
-)
-
-const ALLCAPS_NAME_PATTERN = new RegExp(
-  '(?:^|\\n)([A-Z\u00C0-\u00DC][A-Z\u00C0-\u00DC\']{1,25}' +
-  '(?:\\s+[A-Z\u00C0-\u00DC][A-Z\u00C0-\u00DC]{1,25}){1,2})' +
-  '(?:\\s*$|\\s*[+]|\\s*[-\u2013]\\s*(?:$|\\n))',
-  'gm'
-)
-
-const DATA_NASCITA_PATTERN = /(?:nato|nata|n\.)[\s,]+(?:a\s+\S+\s+)?il\s+(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})|(?:data(?:\s+di)?\s+nascita|d\.d\.n\.)[:\s]+(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})/gi
-const INDIRIZZO_PATTERN = /(?:residente|domiciliato|domiciliata|con\s+sede)\s+(?:in\s+)?(?:Via|Viale|Corso|Piazza|Largo|Vicolo|Str\.|Loc\.|Fraz\.|V\.le)\s+[A-Za-z\u00C0-\u00FF\s0-9,.']{3,50},?\s*\d{5}/gi
-const NUMERO_DOCUMENTO_PATTERN = /(?:carta(?:\s+d[i']\s*identit[àa])?|passaporto|patente|C\.I\.E?\.?)[\s:,n.°]+([A-Z]{2}[0-9]{5,7}[A-Z]?)|(?:n(?:umero)?\.?\s*doc(?:umento)?[:\s]+)([A-Z]{2}[0-9]{5,7}[A-Z]?)/gi
-const POLIZZA_PARTE_PATTERN = /(?:Contraente|Assicurato|Assicurata|Beneficiario|Intestatario)[:\s]+([A-Z][A-Za-z\u00C0-\u00FF']+(?:\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3})/gi
-const CONTRATTO_PARTE_PATTERN = /(?:tra|fra)\s+([A-Z][A-Za-z\u00C0-\u00FF']+(?:\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3}),\s+(?:nato|nata|residente|domiciliato|codice\s+fiscale|con\s+sede)/gi
-const PERIZIA_SOGGETTO_PATTERN = /(?:Paziente|CTU|C\.T\.U\.|CTP|C\.T\.P\.|Perito|Esaminato|Esaminata)[:\s]+([A-Z][A-Za-z\u00C0-\u00FF']+(?:\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3})/gi
-const AVV_LISTA_PATTERN = /avvocat[oi]\s+((?:[A-Z][A-Za-z\u00C0-\u00FF']+(?:\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3})(?:\s*,\s*(?:[A-Z][A-Za-z\u00C0-\u00FF']+(?:\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3}))*)/gi
-const PKI_FIRMA_PATTERN = /Firmato\s+Da:\s+([A-Z][A-Z\u00C0-\u00DC]+\s+[A-Z][A-Z\u00C0-\u00DC]+)\s+Emesso/gi
-
-const STRUCTURED_LEGAL_PATTERNS: { pattern: RegExp; type: EntityType }[] = [
-  { pattern: PROCESSO_PARTE_PATTERN,   type: 'PERSONA' },
-  { pattern: DIFENSORE_PATTERN,        type: 'PERSONA' },
-  { pattern: ALLCAPS_NAME_PATTERN,     type: 'PERSONA' },
-  { pattern: DATA_NASCITA_PATTERN,     type: 'DATA_NASCITA' },
-  { pattern: INDIRIZZO_PATTERN,        type: 'INDIRIZZO' },
-  { pattern: NUMERO_DOCUMENTO_PATTERN, type: 'NUMERO_DOCUMENTO' },
-  { pattern: POLIZZA_PARTE_PATTERN,    type: 'PERSONA' },
-  { pattern: CONTRATTO_PARTE_PATTERN,  type: 'PERSONA' },
-  { pattern: PERIZIA_SOGGETTO_PATTERN, type: 'PERSONA' },
-]
 
 function isAllCaps(text: string): boolean {
   return /^[A-Z\u00C0-\u00DC\s']+$/.test(text)
