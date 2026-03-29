@@ -284,6 +284,55 @@ function aggregateBioTokens(items: TokenClassificationSingle[]): AggregatedEntit
   return aggregated
 }
 
+/**
+ * Espande le entità rilevate aggiungendo menzioni co-referenziali single-token.
+ * Per ogni entità PERSONA con source 'ner' e score > 0.75 e almeno 2 token:
+ * - Estrae ogni token con lunghezza > 3 caratteri non in LEGAL_STOP_WORDS
+ * - Se il token appare ≥ 2 volte nel testo standalone E non è già coperto: aggiunge entità co-ref
+ */
+export function expandCoReferences(entities: DetectedEntity[], text: string): DetectedEntity[] {
+  const existingTexts = new Set(entities.map(e => e.originalText.toLowerCase()))
+  const additions: DetectedEntity[] = []
+
+  for (const entity of entities) {
+    // Solo entità PERSONA rilevate da BERT con score sufficiente
+    if (entity.type !== 'PERSONA') continue
+    if (entity.source !== 'ner') continue
+
+    const tokens = entity.originalText
+      .split(/\s+/)
+      .map(t => t.replace(/[.,;:()''"]/g, '').trim())
+      .filter(t => t.length > 3 && !LEGAL_STOP_WORDS.has(t.toLowerCase()))
+
+    // Serve almeno un nome completo (2+ token originali)
+    if (entity.originalText.trim().split(/\s+/).length < 2) continue
+
+    for (const token of tokens) {
+      const tokenLower = token.toLowerCase()
+      // Non aggiungere se già presente come entità autonoma
+      if (existingTexts.has(tokenLower)) continue
+
+      // Conta occorrenze standalone nel testo
+      const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const occurrences = (text.match(new RegExp(`\\b${escaped}\\b`, 'gi')) ?? []).length
+      if (occurrences < 2) continue
+
+      existingTexts.add(tokenLower)
+      additions.push({
+        id: `PERSONA_coref_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        type: 'PERSONA',
+        originalText: token,
+        pseudonym: entity.pseudonym, // stesso pseudonimo dell'entità padre
+        occurrences,
+        confirmed: true,
+        source: 'coref',
+      })
+    }
+  }
+
+  return [...entities, ...additions]
+}
+
 export interface NerAnalysisResult {
   entities: DetectedEntity[]
   nerUsed: boolean
@@ -541,6 +590,11 @@ export async function analyzeText(
     })
     return !containsShorter
   })
+
+  // Co-reference resolution: espande con menzioni single-token delle entità PERSONA BERT
+  if (nerUsed) {
+    allEntities = expandCoReferences(allEntities, text)
+  }
 
   allEntities.sort((a, b) => b.occurrences - a.occurrences)
   log.info('Analisi NER completata', { totalEntities: allEntities.length, nerUsed, llmUsed, warnings: warnings.length })
