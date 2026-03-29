@@ -7,7 +7,7 @@ import https from 'https'
 import crypto from 'crypto'
 import { IPC_CHANNELS } from '@shared/types'
 import type { EntityDictionaryFile } from '@shared/types'
-import { analyzeText, getModelPath, getModelDownloadPath, getTessdataPath, getTessdataDownloadPath, resetNerPipeline } from './services/nerService'
+import { analyzeText, getModelPath, getModelDownloadPath, getTessdataPath, getTessdataDownloadPath, resetNerPipeline, clearNerChunkCache } from './services/nerService'
 import { sessionManager } from './services/sessionManager'
 import { settingsManager } from './services/settingsManager'
 import { testLlmConnection, listLlmModels, SYSTEM_PROMPT_IT, SYSTEM_PROMPT_EN } from './services/llmService'
@@ -231,6 +231,7 @@ export function registerIpcHandlers(): void {
   // Handler: reset sessione
   ipcMain.handle(IPC_CHANNELS.SESSION_RESET, async () => {
     sessionManager.reset()
+    clearNerChunkCache()
     log.info('Sessione resettata', sessionManager.getDictionaryStats())
     return { status: 'ok' }
   })

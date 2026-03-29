@@ -86,11 +86,41 @@ async function tryLoadTransformers(): Promise<TransformersPipelineFn | null> {
   }
 }
 
+// ─── Cache NER per chunk identici in sessioni multi-documento ───────────────
+// Chiave: SHA-256 del testo del chunk (hash — il testo in chiaro non è recuperabile).
+// Massimo 200 entry: LRU semplice (cancella la più vecchia se piena).
+// La cache è in RAM — viene persa al riavvio dell'app. Non persistere su disco.
+const nerChunkCache = new Map<string, DetectedEntity[]>()
+const NER_CACHE_MAX_SIZE = 200
+
+function getCachedChunkEntities(chunkText: string): DetectedEntity[] | undefined {
+  const crypto = require('crypto') as typeof import('crypto')
+  const hash = crypto.createHash('sha256').update(chunkText).digest('hex')
+  return nerChunkCache.get(hash)
+}
+
+function setCachedChunkEntities(chunkText: string, entities: DetectedEntity[]): void {
+  const crypto = require('crypto') as typeof import('crypto')
+  const hash = crypto.createHash('sha256').update(chunkText).digest('hex')
+  if (nerChunkCache.size >= NER_CACHE_MAX_SIZE) {
+    // LRU semplice: cancella la prima entry (la più vecchia)
+    const firstKey = nerChunkCache.keys().next().value
+    if (firstKey !== undefined) nerChunkCache.delete(firstKey)
+  }
+  nerChunkCache.set(hash, entities)
+}
+
+export function clearNerChunkCache(): void {
+  nerChunkCache.clear()
+  log.info('Cache chunk NER svuotata', { previousSize: nerChunkCache.size })
+}
+
 export function resetNerPipeline(): void {
   nerPipeline = null
   _pipelineFactory = null
   _transformersLoadAttempted = false
   modelLoadFailed = false
+  clearNerChunkCache()
   log.info('Pipeline NER resettata')
 }
 
@@ -457,36 +487,63 @@ export async function analyzeText(
       // Entità BERT sotto soglia (0.35–threshold) accumulate per il boost
       const bertLowScore: DetectedEntity[] = []
 
+      // Cattura il riferimento non-null al pipe per la closure
+      const pipeNonNull: NerPipelineFn = pipe
+
+      // Processa chunk con cache: se il chunk è già stato visto in questa sessione,
+      // riusa le entità cached senza invocare il modello BERT.
+      async function processChunk(chunk: string): Promise<{ aboveThreshold: DetectedEntity[]; belowThreshold: DetectedEntity[] }> {
+        const cached = getCachedChunkEntities(chunk)
+        if (cached) {
+          return { aboveThreshold: cached, belowThreshold: [] }
+        }
+
+        const raw = await pipeNonNull(chunk)
+        const flat: TokenClassificationSingle[] = Array.isArray(raw[0])
+          ? (raw as TokenClassificationOutput[]).flat()
+          : (raw as TokenClassificationOutput)
+        const aggregated = aggregateBioTokens(flat)
+
+        const aboveThreshold: DetectedEntity[] = []
+        const belowThreshold: DetectedEntity[] = []
+
+        for (const { word, label, score } of aggregated) {
+          const threshold = SCORE_THRESHOLDS[label] ?? 0.50
+          const entityType = LABEL_TO_ENTITY_TYPE[label]
+          if (!entityType) continue
+          const cleaned = word.trim().replace(/^#+/, '')
+          if (cleaned.length < 3) continue
+          if (/^[.\s]/.test(cleaned)) continue
+          const cleanedFirstWord = cleaned.toLowerCase().split(/\s+/)[0]
+          if (NAME_STOPWORDS.has(cleanedFirstWord)) continue
+          if (PKI_NOISE.has(cleaned.toLowerCase())) continue
+          if (entityType === 'ORGANIZZAZIONE' && PUBLIC_INSTITUTION_PREFIXES.has(cleanedFirstWord)) continue
+          if (entityType === 'PERSONA' && LEGAL_STOP_WORDS.has(cleaned.toLowerCase())) continue
+
+          if (score >= threshold) {
+            aboveThreshold.push(buildEntity(cleaned, entityType, 'ner'))
+          } else if (score >= BOOST_MIN_SCORE) {
+            belowThreshold.push(buildEntity(cleaned, entityType, 'ner'))
+          }
+        }
+
+        // Salva in cache solo le entità sopra soglia (deterministiche)
+        setCachedChunkEntities(chunk, aboveThreshold)
+        return { aboveThreshold, belowThreshold }
+      }
+
       for (let i = 0; i < chunks.length; i += BATCH) {
         const batch = chunks.slice(i, i + BATCH)
-        const results = await Promise.all(batch.map((chunk) => pipe(chunk)))
-        for (const raw of results) {
-          const flat: TokenClassificationSingle[] = Array.isArray(raw[0])
-            ? (raw as TokenClassificationOutput[]).flat()
-            : (raw as TokenClassificationOutput)
-          const aggregated = aggregateBioTokens(flat)
-          for (const { word, label, score } of aggregated) {
-            const threshold = SCORE_THRESHOLDS[label] ?? 0.50
-            const entityType = LABEL_TO_ENTITY_TYPE[label]
-            if (!entityType) continue
-            const cleaned = word.trim().replace(/^#+/, '')
-            if (cleaned.length < 3) continue
-            if (/^[.\s]/.test(cleaned)) continue
-            const cleanedFirstWord = cleaned.toLowerCase().split(/\s+/)[0]
-            if (NAME_STOPWORDS.has(cleanedFirstWord)) continue
-            if (PKI_NOISE.has(cleaned.toLowerCase())) continue
-            if (entityType === 'ORGANIZZAZIONE' && PUBLIC_INSTITUTION_PREFIXES.has(cleanedFirstWord)) continue
-            if (entityType === 'PERSONA' && LEGAL_STOP_WORDS.has(cleaned.toLowerCase())) continue
-
-            if (score >= threshold) {
-              if (foundTexts.has(cleaned.toLowerCase())) continue
-              foundTexts.add(cleaned.toLowerCase())
-              allEntities.push(buildEntity(cleaned, entityType, 'ner'))
-            } else if (score >= BOOST_MIN_SCORE) {
-              // Sotto soglia ma con segnale residuo: candidato per boost
-              if (!foundTexts.has(cleaned.toLowerCase())) {
-                bertLowScore.push(buildEntity(cleaned, entityType, 'ner'))
-              }
+        const results = await Promise.all(batch.map(processChunk))
+        for (const { aboveThreshold, belowThreshold } of results) {
+          for (const entity of aboveThreshold) {
+            if (foundTexts.has(entity.originalText.toLowerCase())) continue
+            foundTexts.add(entity.originalText.toLowerCase())
+            allEntities.push(entity)
+          }
+          for (const entity of belowThreshold) {
+            if (!foundTexts.has(entity.originalText.toLowerCase())) {
+              bertLowScore.push(entity)
             }
           }
         }
