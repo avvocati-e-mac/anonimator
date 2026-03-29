@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   CODICE_FISCALE_PATTERN_LENIENT,
+  CODICE_FISCALE_PATTERN_STRICT,
   PARTITA_IVA_PATTERN,
   IBAN_PATTERN,
   EMAIL_PATTERN,
@@ -40,9 +41,41 @@ describe('Regex CODICE_FISCALE (lenient)', () => {
   it('non riconosce sequenze troppo corte', () => {
     expect(match(CODICE_FISCALE_PATTERN_LENIENT, 'ABC123')).toHaveLength(0)
   })
-  it('riconosce CF con lettera mese invalida (pattern lenient)', () => {
-    // 'Q' non è una lettera di mese valida, ma il pattern lenient lo accetta
-    expect(match(CODICE_FISCALE_PATTERN_LENIENT, 'RSSMRQ80A01H501U')).toContain('RSSMRQ80A01H501U')
+  it('riconosce CF con lettera mese invalida nella posizione 9 (pattern lenient)', () => {
+    // RSSMRA80Q01H501U — posizione 9 (mese) = Q, invalida, ma lenient lo accetta
+    expect(match(CODICE_FISCALE_PATTERN_LENIENT, 'RSSMRA80Q01H501U')).toContain('RSSMRA80Q01H501U')
+  })
+})
+
+// Helper per testare entrambi i pattern CF
+function matchesCF(cf: string, strict: boolean): boolean {
+  const pattern = strict ? CODICE_FISCALE_PATTERN_STRICT : CODICE_FISCALE_PATTERN_LENIENT
+  pattern.lastIndex = 0
+  return pattern.test(cf)
+}
+
+describe('Regex CODICE_FISCALE strict vs lenient', () => {
+  it('CF valido matcha con entrambi i pattern', () => {
+    expect(matchesCF('RSSMRA80A01H501U', false)).toBe(true)
+    expect(matchesCF('RSSMRA80A01H501U', true)).toBe(true)
+  })
+  it('CF con lettera mese invalida (Q): lenient lo accetta, strict lo rifiuta', () => {
+    // Struttura CF: COGNOME(6) NOME(3) ANNO(2) MESE(1) GIORNO(2) COMUNE(4) CHECK(1)
+    // RSSMRA80Q01H501U — posizione 9 (mese) = Q, lettera invalida
+    expect(matchesCF('RSSMRA80Q01H501U', false)).toBe(true)
+    expect(matchesCF('RSSMRA80Q01H501U', true)).toBe(false)
+  })
+  it('CF con giorno 99 (invalido): lenient lo accetta, strict lo rifiuta', () => {
+    // RSSMRA80A99H501U — giorno "99" non è valido (max 71)
+    expect(matchesCF('RSSMRA80A99H501U', false)).toBe(true)
+    expect(matchesCF('RSSMRA80A99H501U', true)).toBe(false)
+  })
+  it('CF con giorno 71 (max valido per donna): strict lo accetta', () => {
+    // RSSMRA80A71H501U — giorno "71" è il massimo valido
+    expect(matchesCF('RSSMRA80A71H501U', true)).toBe(true)
+  })
+  it('CF con giorno 00 (invalido): strict lo rifiuta', () => {
+    expect(matchesCF('RSSMRA80A00H501U', true)).toBe(false)
   })
 })
 

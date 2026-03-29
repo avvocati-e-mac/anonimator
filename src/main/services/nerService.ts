@@ -21,7 +21,27 @@ import {
   AVV_LISTA_PATTERN,
   PKI_FIRMA_PATTERN,
   REGEX_PATTERNS,
+  CODICE_FISCALE_PATTERN_LENIENT,
+  CODICE_FISCALE_PATTERN_STRICT,
 } from './regexPatterns'
+
+// Flag per la validazione strict del Codice Fiscale.
+// Default: false — perché l'OCR può distorcere lettere (B→8, O→0),
+// rendendo validi CF illeggibili col pattern strict.
+// Impostare a true solo su documenti nativi (non OCR) per ridurre falsi positivi.
+let _strictCF = false
+
+export function setStrictCF(value: boolean): void {
+  _strictCF = value
+}
+
+export function getStrictCF(): boolean {
+  return _strictCF
+}
+
+function getCFPattern(): RegExp {
+  return _strictCF ? CODICE_FISCALE_PATTERN_STRICT : CODICE_FISCALE_PATTERN_LENIENT
+}
 
 let _pipelineFactory: TransformersPipelineFn | null = null
 let _transformersLoadAttempted = false
@@ -326,7 +346,12 @@ export async function analyzeText(
     allEntities.push(buildEntity(raw, 'PERSONA'))
   }
 
-  for (const { type, pattern } of REGEX_PATTERNS) {
+  // Applica i pattern strutturati (Step 1), usando il pattern CF selezionato dal flag strictCF
+  const cfPattern = getCFPattern()
+  const effectiveRegexPatterns = REGEX_PATTERNS.map(({ type, pattern }) =>
+    type === 'CODICE_FISCALE' ? { type, pattern: cfPattern } : { type, pattern }
+  )
+  for (const { type, pattern } of effectiveRegexPatterns) {
     pattern.lastIndex = 0
     for (const match of text.matchAll(pattern)) {
       const raw = (match[1] ?? match[0]).trim()
