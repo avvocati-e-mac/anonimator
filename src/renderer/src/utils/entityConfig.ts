@@ -1,7 +1,7 @@
 import React from 'react'
 import {
   User, Building2, MapPin, CreditCard,
-  Mail, Phone, Calendar, Home, FileText
+  Mail, Phone, Calendar, Home, FileText, Car
 } from 'lucide-react'
 import type { EntityType } from '@shared/types'
 
@@ -15,6 +15,8 @@ export const ENTITY_CONFIG: Record<EntityType, { label: string; color: string; i
   EMAIL:            { label: 'Email',          color: 'bg-cyan-100 text-cyan-700 border-cyan-200 dark:bg-cyan-900/40 dark:text-cyan-300 dark:border-cyan-800',             icon: Mail },
   TELEFONO:         { label: 'Telefono',       color: 'bg-teal-100 text-teal-700 border-teal-200 dark:bg-teal-900/40 dark:text-teal-300 dark:border-teal-800',             icon: Phone },
   DATA_NASCITA:     { label: 'Data nascita',   color: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-800',       icon: Calendar },
+  LUOGO_NASCITA:    { label: 'Luogo di nascita', color: 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-800',   icon: MapPin },
   INDIRIZZO:        { label: 'Indirizzo',      color: 'bg-lime-100 text-lime-700 border-lime-200 dark:bg-lime-900/40 dark:text-lime-300 dark:border-lime-800',             icon: Home },
   NUMERO_DOCUMENTO: { label: 'N. Documento',  color: 'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-900/40 dark:text-rose-300 dark:border-rose-800',             icon: FileText },
+  TARGA:            { label: 'Targa',         color: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',           icon: Car },
 }

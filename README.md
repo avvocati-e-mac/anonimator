@@ -31,6 +31,8 @@ Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a se
 
 - Riconosce automaticamente nomi di persone, luoghi, organizzazioni, codici fiscali, P.IVA, IBAN, email e numeri di telefono
 - Pattern regex specializzati per documenti legali: parti processuali, difensori, indirizzi, date di nascita, numeri documento, firme digitali
+- **Co-reference resolution**: riconosce automaticamente le occorrenze successive di un nome (es. "Rossi" dopo "Mario Rossi") e le sostituisce con lo stesso pseudonimo
+- **Veto filter ruoli processuali**: i termini come "RICORRENTE", "APPELLANTE", "IMPUTATO" non vengono mai anonimizzati anche se il modello BERT li classifica erroneamente come persone
 - Sostituisce le entità con pseudonimi coerenti in tutto il documento (es. "Mario Rossi" → "M. R." ovunque appaia)
 - **Entità completamente modificabili**: nella schermata di revisione puoi modificare il tipo (badge cliccabile con dropdown), il testo originale da cercare nel documento (icona matita in hover) e il pseudonimo sostitutivo
 - **Aggiunta manuale entità**: aggiungi nomi o soprannomi che il NER non ha rilevato direttamente dalla schermata di revisione
@@ -145,9 +147,14 @@ npm start
 
 - **Electron** (Main process): parsing documenti, NER engine, generazione output
 - **React 18 + TypeScript**: interfaccia utente (sandboxed renderer)
-- **Transformers.js + ONNX**: modello NER italiano locale (`Laibniz/italian-ner-pii-browser-distilbert`)
+- **Transformers.js + ONNX**: modello NER italiano locale (`DeepMount00/Italian_NER_XXL_v2`)
 - **MuPDF + pdf-lib**: redaction e ricostruzione PDF
 - **Tesseract.js**: OCR offline per PDF scansionati
+
+**Pipeline NER (3 livelli):**
+1. **Regex contestuali** (`regexPatterns.ts`): 12 pattern specifici per documenti legali italiani (parti processuali, difensori, firme PKI, ecc.)
+2. **BERT locale** (`Italian_NER_XXL_v2` ONNX): chunking sliding window con overlap 40 token, cache chunk SHA-256, veto filter ruoli processuali, score boosting cross-layer, co-reference resolution
+3. **LLM locale** (opzionale, Ollama/LM Studio): livello aggiuntivo configurabile dall'utente
 
 I modelli AI (NER e OCR) vengono scaricati automaticamente al primo avvio o tramite le Impostazioni per ridurre la dimensione iniziale dell'app. L'elaborazione successiva rimane 100% offline.
 
@@ -197,7 +204,7 @@ tests/          # Test unitari
 - [x] **Aggiunta manuale di entità** — possibilità di aggiungere entità non rilevate da NER/LLM direttamente dalla schermata di revisione
 - [x] **Salvataggio e importazione entità** — esportare/importare il dizionario di sostituzione per riutilizzarlo su documenti della stessa pratica con i medesimi soggetti
 - [ ] **Ottimizzazione prompt per modelli piccoli** — prompt specializzato per LLM <9B (es. Phi-3, Gemma 2B) che non gestiscono bene prompt generici lunghi
-- [ ] **Ottimizzazione rilevamento entità NER** — valutare alternative/integrazioni a Transformers.js (es. SpaCy via servizio locale, modelli ONNX diversi); richiede approfondimento e studio
+- [x] **Ottimizzazione rilevamento entità NER** — migliorata la pipeline NER con co-reference resolution, veto filter ruoli processuali, score boosting cross-layer, sliding-window chunking, cache chunk NER (v1.4.x)
 
 ---
 

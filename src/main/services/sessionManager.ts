@@ -12,7 +12,8 @@ const STRUCTURED_PREFIX: Partial<Record<EntityType, string>> = {
   TELEFONO: 'TEL',
   DATA_NASCITA: 'NASC',
   INDIRIZZO: 'IND',
-  NUMERO_DOCUMENTO: 'DOC'
+  NUMERO_DOCUMENTO: 'DOC',
+  TARGA: 'TARGA'
 }
 
 interface SessionEntry {
@@ -242,6 +243,7 @@ export class SessionManager {
       NASC: 'DATA_NASCITA',
       IND: 'INDIRIZZO',
       DOC: 'NUMERO_DOCUMENTO',
+      TARGA: 'TARGA',
       SOGGETTO: 'PERSONA',
       ENTE: 'ORGANIZZAZIONE',
       LUOGO: 'LUOGO',

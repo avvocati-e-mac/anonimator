@@ -5,6 +5,24 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.5.0] - 2026-03-30
+
+### Novità
+- **Riconoscimento targa veicolo**: nuovo tipo di entità `TARGA` con pattern regex per il formato italiano moderno (es. `FX 523 KL`). Le targhe vengono anonimizzate con placeholder `TARGA_001`.
+- **Organizzazioni opzionali**: le aziende e società rilevate dal modello NER (es. `Banca Commerciale Italiana S.p.A.`) appaiono deselezionate di default nella lista entità. Non sono dati personali obbligatori — l'utente può selezionarle manualmente se desidera anonimizzarle.
+
+### Fix
+- **Falsi positivi su intestazioni legali MAIUSCOLO**: intestazioni di sezione come `PREMESSO CHE`, `SVOLGIMENTO DEL PROCESSO`, `MOTIVI DELLA DECISIONE`, `DOCUMENTAZIONE ESAMINATA`, `VALUTAZIONE DEL DANNO` non vengono più anonimizzate erroneamente. Aggiunta blocklist di 35 intestazioni standard.
+- **Pattern IBAN con spazi**: riconoscimento corretto di IBAN in formato con spazi ogni 4 caratteri (es. `IT89 H030 6909 6061 0000 0117 200`).
+- **Pattern titoli professionali**: riconoscimento di nomi preceduti da titolo professionale (`Ing.`, `Dott.`, `Dr.`, `Prof.`, `Avv.`, `Arch.`, `Geom.`, `Sig.ra`) con almeno due token nome+cognome.
+- **Pattern numero documento esteso**: `NUMERO_DOCUMENTO_PATTERN` ora cattura anche il formato con contesto di rilascio (`rilasciata con n. CA 5528847`).
+- **NER — co-reference resolution**: aggiunta espansione automatica delle menzioni single-token per entità PERSONA rilevate da BERT (es. cognome isolato nel testo).
+- **NER — score boosting cross-layer**: entità BERT sotto soglia vengono promosse se confermate da un pattern regex contestuale (Step 0b).
+- **NER — cache chunk**: chunk NER identici in sessioni multi-documento vengono riusati dalla cache in-RAM senza re-invocare il modello (max 200 entry LRU).
+- **NER — chunking con sliding window e overlap**: i chunk con finestra sovrapposta garantiscono che entità a cavallo del boundary vengano catturate.
+
+---
+
 ## [1.4.0] - 2026-03-18
 
 ### Novità

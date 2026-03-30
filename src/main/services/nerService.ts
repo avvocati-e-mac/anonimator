@@ -15,6 +15,34 @@ import { DEFAULT_LLM_CONFIG } from '@shared/types'
 import { inferChunkSize } from '@shared/modelSizeUtils'
 import { detectNamesWithLlm } from './llmService'
 import { sessionManager } from './sessionManager'
+import {
+  SENTENCE_HEADER_PATTERN,
+  STRUCTURED_LEGAL_PATTERNS,
+  AVV_LISTA_PATTERN,
+  PKI_FIRMA_PATTERN,
+  REGEX_PATTERNS,
+  CODICE_FISCALE_PATTERN_LENIENT,
+  CODICE_FISCALE_PATTERN_STRICT,
+} from './regexPatterns'
+import { LEGAL_STOP_WORDS, LEGAL_SECTION_HEADERS } from './legalStopWords'
+
+// Flag per la validazione strict del Codice Fiscale.
+// Default: false — perché l'OCR può distorcere lettere (B→8, O→0),
+// rendendo validi CF illeggibili col pattern strict.
+// Impostare a true solo su documenti nativi (non OCR) per ridurre falsi positivi.
+let _strictCF = false
+
+export function setStrictCF(value: boolean): void {
+  _strictCF = value
+}
+
+export function getStrictCF(): boolean {
+  return _strictCF
+}
+
+function getCFPattern(): RegExp {
+  return _strictCF ? CODICE_FISCALE_PATTERN_STRICT : CODICE_FISCALE_PATTERN_LENIENT
+}
 
 let _pipelineFactory: TransformersPipelineFn | null = null
 let _transformersLoadAttempted = false
@@ -58,11 +86,41 @@ async function tryLoadTransformers(): Promise<TransformersPipelineFn | null> {
   }
 }
 
+// ─── Cache NER per chunk identici in sessioni multi-documento ───────────────
+// Chiave: SHA-256 del testo del chunk (hash — il testo in chiaro non è recuperabile).
+// Massimo 200 entry: LRU semplice (cancella la più vecchia se piena).
+// La cache è in RAM — viene persa al riavvio dell'app. Non persistere su disco.
+const nerChunkCache = new Map<string, DetectedEntity[]>()
+const NER_CACHE_MAX_SIZE = 200
+
+function getCachedChunkEntities(chunkText: string): DetectedEntity[] | undefined {
+  const crypto = require('crypto') as typeof import('crypto')
+  const hash = crypto.createHash('sha256').update(chunkText).digest('hex')
+  return nerChunkCache.get(hash)
+}
+
+function setCachedChunkEntities(chunkText: string, entities: DetectedEntity[]): void {
+  const crypto = require('crypto') as typeof import('crypto')
+  const hash = crypto.createHash('sha256').update(chunkText).digest('hex')
+  if (nerChunkCache.size >= NER_CACHE_MAX_SIZE) {
+    // LRU semplice: cancella la prima entry (la più vecchia)
+    const firstKey = nerChunkCache.keys().next().value
+    if (firstKey !== undefined) nerChunkCache.delete(firstKey)
+  }
+  nerChunkCache.set(hash, entities)
+}
+
+export function clearNerChunkCache(): void {
+  nerChunkCache.clear()
+  log.info('Cache chunk NER svuotata', { previousSize: nerChunkCache.size })
+}
+
 export function resetNerPipeline(): void {
   nerPipeline = null
   _pipelineFactory = null
   _transformersLoadAttempted = false
   modelLoadFailed = false
+  clearNerChunkCache()
   log.info('Pipeline NER resettata')
 }
 
@@ -104,70 +162,18 @@ const ALLCAPS_BLOCKLIST = new Set([
 
 const SCORE_THRESHOLDS: Record<string, number> = { PER: 0.50, ORG: 0.60, LOC: 0.65 }
 
-const JUDICIAL_ROLES =
-  'presidente|consigliere|rel\\.?\\s*consigliere|giudice|sostituto\\s+procuratore|' +
-  'procuratore|cancelliere|segretario|relatore|estensore|componente'
-
-const SENTENCE_HEADER_PATTERN = new RegExp(
-  '(?:(?:dott\\.?(?:ssa)?|avv\\.?|prof\\.?|ing\\.?)\\s+)?' +
-  "([A-ZÀ-Ü][A-ZÀ-Üa-zà-ü]*'?[A-ZÀ-Üa-zà-ü]*(?:\\s+[A-ZÀ-Ü][A-ZÀ-Üa-zà-ü']+){1,3})" +
-  '\\s*[-–]\\s*(?:' + JUDICIAL_ROLES + ')\\s*[-–]',
-  'gi'
-)
-
-const REGEX_PATTERNS: { type: EntityType; pattern: RegExp }[] = [
-  { type: 'CODICE_FISCALE', pattern: /\b[A-Z]{6}[0-9]{2}[A-Z][0-9]{2}[A-Z][0-9]{3}[A-Z]\b/gi },
-  { type: 'PARTITA_IVA', pattern: /\b(?:P\.?\s?IVA\s*:?\s*)?([0-9]{11})\b/gi },
-  { type: 'IBAN', pattern: /\bIT[0-9]{2}[A-Z][0-9]{22}\b/gi },
-  { type: 'EMAIL', pattern: /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/gi },
-  { type: 'TELEFONO', pattern: /\b(?:\+39[\s\-]?)?(?:0[0-9]{1,3}[\s\-]?[0-9]{5,8}|3[0-9]{2}[\s\-]?[0-9]{6,7})\b/g }
-]
-
-const PROCESSO_PARTE_PATTERN = new RegExp(
-  '(?:^|\\n)\\s*(?:ricorrente|resistente|appellante|appellato|intimato|' +
-  'controricorrente|opponente|opposto|attore|convenuto|debitore|creditore|' +
-  'fallito|fallendo|istante|intervenuto)[:\\s,]+' +
-  "([A-ZÀ-Ü][A-ZÀ-Üa-zà-ü']+(?:\\s+[A-ZÀ-Ü][A-ZÀ-Üa-zà-ü']+){1,3})",
-  'gi'
-)
-
-const DIFENSORE_PATTERN = new RegExp(
-  '(?:difeso|difesa|rappresentato|rappresentata|assistito|assistita)\\s+' +
-  "(?:dall?['\\u2019])?(?:avv\\.?|avvocato|procuratore)\\s+" +
-  "([A-Z][A-Za-z\u00C0-\u00FF']+(?:\\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3})",
-  'gi'
-)
-
-const ALLCAPS_NAME_PATTERN = new RegExp(
-  '(?:^|\\n)([A-Z\u00C0-\u00DC][A-Z\u00C0-\u00DC\']{1,25}' +
-  '(?:\\s+[A-Z\u00C0-\u00DC][A-Z\u00C0-\u00DC]{1,25}){1,2})' +
-  '(?:\\s*$|\\s*[+]|\\s*[-\u2013]\\s*(?:$|\\n))',
-  'gm'
-)
-
-const DATA_NASCITA_PATTERN = /(?:nato|nata|n\.)[\s,]+(?:a\s+\S+\s+)?il\s+(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})|(?:data(?:\s+di)?\s+nascita|d\.d\.n\.)[:\s]+(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})/gi
-const INDIRIZZO_PATTERN = /(?:residente|domiciliato|domiciliata|con\s+sede)\s+(?:in\s+)?(?:Via|Viale|Corso|Piazza|Largo|Vicolo|Str\.|Loc\.|Fraz\.|V\.le)\s+[A-Za-z\u00C0-\u00FF\s0-9,.']{3,50},?\s*\d{5}/gi
-const NUMERO_DOCUMENTO_PATTERN = /(?:carta(?:\s+d[i']\s*identit[àa])?|passaporto|patente|C\.I\.E?\.?)[\s:,n.°]+([A-Z]{2}[0-9]{5,7}[A-Z]?)|(?:n(?:umero)?\.?\s*doc(?:umento)?[:\s]+)([A-Z]{2}[0-9]{5,7}[A-Z]?)/gi
-const POLIZZA_PARTE_PATTERN = /(?:Contraente|Assicurato|Assicurata|Beneficiario|Intestatario)[:\s]+([A-Z][A-Za-z\u00C0-\u00FF']+(?:\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3})/gi
-const CONTRATTO_PARTE_PATTERN = /(?:tra|fra)\s+([A-Z][A-Za-z\u00C0-\u00FF']+(?:\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3}),\s+(?:nato|nata|residente|domiciliato|codice\s+fiscale|con\s+sede)/gi
-const PERIZIA_SOGGETTO_PATTERN = /(?:Paziente|CTU|C\.T\.U\.|CTP|C\.T\.P\.|Perito|Esaminato|Esaminata)[:\s]+([A-Z][A-Za-z\u00C0-\u00FF']+(?:\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3})/gi
-const AVV_LISTA_PATTERN = /avvocat[oi]\s+((?:[A-Z][A-Za-z\u00C0-\u00FF']+(?:\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3})(?:\s*,\s*(?:[A-Z][A-Za-z\u00C0-\u00FF']+(?:\s+[A-Z][A-Za-z\u00C0-\u00FF']+){1,3}))*)/gi
-const PKI_FIRMA_PATTERN = /Firmato\s+Da:\s+([A-Z][A-Z\u00C0-\u00DC]+\s+[A-Z][A-Z\u00C0-\u00DC]+)\s+Emesso/gi
-
-const STRUCTURED_LEGAL_PATTERNS: { pattern: RegExp; type: EntityType }[] = [
-  { pattern: PROCESSO_PARTE_PATTERN,   type: 'PERSONA' },
-  { pattern: DIFENSORE_PATTERN,        type: 'PERSONA' },
-  { pattern: ALLCAPS_NAME_PATTERN,     type: 'PERSONA' },
-  { pattern: DATA_NASCITA_PATTERN,     type: 'DATA_NASCITA' },
-  { pattern: INDIRIZZO_PATTERN,        type: 'INDIRIZZO' },
-  { pattern: NUMERO_DOCUMENTO_PATTERN, type: 'NUMERO_DOCUMENTO' },
-  { pattern: POLIZZA_PARTE_PATTERN,    type: 'PERSONA' },
-  { pattern: CONTRATTO_PARTE_PATTERN,  type: 'PERSONA' },
-  { pattern: PERIZIA_SOGGETTO_PATTERN, type: 'PERSONA' },
-]
 
 function isAllCaps(text: string): boolean {
   return /^[A-Z\u00C0-\u00DC\s']+$/.test(text)
+}
+
+/**
+ * Restituisce true se il testo (normalizzato in lowercase) corrisponde
+ * a un'intestazione di sezione legale standard — non deve essere anonimizzato.
+ */
+function isSectionHeader(text: string): boolean {
+  const normalized = text.toLowerCase().trim().replace(/\s+/g, ' ')
+  return LEGAL_SECTION_HEADERS.has(normalized)
 }
 
 const LABEL_TO_ENTITY_TYPE: Record<string, EntityType> = {
@@ -240,14 +246,15 @@ async function getNerPipeline(): Promise<NerPipelineFn | null> {
   }
 }
 
-function buildEntity(originalText: string, type: EntityType): DetectedEntity {
+function buildEntity(originalText: string, type: EntityType, source: DetectedEntity['source'] = 'regex'): DetectedEntity {
   return {
     id: `${type}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     type,
     originalText,
     pseudonym: '',
     occurrences: 0,
-    confirmed: type !== 'LUOGO'
+    confirmed: type !== 'LUOGO',
+    source,
   }
 }
 
@@ -316,6 +323,88 @@ function aggregateBioTokens(items: TokenClassificationSingle[]): AggregatedEntit
   return aggregated
 }
 
+/**
+ * Espande le entità rilevate aggiungendo menzioni co-referenziali single-token.
+ * Per ogni entità PERSONA con source 'ner' e score > 0.75 e almeno 2 token:
+ * - Estrae ogni token con lunghezza > 3 caratteri non in LEGAL_STOP_WORDS
+ * - Se il token appare ≥ 2 volte nel testo standalone E non è già coperto: aggiunge entità co-ref
+ */
+/** Soglia minima BERT per tentare il boost (entità sotto soglia ma con segnale residuo) */
+const BOOST_MIN_SCORE = 0.35
+
+/**
+ * Promuove entità BERT sotto-soglia se lo stesso testo è confermato da un'entità
+ * regex contestuale Step 0b (source 'regex').
+ * La conferma regex è sufficiente per promuovere l'entità indipendentemente dallo score BERT esatto,
+ * dato che lo score non è più disponibile dopo buildEntity.
+ * Le entità promosse ricevono source 'boosted'.
+ * Solo i pattern Step 0b (contestuali legali) fanno da booster — NON CF/IBAN/email/telefono.
+ */
+export function applyContextualBoost(
+  bertLow: DetectedEntity[],
+  regexContextual: DetectedEntity[]
+): DetectedEntity[] {
+  const boosted: DetectedEntity[] = []
+
+  for (const bertEntity of bertLow) {
+    // Cerca conferma in regex contestuale — stesso testo (case-insensitive)
+    // Solo entità regex di tipo PERSONA/ORG/LOC (contestuali) fanno da booster
+    const nerLikeTypes = new Set<EntityType>(['PERSONA', 'ORGANIZZAZIONE', 'LUOGO'])
+    const confirmed = regexContextual.some(r =>
+      nerLikeTypes.has(r.type) &&
+      r.originalText.toLowerCase() === bertEntity.originalText.toLowerCase()
+    )
+    if (!confirmed) continue
+
+    boosted.push({ ...bertEntity, source: 'boosted' })
+  }
+
+  return boosted
+}
+
+export function expandCoReferences(entities: DetectedEntity[], text: string): DetectedEntity[] {
+  const existingTexts = new Set(entities.map(e => e.originalText.toLowerCase()))
+  const additions: DetectedEntity[] = []
+
+  for (const entity of entities) {
+    // Solo entità PERSONA rilevate da BERT con score sufficiente
+    if (entity.type !== 'PERSONA') continue
+    if (entity.source !== 'ner') continue
+
+    const tokens = entity.originalText
+      .split(/\s+/)
+      .map(t => t.replace(/[.,;:()''"]/g, '').trim())
+      .filter(t => t.length > 3 && !LEGAL_STOP_WORDS.has(t.toLowerCase()))
+
+    // Serve almeno un nome completo (2+ token originali)
+    if (entity.originalText.trim().split(/\s+/).length < 2) continue
+
+    for (const token of tokens) {
+      const tokenLower = token.toLowerCase()
+      // Non aggiungere se già presente come entità autonoma
+      if (existingTexts.has(tokenLower)) continue
+
+      // Conta occorrenze standalone nel testo
+      const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const occurrences = (text.match(new RegExp(`\\b${escaped}\\b`, 'gi')) ?? []).length
+      if (occurrences < 2) continue
+
+      existingTexts.add(tokenLower)
+      additions.push({
+        id: `PERSONA_coref_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        type: 'PERSONA',
+        originalText: token,
+        pseudonym: entity.pseudonym, // stesso pseudonimo dell'entità padre
+        occurrences,
+        confirmed: true,
+        source: 'coref',
+      })
+    }
+  }
+
+  return [...entities, ...additions]
+}
+
 export interface NerAnalysisResult {
   entities: DetectedEntity[]
   nerUsed: boolean
@@ -352,6 +441,7 @@ export async function analyzeText(
       if (type === 'PERSONA' && raw.split(/\s+/).length < 2) continue
       if (foundTexts.has(raw.toLowerCase())) continue
       if (type === 'PERSONA' && isAllCaps(raw)) {
+        if (isSectionHeader(raw)) continue
         const tokens = raw.split(/\s+/)
         if (tokens.some((t) => t.length <= 2 || ALLCAPS_BLOCKLIST.has(t.toLowerCase()))) continue
       }
@@ -380,7 +470,12 @@ export async function analyzeText(
     allEntities.push(buildEntity(raw, 'PERSONA'))
   }
 
-  for (const { type, pattern } of REGEX_PATTERNS) {
+  // Applica i pattern strutturati (Step 1), usando il pattern CF selezionato dal flag strictCF
+  const cfPattern = getCFPattern()
+  const effectiveRegexPatterns = REGEX_PATTERNS.map(({ type, pattern }) =>
+    type === 'CODICE_FISCALE' ? { type, pattern: cfPattern } : { type, pattern }
+  )
+  for (const { type, pattern } of effectiveRegexPatterns) {
     pattern.lastIndex = 0
     for (const match of text.matchAll(pattern)) {
       const raw = (match[1] ?? match[0]).trim()
@@ -390,37 +485,94 @@ export async function analyzeText(
     }
   }
 
+  // Raccoglie entità regex Step 0b per il boost cross-layer
+  // (già in allEntities, ma servono separatamente per il confronto testo)
+  const regexContextualEntities = allEntities.filter(e => e.source === 'regex')
+
   const pipe = await getNerPipeline()
   if (pipe) {
     try {
       const chunks = splitTextIntoChunks(text, 400)
       const BATCH = 4
+      // Entità BERT sotto soglia (0.35–threshold) accumulate per il boost
+      const bertLowScore: DetectedEntity[] = []
+
+      // Cattura il riferimento non-null al pipe per la closure
+      const pipeNonNull: NerPipelineFn = pipe
+
+      // Processa chunk con cache: se il chunk è già stato visto in questa sessione,
+      // riusa le entità cached senza invocare il modello BERT.
+      async function processChunk(chunk: string): Promise<{ aboveThreshold: DetectedEntity[]; belowThreshold: DetectedEntity[] }> {
+        const cached = getCachedChunkEntities(chunk)
+        if (cached) {
+          return { aboveThreshold: cached, belowThreshold: [] }
+        }
+
+        const raw = await pipeNonNull(chunk)
+        const flat: TokenClassificationSingle[] = Array.isArray(raw[0])
+          ? (raw as TokenClassificationOutput[]).flat()
+          : (raw as TokenClassificationOutput)
+        const aggregated = aggregateBioTokens(flat)
+
+        const aboveThreshold: DetectedEntity[] = []
+        const belowThreshold: DetectedEntity[] = []
+
+        for (const { word, label, score } of aggregated) {
+          const threshold = SCORE_THRESHOLDS[label] ?? 0.50
+          const entityType = LABEL_TO_ENTITY_TYPE[label]
+          if (!entityType) continue
+          const cleaned = word.trim().replace(/^#+/, '')
+          if (cleaned.length < 3) continue
+          if (/^[.\s]/.test(cleaned)) continue
+          const cleanedFirstWord = cleaned.toLowerCase().split(/\s+/)[0]
+          if (NAME_STOPWORDS.has(cleanedFirstWord)) continue
+          if (PKI_NOISE.has(cleaned.toLowerCase())) continue
+          if (entityType === 'ORGANIZZAZIONE' && PUBLIC_INSTITUTION_PREFIXES.has(cleanedFirstWord)) continue
+          if (entityType === 'PERSONA' && LEGAL_STOP_WORDS.has(cleaned.toLowerCase())) continue
+          if (isSectionHeader(cleaned)) continue
+
+          if (score >= threshold) {
+            const entity = buildEntity(cleaned, entityType, 'ner')
+            // Le organizzazioni rilevate da BERT sono opzionali: non dati personali
+            // obbligatori ma utili — l'utente decide se anonimizzarle (default: deselezionate)
+            if (entityType === 'ORGANIZZAZIONE') entity.confirmed = false
+            aboveThreshold.push(entity)
+          } else if (score >= BOOST_MIN_SCORE) {
+            belowThreshold.push(buildEntity(cleaned, entityType, 'ner'))
+          }
+        }
+
+        // Salva in cache solo le entità sopra soglia (deterministiche)
+        setCachedChunkEntities(chunk, aboveThreshold)
+        return { aboveThreshold, belowThreshold }
+      }
+
       for (let i = 0; i < chunks.length; i += BATCH) {
         const batch = chunks.slice(i, i + BATCH)
-        const results = await Promise.all(batch.map((chunk) => pipe(chunk)))
-        for (const raw of results) {
-          const flat: TokenClassificationSingle[] = Array.isArray(raw[0])
-            ? (raw as TokenClassificationOutput[]).flat()
-            : (raw as TokenClassificationOutput)
-          const aggregated = aggregateBioTokens(flat)
-          for (const { word, label, score } of aggregated) {
-            const threshold = SCORE_THRESHOLDS[label] ?? 0.50
-            if (score < threshold) continue
-            const entityType = LABEL_TO_ENTITY_TYPE[label]
-            if (!entityType) continue
-            const cleaned = word.trim().replace(/^#+/, '')
-            if (cleaned.length < 3) continue
-            if (/^[.\s]/.test(cleaned)) continue
-            const cleanedFirstWord = cleaned.toLowerCase().split(/\s+/)[0]
-            if (NAME_STOPWORDS.has(cleanedFirstWord)) continue
-            if (PKI_NOISE.has(cleaned.toLowerCase())) continue
-            if (entityType === 'ORGANIZZAZIONE' && PUBLIC_INSTITUTION_PREFIXES.has(cleanedFirstWord)) continue
-            if (foundTexts.has(cleaned.toLowerCase())) continue
-            foundTexts.add(cleaned.toLowerCase())
-            allEntities.push(buildEntity(cleaned, entityType))
+        const results = await Promise.all(batch.map(processChunk))
+        for (const { aboveThreshold, belowThreshold } of results) {
+          for (const entity of aboveThreshold) {
+            if (foundTexts.has(entity.originalText.toLowerCase())) continue
+            foundTexts.add(entity.originalText.toLowerCase())
+            allEntities.push(entity)
+          }
+          for (const entity of belowThreshold) {
+            if (!foundTexts.has(entity.originalText.toLowerCase())) {
+              bertLowScore.push(entity)
+            }
           }
         }
       }
+
+      // Score boosting: promuovi entità BERT sotto soglia confermate da regex contestuale
+      const boosted = applyContextualBoost(bertLowScore, regexContextualEntities)
+      for (const entity of boosted) {
+        if (!foundTexts.has(entity.originalText.toLowerCase())) {
+          foundTexts.add(entity.originalText.toLowerCase())
+          allEntities.push(entity)
+        }
+      }
+
       nerUsed = true
     } catch (err) {
       log.error('Errore durante inferenza NER', { error: err })
@@ -490,7 +642,7 @@ export async function analyzeText(
             const type: EntityType = /^([A-Z]\.\s*)+$/.test(replacement.trim()) ? 'PERSONA' : 'ORGANIZZAZIONE'
             foundTexts.add(trimmed.toLowerCase())
             const pseudonym = sessionManager.registerLlmPseudonym(trimmed, replacement.trim(), type)
-            allEntities.push({ ...buildEntity(trimmed, type), pseudonym })
+            allEntities.push({ ...buildEntity(trimmed, type, 'llm'), pseudonym })
           }
         }
       }
@@ -567,6 +719,11 @@ export async function analyzeText(
     return !containsShorter
   })
 
+  // Co-reference resolution: espande con menzioni single-token delle entità PERSONA BERT
+  if (nerUsed) {
+    allEntities = expandCoReferences(allEntities, text)
+  }
+
   allEntities.sort((a, b) => b.occurrences - a.occurrences)
   log.info('Analisi NER completata', { totalEntities: allEntities.length, nerUsed, llmUsed, warnings: warnings.length })
   return { entities: allEntities, nerUsed, llmUsed, warnings }
@@ -588,20 +745,31 @@ function splitTextIntoLlmChunks(text: string, maxChars: number): string[] {
   return chunks
 }
 
-function splitTextIntoChunks(text: string, targetWords: number): string[] {
-  const words = text.split(/\s+/)
-  if (words.length <= targetWords) return [text]
+/**
+ * Crea chunk con sliding window e overlap.
+ * Chunk N:   token [0 … chunkSize-1]
+ * Chunk N+1: token [stride … stride+chunkSize-1]  (overlap di 'overlap' token)
+ * Garantisce che entità a cavallo del boundary vengano catturate dal chunk successivo.
+ */
+export function createOverlappingChunks(
+  tokens: string[],
+  chunkSize = 400,
+  overlap = 40
+): string[] {
+  if (tokens.length <= chunkSize) return [tokens.join(' ')]
+  const stride = chunkSize - overlap
   const chunks: string[] = []
-  let start = 0
-  while (start < words.length) {
-    let end = Math.min(start + targetWords, words.length)
-    if (end < words.length) {
-      for (let i = end; i > end - 20 && i > start; i--) {
-        if (/[.?!]$/.test(words[i - 1])) { end = i; break }
-      }
-    }
-    chunks.push(words.slice(start, end).join(' '))
-    start = end
+  for (let i = 0; i < tokens.length; i += stride) {
+    const slice = tokens.slice(i, i + chunkSize)
+    if (slice.length > 0) chunks.push(slice.join(' '))
+    if (i + chunkSize >= tokens.length) break
   }
   return chunks
 }
+
+function splitTextIntoChunks(text: string, targetWords: number): string[] {
+  // Usa sliding window con overlap per evitare entità spezzate a cavallo di boundary
+  const tokens = text.split(/\s+/).filter(t => t.length > 0)
+  return createOverlappingChunks(tokens, targetWords, 40)
+}
+

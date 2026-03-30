@@ -81,7 +81,9 @@ Ha accesso completo a Node.js (file system, moduli nativi). Contiene tutta la lo
 |------|---------------|
 | `index.ts` | Crea la `BrowserWindow`, registra gli handler IPC, blocca la navigazione esterna. Patch `Module._resolveFilename` per Windows (reindirizza `.node` da asar a asar.unpacked). |
 | `ipcHandlers.ts` | Hub centralizzato di tutti gli handler IPC. Valida ogni input con Zod prima di processarlo. |
-| `services/nerService.ts` | Motore NER ibrido: regex + BERT (Transformers.js) + LLM opzionale. |
+| `services/nerService.ts` | Motore NER ibrido: regex + BERT (Transformers.js) + LLM opzionale. Chunking sliding window, cache chunk, co-reference, score boosting. |
+| `services/regexPatterns.ts` | Tutte le costanti regex del NER (Step 0, 0b, 1). Modulo separato per testabilità. |
+| `services/legalStopWords.ts` | Set di ruoli processuali/istituzionali che il veto filter applica alle entità BERT (`source: 'ner'`). |
 | `services/sessionManager.ts` | Dizionario in-memoria degli pseudonimi. Genera e mantiene le corrispondenze originale→pseudonimo. |
 | `services/settingsManager.ts` | Configurazione LLM persistente su disco (`{userData}/legalshield-settings.json`). |
 | `services/llmService.ts` | Client per LLM locali (Ollama/LM Studio) via endpoint OpenAI-compatibile. |
@@ -457,7 +459,9 @@ parseMarkdown(filePath: string): Promise<ParseResult>
 
 ## 7. Motore NER (Named Entity Recognition)
 
-File: `src/main/services/nerService.ts`
+File principale: `src/main/services/nerService.ts`
+Modulo pattern: `src/main/services/regexPatterns.ts`
+Stop words legali: `src/main/services/legalStopWords.ts`
 
 Il cuore dell'applicazione. Implementa un approccio **ibrido a tre livelli** per massimizzare il riconoscimento di entità nei documenti legali italiani.
 
@@ -488,9 +492,14 @@ interface NerAnalysisResult {
             │                │                 │
             └────────────────┼─────────────────┘
                              │
-                     DEDUPLICAZIONE
-                     FILTRAGGIO
-                     PULIZIA
+                  ┌──────────▼──────────┐
+                  │  POST-PROCESSING    │
+                  │  veto legalStopWords│
+                  │  score boosting     │
+                  │  deduplicazione     │
+                  │  co-reference       │
+                  │  pulizia            │
+                  └──────────┬──────────┘
                              │
                              ▼
                     DetectedEntity[]
@@ -498,42 +507,52 @@ interface NerAnalysisResult {
 
 ### 7.1 Livello 1 — Pattern Regex
 
-Eseguito sempre, indipendentemente dalla disponibilità del modello BERT. Rileva dati strutturati italiani e pattern tipici dei documenti legali.
+File: `src/main/services/regexPatterns.ts`
+
+Eseguito sempre, indipendentemente dalla disponibilità del modello BERT. Tutte le costanti regex sono centralizzate in `regexPatterns.ts` per poter essere testate isolatamente (file `tests/nerRegex.test.ts`). Le entità prodotte da questo livello hanno `source: 'regex'`.
 
 #### Pattern per dati strutturati (Step 1)
 
-| Tipo | Pattern | Esempio |
+| Costante | Tipo | Esempio |
 |------|---------|---------|
-| `CODICE_FISCALE` | `/\b[A-Z]{6}[0-9]{2}[A-Z][0-9]{2}[A-Z][0-9]{3}[A-Z]\b/gi` | `RSSMRA80A01H501U` |
-| `PARTITA_IVA` | `/\b(?:P\.?\s?IVA\s*:?\s*)?([0-9]{11})\b/gi` | `P.IVA 01234567890` |
-| `IBAN` | `/\bIT[0-9]{2}[A-Z][0-9]{22}\b/gi` | `IT60X0542811101000000123456` |
-| `EMAIL` | `/\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/gi` | `mario.rossi@pec.it` |
-| `TELEFONO` | `/\b(?:\+39[\s\-]?)?(?:0[0-9]{1,3}[\s\-]?[0-9]{5,8}\|3[0-9]{2}[\s\-]?[0-9]{6,7})\b/g` | `+39 06 12345678` |
+| `CODICE_FISCALE_PATTERN_LENIENT` | `CODICE_FISCALE` | `RSSMRA80A01H501U` |
+| `CODICE_FISCALE_PATTERN_STRICT` | `CODICE_FISCALE` | valida anche lettera mese e range giorno |
+| `PARTITA_IVA_PATTERN` | `PARTITA_IVA` | `P.IVA 01234567890` |
+| `IBAN_PATTERN` | `IBAN` | `IT60X0542811101000000123456` |
+| `EMAIL_PATTERN` | `EMAIL` | `mario.rossi@pec.it` |
+| `TELEFONO_PATTERN` | `TELEFONO` | `+39 06 12345678` |
+
+**Pattern Codice Fiscale — varianti:**
+
+- `CODICE_FISCALE_PATTERN_LENIENT` (default): accetta qualsiasi lettera in posizione mese. Usato su documenti OCR dove le lettere possono essere distorte (es. `B→8`, `O→0`).
+- `CODICE_FISCALE_PATTERN_STRICT`: valida la lettera di mese (`[ABCDEHLMPRST]`) e il range giorno (`01–71`). Riduce falsi positivi su documenti nativi.
+- Il flag `strictCF` (default `false`) seleziona la variante — configurabile via `setStrictCF()` nel Main. Non esposto nell'UI del Renderer.
 
 Questi pattern usano `\b` (word boundary) anziché `^`/`$` perché il matching avviene su testo estratto da paragrafi, non su righe isolate.
 
 #### Pattern per intestazioni di sentenze (Step 0)
 
-Riconosce le formule tipiche delle intestazioni giudiziarie italiane dove i nomi dei magistrati appaiono in maiuscolo seguiti dal ruolo:
+`SENTENCE_HEADER_PATTERN` — riconosce le formule tipiche delle intestazioni giudiziarie italiane:
 
 ```
 Dott. MARIO BERTUZZI                    - Presidente -
 Dott.ssa ANNA D'ANGIOLINO               - Consigliere -
 ```
 
-Il pattern rileva titoli (`Dott.`, `Avv.`, `Prof.`, `Ing.`), nomi in maiuscolo (anche con apostrofi come `D'ANGIOLINO`), e ruoli giudiziari (`Presidente`, `Consigliere`, `Giudice`, ecc.).
+Rileva titoli (`Dott.`, `Avv.`, `Prof.`, `Ing.`), nomi (anche con apostrofi come `D'ANGIOLINO`), e ruoli giudiziari (`Presidente`, `Consigliere`, `Giudice`, ecc.).
 
 #### Pattern per strutture legali (Step 0b)
 
-11 pattern specifici per documenti legali italiani:
+12 pattern in `STRUCTURED_LEGAL_PATTERNS`. Le entità contestuali prodotte da questi pattern hanno `source: 'regex'` e possono fungere da **booster** per entità BERT sotto soglia (vedi §7.2 score boosting).
 
-| ID | Pattern | Tipo rilevato | Esempio |
+| ID | Costante | Tipo rilevato | Esempio |
 |----|---------|---------------|---------|
 | A1 | `PROCESSO_PARTE_PATTERN` | PERSONA | `ricorrente: MARIO ROSSI` |
 | A2 | `DIFENSORE_PATTERN` | PERSONA | `difeso dall'avv. ANNA BIANCHI` |
 | A3 | `ALLCAPS_NAME_PATTERN` | PERSONA | `COLOMBO LUIGI` (su riga propria) |
 | B1 | `DATA_NASCITA_PATTERN` | DATA_NASCITA | `nato a Roma il 15/03/1980` |
-| B2 | `INDIRIZZO_PATTERN` | INDIRIZZO | `residente in Via Roma 123, 00100 Roma` |
+| B2a | `INDIRIZZO_PATTERN_STANDARD` | INDIRIZZO | `residente in Via Roma 123, 00100` |
+| B2b | `INDIRIZZO_PATTERN_CORSO` | INDIRIZZO | `domiciliato in Corso Vittorio 12, 10100` (NON "corso di indagini") |
 | B3 | `NUMERO_DOCUMENTO_PATTERN` | NUMERO_DOCUMENTO | `Passaporto n. AB123456` |
 | C1 | `POLIZZA_PARTE_PATTERN` | PERSONA | `Contraente: LUIGI ROSSI` |
 | C2 | `CONTRATTO_PARTE_PATTERN` | PERSONA | `tra MARIO ROSSI, nato a...` |
@@ -541,20 +560,15 @@ Il pattern rileva titoli (`Dott.`, `Avv.`, `Prof.`, `Ing.`), nomi in maiuscolo (
 | D1 | `AVV_LISTA_PATTERN` | PERSONA | `avvocati MARIO ROSSI, ANNA BIANCHI` |
 | D2 | `PKI_FIRMA_PATTERN` | PERSONA | `Firmato Da: COLOMBO LUIGI Emesso Da:` |
 
+**Nota B2 — split `INDIRIZZO_PATTERN_CORSO`:** Il vecchio pattern unificato includeva "Corso" come prefisso indistintamente, generando falsi positivi su formule processuali penali ("nel corso delle indagini", "corso di istruzione"). Il pattern è ora separato: `INDIRIZZO_PATTERN_STANDARD` gestisce Via/Viale/Piazza/Largo/ecc.; `INDIRIZZO_PATTERN_CORSO` matcha "Corso" **solo se preceduto da contesto di residenza/domicilio** (es. "residente in Corso Roma 15, 00100").
+
 ### 7.2 Livello 2 — Modello BERT (Transformers.js + ONNX)
 
-Usa il modello `DeepMount00/Italian_NER_XXL_v2` quantizzato in ONNX, eseguito localmente tramite `@huggingface/transformers`.
+Usa il modello `DeepMount00/Italian_NER_XXL_v2` quantizzato in ONNX, eseguito localmente tramite `@huggingface/transformers`. Le entità prodotte hanno `source: 'ner'`.
 
 **Caricamento (lazy, una sola volta):**
 
 ```typescript
-// Import dinamico per non rallentare lo startup
-const { pipeline } = await import('@huggingface/transformers');
-
-// Cerca il modello in due percorsi:
-// - Produzione: process.resourcesPath/resources/models/italian-ner-xxl-v2
-// - Sviluppo: __dirname/../../resources/models/italian-ner-xxl-v2
-
 const pipe = await pipeline('token-classification', modelPath, {
   local_files_only: true,            // MAI download da rete
   model_file_name: 'model_quantized', // ONNX quantizzato (~65 MB)
@@ -567,20 +581,32 @@ const pipe = await pipeline('token-classification', modelPath, {
 
 Se il modello non è trovato o onnxruntime fallisce, il sistema prosegue con solo regex (graceful degradation).
 
-**Elaborazione del testo:**
+**Chunking con sliding window (overlap):**
 
-1. **Chunking:** il testo viene diviso in chunk da ~400 parole, cercando di spezzare ai confini di frase (`.`, `!`, `?`)
-2. **Batch processing:** i chunk vengono processati in batch da 4, con `Promise.all`
-3. **Aggregazione token BIO:** la funzione `aggregateBioTokens()` combina token consecutivi con lo stesso label BIO:
-   - Token con prefisso `B-` iniziano una nuova entità
-   - Token con prefisso `I-` continuano l'entità corrente
-   - Token che iniziano con `##` sono continuazioni di subword (WordPiece)
-   - Limite: massimo 5 parole per entità
-   - Gestione apostrofi: `D' + ANGIOLINO → D'ANGIOLINO` (senza spazio)
+Il testo viene diviso in chunk con la funzione `createOverlappingChunks()`:
+- **chunkSize:** 400 token (parole)
+- **overlap:** 40 token — stride = 360
+- **Obiettivo:** evitare che entità multi-token a cavallo del boundary tra chunk N e N+1 vengano perse. Il chunk N+1 inizia al token 360, quindi vede gli ultimi 40 token del chunk N.
+- **Deduplicazione:** la `foundTexts: Set<string>` garantisce che la stessa entità trovata in due chunk sovrapposti non venga duplicata.
+
+**Cache chunk NER:**
+
+Prima di invocare BERT su un chunk, `nerService.ts` controlla una cache in RAM:
+- Chiave: `SHA-256(chunkText)` — il testo in chiaro non è recuperabile dalla cache.
+- Cache hit: entità restituite senza invocare il modello. Cache miss: BERT invocato, risultato salvato.
+- LRU semplice: massimo 200 entry (la più vecchia viene eliminata se la cache è piena).
+- La cache viene svuotata su `session:reset` e al download di un nuovo modello.
+
+**Batch processing:** i chunk vengono processati in batch da 4 con `Promise.all`.
+
+**Aggregazione token BIO:** la funzione `aggregateBioTokens()` combina token consecutivi con lo stesso label BIO:
+- Token con prefisso `B-` iniziano una nuova entità
+- Token con prefisso `I-` continuano l'entità corrente
+- Token che iniziano con `##` sono continuazioni di subword (WordPiece)
+- Limite: massimo 5 parole per entità
+- Gestione apostrofi: `D' + ANGIOLINO → D'ANGIOLINO` (senza spazio)
 
 **Mapping label → tipo entità:**
-
-Il modello produce 52 categorie. Quelle mappate sono:
 
 | Label BERT | Tipo applicativo |
 |------------|-----------------|
@@ -596,13 +622,23 @@ Il modello produce 52 categorie. Quelle mappate sono:
 | ORGANIZZAZIONE | 0.60 |
 | LUOGO | 0.65 |
 
-Token sotto soglia vengono scartati.
+**Score boosting cross-layer:**
+
+Entità BERT con score nel range `[0.35, threshold)` — sotto soglia ma con segnale residuo — vengono accumulate separatamente. Se lo stesso span è confermato da un'entità regex contestuale Step 0b (source `'regex'`, tipo PERSONA/ORG/LOC), viene promosso nell'output finale con `source: 'boosted'`. I pattern strutturati (CF, IBAN, email) **non** fanno da booster.
 
 **Filtri di rumore:**
 
-- **Istituzioni pubbliche:** le organizzazioni che iniziano con "tribunale", "corte", "ministero", "agenzia", "inps", ecc. vengono escluse (non sono dati personali)
-- **Rumore PKI:** frammenti brevi da firme digitali (`NG`, `CA`, `G3`, `OU`, ecc.) vengono esclusi
-- **Blocklist maiuscole:** acronimi comuni (`SPA`, `SRL`, `INPS`, `ISTAT`, ecc.) vengono esclusi
+- **Istituzioni pubbliche:** organizzazioni che iniziano con "tribunale", "corte", "ministero", "agenzia", "inps", ecc. vengono escluse.
+- **Rumore PKI:** frammenti da firme digitali (`NG`, `CA`, `G3`, ecc.) vengono esclusi.
+- **Blocklist maiuscole:** acronimi comuni (`SPA`, `SRL`, `INPS`, ecc.) vengono esclusi.
+- **Veto legalStopWords:** le entità PERSONA classificate da BERT che corrispondono esattamente a un ruolo processuale (es. "RICORRENTE", "APPELLANTE", "IMPUTATO", "GIUDICE") vengono scartate. Il filtro si applica **solo a `source: 'ner'`** — non alle entità regex Step 0b. Vedi `src/main/services/legalStopWords.ts` per la lista completa.
+
+**Co-reference resolution:**
+
+Dopo il NER, la funzione `expandCoReferences()` espande le entità PERSONA (`source: 'ner'`) con menzioni single-token:
+- Per ogni entità PERSONA con ≥ 2 token: estrae ogni token > 3 caratteri non in `LEGAL_STOP_WORDS`
+- Se il token appare ≥ 2 volte standalone nel testo e non è già un'entità autonoma: aggiunge una nuova entità con `source: 'coref'` e stesso pseudonimo del padre
+- Esempio: "Mario Rossi" → aggiunge "Rossi" con `pseudonym: 'M. R.'` se "Rossi" appare ≥ 2 volte
 
 ### 7.3 Livello 3 — LLM locale (opzionale)
 
