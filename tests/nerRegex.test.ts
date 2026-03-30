@@ -20,7 +20,9 @@ import {
   TITOLO_NOME_PATTERN,
   AVV_LISTA_PATTERN,
   PKI_FIRMA_PATTERN,
+  TARGA_PATTERN,
 } from '../src/main/services/regexPatterns'
+import { LEGAL_SECTION_HEADERS } from '../src/main/services/legalStopWords'
 
 // Testa i pattern regex direttamente — senza caricare il modello NER
 // (il modello BERT richiede un file ~400MB non presente in CI)
@@ -455,5 +457,68 @@ describe('Pattern E1 — TITOLO_NOME (professionisti e testimoni con titolo)', (
   it('NON cattura minuscole dopo titolo (Dott. ssa)', () => {
     const m = match(TITOLO_NOME_PATTERN, 'Dott. ssa incompleto')
     expect(m).toHaveLength(0)
+  })
+})
+
+// ─── Fix sessione 049 — targa, documenti bare, intestazioni di sezione ────────
+
+describe('Pattern F1 — TARGA veicolo italiana', () => {
+  it('cattura targa moderna con spazi (AB 123 CD)', () => {
+    const m = match(TARGA_PATTERN, 'veicolo targato FX 523 KL era parcheggiato')
+    expect(m).toContain('FX 523 KL')
+  })
+  it('cattura targa moderna senza spazi (AB123CD)', () => {
+    const m = match(TARGA_PATTERN, 'autovettura FX523KL coinvolta')
+    expect(m).toContain('FX523KL')
+  })
+  it('cattura targa in mezzo a un testo', () => {
+    const m = match(TARGA_PATTERN, 'la Fiat 500 tg. AB 123 CD era in sosta')
+    expect(m).toContain('AB 123 CD')
+  })
+  it('NON cattura sequenze di 2 lettere + 7 cifre (CF-like)', () => {
+    // RSSMRA80A01H501U — non deve matchare come targa
+    const m = match(TARGA_PATTERN, 'RSSMRA80A01H501U')
+    expect(m).toHaveLength(0)
+  })
+  it('NON cattura sequenze senza due lettere finali', () => {
+    const m = match(TARGA_PATTERN, 'numero 123456')
+    expect(m).toHaveLength(0)
+  })
+})
+
+describe('Pattern B3 esteso — NUMERO_DOCUMENTO con contesto rilascio', () => {
+  it('cattura numero C.I. con contesto "rilasciata il ... con n."', () => {
+    const m = match(NUMERO_DOCUMENTO_PATTERN, 'C.I. rilasciata il 10/03/2021 con n. CA 5528847')
+    expect(m.some(v => v.replace(/\s/g, '') === 'CA5528847')).toBe(true)
+  })
+  it('cattura con "carta d\'identità" esplicito', () => {
+    const m = match(NUMERO_DOCUMENTO_PATTERN, "carta d'identità n. CA 5528847 rilasciata dal Comune")
+    expect(m.some(v => v.replace(/\s/g, '') === 'CA5528847')).toBe(true)
+  })
+  it('cattura con "documento d\'identità"', () => {
+    const m = match(NUMERO_DOCUMENTO_PATTERN, "documento d'identità: AB1234567")
+    expect(m.some(v => v === 'AB1234567')).toBe(true)
+  })
+})
+
+describe('LEGAL_SECTION_HEADERS — blocklist intestazioni legali maiuscolo', () => {
+  it('contiene "premesso che"', () => {
+    expect(LEGAL_SECTION_HEADERS.has('premesso che')).toBe(true)
+  })
+  it('contiene "svolgimento del processo"', () => {
+    expect(LEGAL_SECTION_HEADERS.has('svolgimento del processo')).toBe(true)
+  })
+  it('contiene "motivi della decisione"', () => {
+    expect(LEGAL_SECTION_HEADERS.has('motivi della decisione')).toBe(true)
+  })
+  it('contiene "documentazione esaminata"', () => {
+    expect(LEGAL_SECTION_HEADERS.has('documentazione esaminata')).toBe(true)
+  })
+  it('contiene "valutazione del danno"', () => {
+    expect(LEGAL_SECTION_HEADERS.has('valutazione del danno')).toBe(true)
+  })
+  it('NON contiene nomi propri comuni', () => {
+    expect(LEGAL_SECTION_HEADERS.has('mario rossi')).toBe(false)
+    expect(LEGAL_SECTION_HEADERS.has('banca commerciale italiana')).toBe(false)
   })
 })

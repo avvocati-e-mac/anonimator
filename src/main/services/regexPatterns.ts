@@ -86,9 +86,19 @@ export const INDIRIZZO_PATTERN_CORSO =
 export const INDIRIZZO_PATTERN =
   /(?:residente(?:\s+attualmente)?|domiciliato|domiciliata|con\s+sede|sito)\s+(?:in\s+)?(?:Via|Viale|Corso|Piazza|Largo|Vicolo|Str\.|Loc\.|Fraz\.|V\.le)\s+[A-Za-z\u00C0-\u00FF\s0-9,.']{3,50}(?:\s*[-–,]\s*\d{5}|\s*,?\s*\d{5})/gi
 
-/** carta d'identità/passaporto/patente + codice documento */
+/**
+ * Documento d'identità — due forme:
+ * 1. Con contesto: "carta d'identità / passaporto / patente / C.I." + codice
+ * 2. Bare format: due lettere maiuscole + 7 cifre (es. "CA 5528847", "AO 1234567")
+ *    SOLO se segue un contesto esplicito (rilasciata/emessa/n./numero/doc.)
+ *    oppure è in posizione di dato anagrafico (dopo "documento:" o "doc. n.")
+ */
 export const NUMERO_DOCUMENTO_PATTERN =
-  /(?:carta(?:\s+d[i']\s*identit[àa])?|passaporto|patente|C\.I\.E?\.?)[\s:,n.°]+([A-Z]{2}\s?[0-9]{5,7}[A-Z]?)|(?:n(?:umero)?\.?\s*doc(?:umento)?[:\s]+)([A-Z]{2}\s?[0-9]{5,7}[A-Z]?)/gi
+  /(?:carta(?:\s+d[i']\s*identit[àa])?|passaporto|patente|C\.I\.E?\.?|documento\s+d'identit[àa]?)[\s:,n.°]*([A-Z]{2}\s?[0-9]{5,7}[A-Z]?)|(?:n(?:umero)?\.?\s*doc(?:umento)?[:\s]+)([A-Z]{2}\s?[0-9]{5,7}[A-Z]?)|(?:(?:rilasciata?|emessa?)\s+(?:il\s+\S+\s+)?(?:dal?\s+\S+\s+)?(?:con\s+)?(?:n[°.]?\s*|numero\s+))([A-Z]{2}\s?[0-9]{5,7}[A-Z]?)/gi
+
+/** Targa veicolo italiana — formato moderno (AB 123 CD) e vecchio (AB12345) */
+export const TARGA_PATTERN =
+  /\b([A-Z]{2}\s?[0-9]{3}\s?[A-Z]{2})\b/g
 
 /** Contraente/Assicurato/Beneficiario + nome (polizze assicurative) */
 export const POLIZZA_PARTE_PATTERN =
@@ -134,6 +144,7 @@ export const STRUCTURED_LEGAL_PATTERNS: { pattern: RegExp; type: EntityType }[] 
   { pattern: CONTRATTO_PARTE_PATTERN,   type: 'PERSONA' },
   { pattern: PERIZIA_SOGGETTO_PATTERN,  type: 'PERSONA' },
   { pattern: TITOLO_NOME_PATTERN,       type: 'PERSONA' },
+  { pattern: TARGA_PATTERN,             type: 'TARGA' },
 ]
 
 // ─── Step 1 — Pattern strutturati (dati personali formali) ──────────────────

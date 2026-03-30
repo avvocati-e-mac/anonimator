@@ -73,3 +73,50 @@ export const LEGAL_STOP_WORDS = new Set<string>([
   'prefettura',
   'commissariato',
 ])
+
+/**
+ * Intestazioni di sezione legale in MAIUSCOLO che il modello BERT
+ * classifica erroneamente come PERSONA/ORGANIZZAZIONE.
+ * Confronto in lowercase sull'intera stringa multi-parola normalizzata.
+ */
+export const LEGAL_SECTION_HEADERS = new Set<string>([
+  // Contratti
+  'premesso che',
+  'tutto ciò premesso',
+  'le parti convengono',
+  'si conviene e si stipula',
+  'oggetto del contratto',
+  'durata del contratto',
+  'corrispettivo e pagamento',
+  'clausole risolutive',
+  'foro competente',
+  // Sentenze / atti giudiziari
+  'svolgimento del processo',
+  'motivi della decisione',
+  'in fatto',
+  'in diritto',
+  'fatto e diritto',
+  'p.q.m.',
+  'per questi motivi',
+  'ritenuto in fatto',
+  'ritenuto in diritto',
+  'rilevato che',
+  'considerato che',
+  'visto il ricorso',
+  'sentite le parti',
+  'letti gli atti',
+  'esaminati gli atti',
+  'dispositivo',
+  // Perizie
+  'documentazione esaminata',
+  'valutazione del danno',
+  'conclusioni',
+  'premessa',
+  'oggetto della perizia',
+  'quesiti peritali',
+  'risposta ai quesiti',
+  // Generici
+  'nota bene',
+  'avvertenze',
+  'allegati',
+])

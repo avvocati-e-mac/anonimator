@@ -51,6 +51,7 @@ export type EntityType =
   | 'LUOGO_NASCITA'
   | 'INDIRIZZO'
   | 'NUMERO_DOCUMENTO'
+  | 'TARGA'
 
 // Una singola entità trovata nel documento
 export interface DetectedEntity {

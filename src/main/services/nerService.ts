@@ -24,7 +24,7 @@ import {
   CODICE_FISCALE_PATTERN_LENIENT,
   CODICE_FISCALE_PATTERN_STRICT,
 } from './regexPatterns'
-import { LEGAL_STOP_WORDS } from './legalStopWords'
+import { LEGAL_STOP_WORDS, LEGAL_SECTION_HEADERS } from './legalStopWords'
 
 // Flag per la validazione strict del Codice Fiscale.
 // Default: false — perché l'OCR può distorcere lettere (B→8, O→0),
@@ -165,6 +165,15 @@ const SCORE_THRESHOLDS: Record<string, number> = { PER: 0.50, ORG: 0.60, LOC: 0.
 
 function isAllCaps(text: string): boolean {
   return /^[A-Z\u00C0-\u00DC\s']+$/.test(text)
+}
+
+/**
+ * Restituisce true se il testo (normalizzato in lowercase) corrisponde
+ * a un'intestazione di sezione legale standard — non deve essere anonimizzato.
+ */
+function isSectionHeader(text: string): boolean {
+  const normalized = text.toLowerCase().trim().replace(/\s+/g, ' ')
+  return LEGAL_SECTION_HEADERS.has(normalized)
 }
 
 const LABEL_TO_ENTITY_TYPE: Record<string, EntityType> = {
@@ -432,6 +441,7 @@ export async function analyzeText(
       if (type === 'PERSONA' && raw.split(/\s+/).length < 2) continue
       if (foundTexts.has(raw.toLowerCase())) continue
       if (type === 'PERSONA' && isAllCaps(raw)) {
+        if (isSectionHeader(raw)) continue
         const tokens = raw.split(/\s+/)
         if (tokens.some((t) => t.length <= 2 || ALLCAPS_BLOCKLIST.has(t.toLowerCase()))) continue
       }
@@ -519,9 +529,14 @@ export async function analyzeText(
           if (PKI_NOISE.has(cleaned.toLowerCase())) continue
           if (entityType === 'ORGANIZZAZIONE' && PUBLIC_INSTITUTION_PREFIXES.has(cleanedFirstWord)) continue
           if (entityType === 'PERSONA' && LEGAL_STOP_WORDS.has(cleaned.toLowerCase())) continue
+          if (isSectionHeader(cleaned)) continue
 
           if (score >= threshold) {
-            aboveThreshold.push(buildEntity(cleaned, entityType, 'ner'))
+            const entity = buildEntity(cleaned, entityType, 'ner')
+            // Le organizzazioni rilevate da BERT sono opzionali: non dati personali
+            // obbligatori ma utili — l'utente decide se anonimizzarle (default: deselezionate)
+            if (entityType === 'ORGANIZZAZIONE') entity.confirmed = false
+            aboveThreshold.push(entity)
           } else if (score >= BOOST_MIN_SCORE) {
             belowThreshold.push(buildEntity(cleaned, entityType, 'ner'))
           }
