@@ -4,7 +4,7 @@ App desktop per la **pseudoanonimizzazione offline** di documenti legali italian
 
 Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a server esterni. Tutto il processing avviene localmente sul tuo Mac, PC Windows o Linux.
 
-**Versione attuale: 1.4.0**
+**Versione attuale: 1.5.0**
 
 > **L'app è stata creata in vibe coding e non sono un esperto programmatore — procedi con cautela nell'utilizzo.**
 
@@ -29,8 +29,9 @@ Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a se
 
 ## Funzionalità
 
-- Riconosce automaticamente nomi di persone, luoghi, organizzazioni, codici fiscali, P.IVA, IBAN, email e numeri di telefono
-- Pattern regex specializzati per documenti legali: parti processuali, difensori, indirizzi, date di nascita, numeri documento, firme digitali
+- Riconosce automaticamente nomi di persone, luoghi, organizzazioni, codici fiscali, P.IVA, IBAN, email, numeri di telefono, **targhe veicoli** e numeri documento
+- Pattern regex specializzati per documenti legali: parti processuali, difensori, indirizzi, date di nascita, numeri documento, titoli professionali (Avv., Ing., Dott., Prof., ecc.), firme digitali
+- **Organizzazioni opzionali**: le aziende/società rilevate dal modello NER appaiono deselezionate di default — l'utente le seleziona manualmente se vuole anonimizzarle (non sono dati personali obbligatori)
 - **Co-reference resolution**: riconosce automaticamente le occorrenze successive di un nome (es. "Rossi" dopo "Mario Rossi") e le sostituisce con lo stesso pseudonimo
 - **Veto filter ruoli processuali**: i termini come "RICORRENTE", "APPELLANTE", "IMPUTATO" non vengono mai anonimizzati anche se il modello BERT li classifica erroneamente come persone
 - Sostituisce le entità con pseudonimi coerenti in tutto il documento (es. "Mario Rossi" → "M. R." ovunque appaia)
@@ -56,10 +57,10 @@ Scarica il file per il tuo sistema dalla pagina [Releases](https://github.com/av
 
 | File | Sistema |
 |---|---|
-| `Anonimator-1.4.0-arm64.dmg` | Mac Apple Silicon (M1/M2/M3/M4) |
-| `Anonimator-1.4.0-x64.dmg` | Mac Intel |
-| `Anonimator-1.4.0-windows-x64-setup.exe` | Windows 10/11 a 64 bit |
-| `Anonimator-1.4.0-linux-x64.AppImage` | Linux a 64 bit |
+| `Anonimator-1.5.0-arm64.dmg` | Mac Apple Silicon (M1/M2/M3/M4) |
+| `Anonimator-1.5.0-x64.dmg` | Mac Intel |
+| `Anonimator-1.5.0-windows-x64-setup.exe` | Windows 10/11 a 64 bit |
+| `Anonimator-1.5.0-linux-x64.AppImage` | Linux a 64 bit |
 
 ### Per tutti i sistemi
 
@@ -205,6 +206,8 @@ tests/          # Test unitari
 - [x] **Salvataggio e importazione entità** — esportare/importare il dizionario di sostituzione per riutilizzarlo su documenti della stessa pratica con i medesimi soggetti
 - [ ] **Ottimizzazione prompt per modelli piccoli** — prompt specializzato per LLM <9B (es. Phi-3, Gemma 2B) che non gestiscono bene prompt generici lunghi
 - [x] **Ottimizzazione rilevamento entità NER** — migliorata la pipeline NER con co-reference resolution, veto filter ruoli processuali, score boosting cross-layer, sliding-window chunking, cache chunk NER (v1.4.x)
+- [x] **Riconoscimento targa veicolo** — nuovo tipo entità TARGA con pattern italiano (v1.5.0)
+- [x] **Blocklist intestazioni legali** — `PREMESSO CHE`, `SVOLGIMENTO DEL PROCESSO`, ecc. non vengono più anonimizzati per errore (v1.5.0)
 
 ---
 

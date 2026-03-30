@@ -2,7 +2,7 @@
 
 Documentazione tecnica per sviluppatori. Descrive architettura, flussi di dati, logica di anonimizzazione e componenti del software.
 
-**Versione documentata:** 1.4.0
+**Versione documentata:** 1.5.0
 **Stack:** Electron 40 + React 18 + TypeScript (strict mode)
 **Scopo:** Pseudonimizzazione locale di documenti legali italiani (PDF, DOCX, ODT, TXT, immagini). Nessuna connessione di rete durante l'elaborazione.
 
@@ -550,15 +550,18 @@ Rileva titoli (`Dott.`, `Avv.`, `Prof.`, `Ing.`), nomi (anche con apostrofi come
 | A1 | `PROCESSO_PARTE_PATTERN` | PERSONA | `ricorrente: MARIO ROSSI` |
 | A2 | `DIFENSORE_PATTERN` | PERSONA | `difeso dall'avv. ANNA BIANCHI` |
 | A3 | `ALLCAPS_NAME_PATTERN` | PERSONA | `COLOMBO LUIGI` (su riga propria) |
+| B0 | `LUOGO_NASCITA_PATTERN` | LUOGO_NASCITA | `nato a Napoli il 23 luglio 1968` |
 | B1 | `DATA_NASCITA_PATTERN` | DATA_NASCITA | `nato a Roma il 15/03/1980` |
 | B2a | `INDIRIZZO_PATTERN_STANDARD` | INDIRIZZO | `residente in Via Roma 123, 00100` |
 | B2b | `INDIRIZZO_PATTERN_CORSO` | INDIRIZZO | `domiciliato in Corso Vittorio 12, 10100` (NON "corso di indagini") |
-| B3 | `NUMERO_DOCUMENTO_PATTERN` | NUMERO_DOCUMENTO | `Passaporto n. AB123456` |
+| B3 | `NUMERO_DOCUMENTO_PATTERN` | NUMERO_DOCUMENTO | `carta d'identità n. CA 5528847` / `rilasciata con n. AB1234567` |
 | C1 | `POLIZZA_PARTE_PATTERN` | PERSONA | `Contraente: LUIGI ROSSI` |
 | C2 | `CONTRATTO_PARTE_PATTERN` | PERSONA | `tra MARIO ROSSI, nato a...` |
 | C3 | `PERIZIA_SOGGETTO_PATTERN` | PERSONA | `Paziente: ANNA BIANCHI` |
 | D1 | `AVV_LISTA_PATTERN` | PERSONA | `avvocati MARIO ROSSI, ANNA BIANCHI` |
 | D2 | `PKI_FIRMA_PATTERN` | PERSONA | `Firmato Da: COLOMBO LUIGI Emesso Da:` |
+| E1 | `TITOLO_NOME_PATTERN` | PERSONA | `Ing. Stefano Moretti Ricci` / `Dott.ssa Carla Russo` |
+| F1 | `TARGA_PATTERN` | TARGA | `FX 523 KL` / `AB123CD` |
 
 **Nota B2 — split `INDIRIZZO_PATTERN_CORSO`:** Il vecchio pattern unificato includeva "Corso" come prefisso indistintamente, generando falsi positivi su formule processuali penali ("nel corso delle indagini", "corso di istruzione"). Il pattern è ora separato: `INDIRIZZO_PATTERN_STANDARD` gestisce Via/Viale/Piazza/Largo/ecc.; `INDIRIZZO_PATTERN_CORSO` matcha "Corso" **solo se preceduto da contesto di residenza/domicilio** (es. "residente in Corso Roma 15, 00100").
 
@@ -632,6 +635,11 @@ Entità BERT con score nel range `[0.35, threshold)` — sotto soglia ma con seg
 - **Rumore PKI:** frammenti da firme digitali (`NG`, `CA`, `G3`, ecc.) vengono esclusi.
 - **Blocklist maiuscole:** acronimi comuni (`SPA`, `SRL`, `INPS`, ecc.) vengono esclusi.
 - **Veto legalStopWords:** le entità PERSONA classificate da BERT che corrispondono esattamente a un ruolo processuale (es. "RICORRENTE", "APPELLANTE", "IMPUTATO", "GIUDICE") vengono scartate. Il filtro si applica **solo a `source: 'ner'`** — non alle entità regex Step 0b. Vedi `src/main/services/legalStopWords.ts` per la lista completa.
+- **Blocklist intestazioni di sezione (`LEGAL_SECTION_HEADERS`):** intestazioni legali in MAIUSCOLO che BERT classifica erroneamente come entità (es. `PREMESSO CHE`, `SVOLGIMENTO DEL PROCESSO`, `MOTIVI DELLA DECISIONE`, `DOCUMENTAZIONE ESAMINATA`, `VALUTAZIONE DEL DANNO`). Applicate sia nel layer regex Step 0b che nella pipeline BERT. 35 voci in `legalStopWords.ts`.
+
+**Organizzazioni opzionali (v1.5.0+):**
+
+Le entità `ORGANIZZAZIONE` rilevate da BERT ricevono `confirmed: false` — appaiono in grigio (opacity-40) nella lista entità dell'EntityReview. L'utente le seleziona manualmente se desidera anonimizzarle. Le organizzazioni rilevate dai pattern regex Step 0b (es. strutture contrattuali) mantengono `confirmed: true`.
 
 **Co-reference resolution:**
 
