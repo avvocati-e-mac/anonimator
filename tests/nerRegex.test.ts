@@ -21,6 +21,14 @@ import {
   AVV_LISTA_PATTERN,
   PKI_FIRMA_PATTERN,
   TARGA_PATTERN,
+  PERSONA_FIELD_PATTERN,
+  DIPENDENTE_PATTERN,
+  DATORE_LAVORO_PATTERN,
+  LUOGO_NASCITA_FIELD_PATTERN,
+  INDIRIZZO_PATTERN_NO_CAP,
+  INDIRIZZO_FIELD_PATTERN,
+  TELEFONO_OCR_FIELD_PATTERN,
+  CODICE_FISCALE_OCR_FIELD_PATTERN,
 } from '../src/main/services/regexPatterns'
 import { LEGAL_SECTION_HEADERS } from '../src/main/services/legalStopWords'
 
@@ -88,8 +96,8 @@ describe('Regex PARTITA_IVA', () => {
     const m = match(PARTITA_IVA_PATTERN, 'P.IVA: 12345678901')
     expect(m).toContain('12345678901')
   })
-  it('riconosce 11 cifre bare', () => {
-    expect(match(PARTITA_IVA_PATTERN, 'codice 12345678901 contribuente')).toContain('12345678901')
+  it('non scambia per P.IVA undici cifre senza etichetta', () => {
+    expect(match(PARTITA_IVA_PATTERN, 'codice 12345678901 contribuente')).toHaveLength(0)
   })
 })
 
@@ -520,5 +528,75 @@ describe('LEGAL_SECTION_HEADERS — blocklist intestazioni legali maiuscolo', ()
   it('NON contiene nomi propri comuni', () => {
     expect(LEGAL_SECTION_HEADERS.has('mario rossi')).toBe(false)
     expect(LEGAL_SECTION_HEADERS.has('banca commerciale italiana')).toBe(false)
+  })
+})
+
+describe('Pattern v1.8 — campi anagrafici delimitati', () => {
+  it('cattura Cognome e Nome anche se composti da un solo token', () => {
+    expect(match(PERSONA_FIELD_PATTERN, 'Cognome: Neri\nNome: Luca')).toEqual(['Neri', 'Luca'])
+  })
+
+  it('cattura le etichette OCR C0GNOME e N0ME', () => {
+    expect(match(PERSONA_FIELD_PATTERN, 'C0GNOME: BIANCHI\nN0ME: ELENA')).toEqual(['BIANCHI', 'ELENA'])
+  })
+
+  it('non cattura una descrizione generica contenente la parola nome', () => {
+    expect(match(PERSONA_FIELD_PATTERN, 'Il nome del procedimento resta invariato.')).toHaveLength(0)
+  })
+
+  it('cattura il dipendente ma non un valore non indicato', () => {
+    expect(match(DIPENDENTE_PATTERN, 'Dipendente: Sara Conti')).toEqual(['Sara Conti'])
+    expect(match(DIPENDENTE_PATTERN, 'Dipendente: non indicato')).toHaveLength(0)
+  })
+
+  it('cattura il datore solo con etichetta e forma societaria', () => {
+    expect(match(DATORE_LAVORO_PATTERN, 'Datore di lavoro: Officina Gamma S.r.l.')).toEqual(['Officina Gamma S.r.l.'])
+    expect(match(DATORE_LAVORO_PATTERN, 'Datore di lavoro: non indicato')).toHaveLength(0)
+  })
+})
+
+describe('Pattern v1.8 — nascita e indirizzi contestuali', () => {
+  it('cattura luogo e data nella prosa con luogo composto', () => {
+    expect(match(LUOGO_NASCITA_PATTERN, 'nato a Borgo della Luna il 12 marzo 1984')).toEqual(['Borgo della Luna'])
+    expect(match(DATA_NASCITA_PATTERN, 'nato a Borgo della Luna il 12 marzo 1984')).toEqual(['12 marzo 1984'])
+  })
+
+  it('cattura luogo da campo nativo e da label OCR', () => {
+    expect(match(LUOGO_NASCITA_FIELD_PATTERN, 'Luogo di nascita: Cittafinta')).toEqual(['Cittafinta'])
+    expect(match(LUOGO_NASCITA_FIELD_PATTERN, 'LU0G0 Dl NASCITA: Cittafinta')).toEqual(['Cittafinta'])
+  })
+
+  it('non trasforma un luogo generico in luogo di nascita', () => {
+    expect(match(LUOGO_NASCITA_FIELD_PATTERN, 'Comune: Cittafinta')).toHaveLength(0)
+  })
+
+  it('cattura un indirizzo senza CAP solo con contesto forte', () => {
+    expect(match(INDIRIZZO_PATTERN_NO_CAP, 'residente in Via delle Querce 8.')).toEqual(['residente in Via delle Querce 8'])
+    expect(match(INDIRIZZO_PATTERN_NO_CAP, 'incontro in Via delle Querce 8.')).toHaveLength(0)
+  })
+
+  it('non duplica come indirizzo senza CAP quello che ha il CAP', () => {
+    expect(match(INDIRIZZO_PATTERN_NO_CAP, 'residente in Via del Gelsomino 12, 00123.')).toHaveLength(0)
+  })
+
+  it('cattura il campo Residenza sulla riga successiva', () => {
+    expect(match(INDIRIZZO_FIELD_PATTERN, 'Residenza:\nViale della Luna 4\nComune: Cittafinta')).toEqual(['Viale della Luna 4'])
+  })
+})
+
+describe('Pattern v1.8 — confusioni OCR solo con label forte', () => {
+  it('cattura telefono con I al posto di 1 dopo label telefonica', () => {
+    expect(match(TELEFONO_OCR_FIELD_PATTERN, 'Recapito telefonico: 333 I234567')).toEqual(['333 I234567'])
+    expect(match(TELEFONO_OCR_FIELD_PATTERN, 'Protocollo: 333 I234567')).toHaveLength(0)
+  })
+
+  it('cattura CF alfanumerico OCR-distorto solo dopo label fiscale', () => {
+    expect(match(CODICE_FISCALE_OCR_FIELD_PATTERN, 'Codice fiscale: VRDGLI8AC52Z4O4Q')).toEqual(['VRDGLI8AC52Z4O4Q'])
+    expect(match(CODICE_FISCALE_OCR_FIELD_PATTERN, 'Codice pratica: VRDGLI8AC52Z4O4Q')).toHaveLength(0)
+  })
+
+  it('richiede contesto veicolo per una sequenza a forma di targa', () => {
+    expect(match(TARGA_PATTERN, 'Codice interno della pratica: AB 123 CD.')).toHaveLength(0)
+    expect(match(TARGA_PATTERN, 'veicolo targato AB 123 CD.')).toEqual(['AB 123 CD'])
   })
 })

@@ -10,10 +10,10 @@ vi.mock('../src/main/services/llmService', () => ({
   detectNamesWithLlm: vi.fn().mockResolvedValue([]),
 }))
 
-// La factory fallisce intenzionalmente: la baseline attraversa analyzeText e
+// La factory fallisce intenzionalmente: l'evaluation attraversa analyzeText e
 // tutta la regex di produzione, senza file ONNX, rete o inferenza simulata.
 vi.mock('@huggingface/transformers', () => ({
-  pipeline: vi.fn().mockRejectedValue(new Error('no model in synthetic baseline')),
+  pipeline: vi.fn().mockRejectedValue(new Error('no model in synthetic evaluation')),
   env: {
     allowRemoteModels: false,
     allowLocalModels: true,
@@ -40,12 +40,36 @@ interface EvaluationReport {
   cases: number
   positiveCases: number
   negativeControls: number
+  negativeControlFalsePositives: number
   byType: Partial<Record<EntityType, Metrics>>
   micro: Metrics
   macro: Pick<Metrics, 'precision' | 'recall' | 'f1'>
 }
 
 const EMPTY_COUNTS: Counts = { tp: 0, fp: 0, fn: 0 }
+
+/** Baseline misurata su v1.7 prima delle correzioni recall. */
+const PRE_FIX_BASELINE = {
+  micro: {
+    precision: 2 / 3,
+    recall: 12 / 26,
+    f1: 6 / 11,
+    falsePositives: 6,
+  },
+  macro: {
+    recall: 0.5466666666666666,
+    f1: 0.4686274509803921,
+  },
+} as const
+
+/** Target minimo v1.8 sul corpus congelato; resta inferiore al risultato perfetto corrente. */
+const POST_FIX_TARGET = {
+  microPrecision: 0.95,
+  microRecall: 0.95,
+  microF1: 0.95,
+  macroRecall: 0.9,
+  macroF1: 0.9,
+} as const
 
 function exactKey(type: EntityType, originalText: string): string {
   return `${type}\u0000${originalText}`
@@ -66,6 +90,7 @@ function addCounts(target: Counts, source: Counts): void {
 
 async function evaluateCorpus(): Promise<EvaluationReport> {
   const aggregate = new Map<EntityType, Counts>()
+  let negativeControlFalsePositives = 0
 
   for (const sample of NER_RECALL_CORPUS) {
     const result = await analyzeText(sample.text)
@@ -88,6 +113,11 @@ async function evaluateCorpus(): Promise<EvaluationReport> {
         type: entity.type,
         occurrences: entity.occurrences,
       })
+    }
+
+    if (sample.category === 'negative-control') {
+      negativeControlFalsePositives += [...predicted.values()]
+        .reduce((sum, entity) => sum + entity.occurrences, 0)
     }
 
     const keys = new Set([...expected.keys(), ...predicted.keys()])
@@ -127,6 +157,7 @@ async function evaluateCorpus(): Promise<EvaluationReport> {
     cases: NER_RECALL_CORPUS.length,
     positiveCases: NER_RECALL_CORPUS.filter((sample) => sample.expected.length > 0).length,
     negativeControls: NER_RECALL_CORPUS.filter((sample) => sample.category === 'negative-control').length,
+    negativeControlFalsePositives,
     byType,
     micro: metrics(microCounts),
     macro,
@@ -146,26 +177,41 @@ describe('NER recall — corpus sintetico occurrence-aware', () => {
     expect(report.cases).toBeGreaterThanOrEqual(20)
     expect(report.positiveCases).toBeGreaterThanOrEqual(15)
     expect(report.negativeControls).toBeGreaterThanOrEqual(5)
+    expect(NER_RECALL_CORPUS
+      .filter((sample) => sample.category === 'negative-control')
+      .every((sample) => sample.expected.length === 0)).toBe(true)
     expect(Object.keys(report.byType).length).toBeGreaterThanOrEqual(8)
   })
 
-  it('mantiene un budget esplicito sui falsi positivi deterministici', () => {
-    // Baseline v1.7 pre-fix: precisione 2/3 e sei occorrenze false-positive.
-    // I fix v1.8 possono migliorare entrambi i valori, mai peggiorarli.
-    expect(report.micro.precision).toBeGreaterThanOrEqual(2 / 3)
-    expect(report.micro.fp).toBeLessThanOrEqual(6)
+  it('non regredisce rispetto alla baseline v1.7 pre-fix', () => {
+    expect(report.micro.precision).toBeGreaterThanOrEqual(PRE_FIX_BASELINE.micro.precision)
+    expect(report.micro.recall).toBeGreaterThanOrEqual(PRE_FIX_BASELINE.micro.recall)
+    expect(report.micro.f1).toBeGreaterThanOrEqual(PRE_FIX_BASELINE.micro.f1)
+    expect(report.micro.fp).toBeLessThanOrEqual(PRE_FIX_BASELINE.micro.falsePositives)
+    expect(report.macro.recall).toBeGreaterThanOrEqual(PRE_FIX_BASELINE.macro.recall)
+    expect(report.macro.f1).toBeGreaterThanOrEqual(PRE_FIX_BASELINE.macro.f1)
   })
 
-  it('espone solo il report aggregato della baseline pre-fix', () => {
+  it('raggiunge il target post-fix e non produce falsi positivi sui controlli negativi', () => {
+    expect(report.micro.precision).toBeGreaterThanOrEqual(POST_FIX_TARGET.microPrecision)
+    expect(report.micro.recall).toBeGreaterThanOrEqual(POST_FIX_TARGET.microRecall)
+    expect(report.micro.f1).toBeGreaterThanOrEqual(POST_FIX_TARGET.microF1)
+    expect(report.macro.recall).toBeGreaterThanOrEqual(POST_FIX_TARGET.macroRecall)
+    expect(report.macro.f1).toBeGreaterThanOrEqual(POST_FIX_TARGET.macroF1)
+    expect(report.negativeControlFalsePositives).toBe(0)
+  })
+
+  it('espone solo il report aggregato dell\'evaluation', () => {
     const aggregateOnly = {
       cases: report.cases,
       positiveCases: report.positiveCases,
       negativeControls: report.negativeControls,
+      negativeControlFalsePositives: report.negativeControlFalsePositives,
       byType: report.byType,
       micro: report.micro,
       macro: report.macro,
     }
-    console.info(`NER_RECALL_BASELINE ${JSON.stringify(aggregateOnly)}`)
+    console.info(`NER_RECALL_EVALUATION ${JSON.stringify(aggregateOnly)}`)
     expect(report.micro.tp + report.micro.fn).toBeGreaterThan(0)
   })
 })

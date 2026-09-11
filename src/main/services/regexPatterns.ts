@@ -32,7 +32,7 @@ export const PROCESSO_PARTE_PATTERN = new RegExp(
   '(?:^|\\n)\\s*(?:ricorrente|resistente|appellante|appellato|intimato|' +
   'controricorrente|opponente|opposto|attore|convenuto|debitore|creditore|' +
   'fallito|fallendo|istante|intervenuto)[:\\s,]+' +
-  "([A-ZÀ-Ü][A-ZÀ-Üa-zà-ü']+(?:\\s+[A-ZÀ-Ü][A-ZÀ-Üa-zà-ü']+){1,3})",
+  "([A-ZÀ-Ü][A-ZÀ-Üa-zà-ü']+(?:[ \\t]+[A-ZÀ-Ü][A-ZÀ-Üa-zà-ü']+){1,3})",
   'gi'
 )
 
@@ -47,18 +47,42 @@ export const DIFENSORE_PATTERN = new RegExp(
 /** Nome tutto-maiuscolo su riga propria o seguito da trattino */
 export const ALLCAPS_NAME_PATTERN = new RegExp(
   '(?:^|\\n)([A-Z\u00C0-\u00DC][A-Z\u00C0-\u00DC\']{1,25}' +
-  '(?:\\s+[A-Z\u00C0-\u00DC][A-Z\u00C0-\u00DC]{1,25}){1,2})' +
+  '(?:[ \\t]+[A-Z\u00C0-\u00DC][A-Z\u00C0-\u00DC]{1,25}){1,2})' +
   '(?:\\s*$|\\s*[+]|\\s*[-\u2013]\\s*(?:$|\\n))',
   'gm'
 )
 
+/**
+ * Campi anagrafici fortemente etichettati. Il valore resta confinato alla riga:
+ * questo consente anche cognomi o nomi singoli senza rendere globale una regex
+ * PERSONA altrimenti troppo permissiva. Sono incluse soltanto le confusioni OCR
+ * osservate nelle etichette (0 al posto di O), non nel valore.
+ */
+export const PERSONA_FIELD_PATTERN =
+  /(?:^|\n)[ \t]*(?:Cognome|COGNOME|cognome|C0GNOME|Nome|NOME|nome|N0ME)[ \t]*:[ \t]*([A-ZÀ-Ü][A-Za-zÀ-ÿ'’-]{2,}(?:[ \t]+[A-ZÀ-Ü][A-Za-zÀ-ÿ'’-]{1,}){0,3})[ \t]*(?=$|\n)/gm
+
+/** Dipendente/lavoratore con nome completo, sempre delimitato dalla riga. */
+export const DIPENDENTE_PATTERN =
+  /(?:^|\n)[ \t]*(?:Dipendente|DIPENDENTE|dipendente|Lavoratore|LAVORATORE|lavoratore|Lavoratrice|LAVORATRICE|lavoratrice)[ \t]*:[ \t]*([A-ZÀ-Ü][A-Za-zÀ-ÿ'’-]+(?:[ \t]+[A-ZÀ-Ü][A-Za-zÀ-ÿ'’-]+){1,3})[ \t]*(?=$|\n)/gm
+
+/**
+ * Datore di lavoro: richiede sia l'etichetta esatta sia una forma societaria.
+ * Evita di classificare come organizzazione frasi quali "non indicato".
+ */
+export const DATORE_LAVORO_PATTERN =
+  /(?:^|\n)[ \t]*(?:Datore di lavoro|DATORE DI LAVORO|datore di lavoro)[ \t]*:[ \t]*([A-ZÀ-Ü][A-Za-zÀ-ÿ0-9&'’., -]{1,70}?(?:S\.[ \t]*r\.[ \t]*l\.|S\.[ \t]*p\.[ \t]*[Aa]\.|S\.[ \t]*n\.[ \t]*c\.|S\.[ \t]*a\.[ \t]*s\.))[ \t]*(?=$|\n)/gm
+
 /** nato/nata/data di nascita + data (numerica o letterale italiana) */
 export const DATA_NASCITA_PATTERN =
-  /(?:nato|nata|n\.)[\s,]+(?:a\s+\S+\s+)?il\s+(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4}|\d{1,2}\s+(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+\d{4})|(?:data(?:\s+di)?\s+nascita|d\.d\.n\.)[:\s]+(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4}|\d{1,2}\s+(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+\d{4})/gi
+  /(?:nato|nata|n\.)[ \t,]+(?:a[ \t]+[A-Za-zÀ-ÿ'’-]+(?:[ \t]+[A-Za-zÀ-ÿ'’-]+){0,4}[ \t]+)?il[ \t]+(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4}|\d{1,2}[ \t]+(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)[ \t]+\d{4})|(?:data(?:[ \t]+di)?[ \t]+nascita|d\.d\.n\.)[ \t]*:[ \t]*(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4}|\d{1,2}[ \t]+(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)[ \t]+\d{4})/gi
 
 /** nato/nata a <Città> il — cattura il luogo di nascita con contesto esplicito */
 export const LUOGO_NASCITA_PATTERN =
-  /(?:nato|nata)\s+a\s+([A-ZÀ-Üa-zà-ü][A-Za-zÀ-ÿ\s]{1,30}?)\s+il\b/gi
+  /(?:nato|nata)[ \t]+a[ \t]+([A-ZÀ-Üa-zà-ü][A-Za-zÀ-ÿ'’-]*(?:[ \t]+[A-Za-zÀ-ÿ'’-]+){0,4})[ \t]+il\b/gi
+
+/** Luogo di nascita in modulo, incluse confusioni OCR 0/O e l/I nella label. */
+export const LUOGO_NASCITA_FIELD_PATTERN =
+  /(?:^|\n)[ \t]*(?:Luogo di nascita|LUOGO DI NASCITA|luogo di nascita|LU0G0 D[I1l] NASCITA)[ \t]*:[ \t]*([A-ZÀ-Ü][A-Za-zÀ-ÿ'’-]*(?:[ \t]+[A-Za-zÀ-ÿ'’-]+){0,4})[ \t]*(?=$|\n)/gm
 
 /**
  * Indirizzo con prefisso contestuale (residente/domiciliato/con sede).
@@ -77,6 +101,14 @@ export const INDIRIZZO_PATTERN_STANDARD =
  */
 export const INDIRIZZO_PATTERN_CORSO =
   /(?:residente(?:\s+attualmente)?|domiciliato|domiciliata|con\s+sede|sito)\s+(?:in\s+)?[Cc]orso\s+[A-ZÀ-Ü][A-Za-zÀ-ÿ]+(?:\s+[A-Za-zÀ-ÿ]+){0,5},?\s*\d+[,\s]*(?:[-–]\s*)?\d{5}/gi
+
+/** Indirizzo privo di CAP, ammesso solo con contesto residente/domiciliato. */
+export const INDIRIZZO_PATTERN_NO_CAP =
+  /(?:residente(?:[ \t]+attualmente)?|domiciliato|domiciliata)[ \t]+(?:in[ \t]+)?(?:Via|Viale|Piazza|Largo|Vicolo|Str\.|Loc\.|Fraz\.|V\.le|Corso)[ \t]+[A-Za-zÀ-ÿ'’-]+(?:[ \t]+[A-Za-zÀ-ÿ'’-]+){0,5}[ \t]+\d+[A-Za-z]?(?![ \t]*[,\-–]?[ \t]*\d{5}\b)(?=[.,;]|$|\n)/gi
+
+/** Campo Residenza/Indirizzo, sulla stessa riga o su quella immediatamente dopo. */
+export const INDIRIZZO_FIELD_PATTERN =
+  /(?:^|\n)[ \t]*(?:Residenza|RESIDENZA|residenza|Indirizzo|INDIRIZZO|indirizzo)[ \t]*:[ \t]*(?:\n[ \t]*)?((?:Via|Viale|Piazza|Largo|Vicolo|Str\.|Loc\.|Fraz\.|V\.le|Corso)[ \t]+[A-Za-zÀ-ÿ'’-]+(?:[ \t]+[A-Za-zÀ-ÿ'’-]+){0,5}[ \t]+\d+[A-Za-z]?)[ \t]*(?=$|\n)/gm
 
 /**
  * Pattern combinato legacy — non usato nel codice principale.
@@ -98,7 +130,7 @@ export const NUMERO_DOCUMENTO_PATTERN =
 
 /** Targa veicolo italiana — formato moderno (AB 123 CD) e vecchio (AB12345) */
 export const TARGA_PATTERN =
-  /\b([A-Z]{2}\s?[0-9]{3}\s?[A-Z]{2})\b/g
+  /\b(?:veicolo[ \t]+targato|autovettura|targa|tg\.)[ \t]*:?[ \t]*([A-Z]{2}[ \t]?[0-9]{3}[ \t]?[A-Z]{2})\b/gi
 
 /** Contraente/Assicurato/Beneficiario + nome (polizze assicurative) */
 export const POLIZZA_PARTE_PATTERN =
@@ -129,22 +161,38 @@ export const AVV_LISTA_PATTERN =
 export const PKI_FIRMA_PATTERN =
   /Firmato\s+Da:\s+([A-Z][A-Z\u00C0-\u00DC]+\s+[A-Z][A-Z\u00C0-\u00DC]+)\s+Emesso/gi
 
+/** Telefono OCR-confuso: I/l al posto di 1, solo dopo un'etichetta forte. */
+export const TELEFONO_OCR_FIELD_PATTERN =
+  /(?:recapito[ \t]+telefonico|telefono|cellulare|tel\.)[ \t]*:[ \t]*((?:\+?39[ \t-]+)?(?:3[0-9]{2}|0[0-9]{1,3})[ \t-]+[0-9Il][0-9Il]{5,7})\b/gi
+
+/** CF OCR-confuso: 16 alfanumerici, esclusivamente dopo l'etichetta completa. */
+export const CODICE_FISCALE_OCR_FIELD_PATTERN =
+  /(?:codice[ \t]+fiscale|C\.[ \t]*F\.)[ \t]*:[ \t]*([A-Z0-9]{16})\b/gi
+
 // ─── Step 0b — Array aggregato (usato in nerService.ts) ──────────────────────
 
-export const STRUCTURED_LEGAL_PATTERNS: { pattern: RegExp; type: EntityType }[] = [
+export const STRUCTURED_LEGAL_PATTERNS: { pattern: RegExp; type: EntityType; allowSingleToken?: boolean }[] = [
   { pattern: PROCESSO_PARTE_PATTERN,    type: 'PERSONA' },
   { pattern: DIFENSORE_PATTERN,         type: 'PERSONA' },
   { pattern: ALLCAPS_NAME_PATTERN,      type: 'PERSONA' },
+  { pattern: PERSONA_FIELD_PATTERN,     type: 'PERSONA', allowSingleToken: true },
+  { pattern: DIPENDENTE_PATTERN,        type: 'PERSONA' },
+  { pattern: DATORE_LAVORO_PATTERN,     type: 'ORGANIZZAZIONE' },
   { pattern: LUOGO_NASCITA_PATTERN,     type: 'LUOGO_NASCITA' },
+  { pattern: LUOGO_NASCITA_FIELD_PATTERN, type: 'LUOGO_NASCITA' },
   { pattern: DATA_NASCITA_PATTERN,      type: 'DATA_NASCITA' },
   { pattern: INDIRIZZO_PATTERN_STANDARD, type: 'INDIRIZZO' },
   { pattern: INDIRIZZO_PATTERN_CORSO,   type: 'INDIRIZZO' },
+  { pattern: INDIRIZZO_PATTERN_NO_CAP,  type: 'INDIRIZZO' },
+  { pattern: INDIRIZZO_FIELD_PATTERN,   type: 'INDIRIZZO' },
   { pattern: NUMERO_DOCUMENTO_PATTERN,  type: 'NUMERO_DOCUMENTO' },
   { pattern: POLIZZA_PARTE_PATTERN,     type: 'PERSONA' },
   { pattern: CONTRATTO_PARTE_PATTERN,   type: 'PERSONA' },
   { pattern: PERIZIA_SOGGETTO_PATTERN,  type: 'PERSONA' },
   { pattern: TITOLO_NOME_PATTERN,       type: 'PERSONA' },
   { pattern: TARGA_PATTERN,             type: 'TARGA' },
+  { pattern: TELEFONO_OCR_FIELD_PATTERN, type: 'TELEFONO' },
+  { pattern: CODICE_FISCALE_OCR_FIELD_PATTERN, type: 'CODICE_FISCALE' },
 ]
 
 // ─── Step 1 — Pattern strutturati (dati personali formali) ──────────────────
@@ -166,9 +214,9 @@ export const CODICE_FISCALE_PATTERN_LENIENT =
 export const CODICE_FISCALE_PATTERN_STRICT =
   /\b[A-Z]{6}[0-9]{2}[ABCDEHLMPRST](?:0[1-9]|[1-6][0-9]|7[01])[A-Z][0-9]{3}[A-Z]\b/gi
 
-/** Partita IVA — 11 cifre, opzionalmente preceduto da "P.IVA" */
+/** Partita IVA — 11 cifre soltanto dopo l'etichetta P.IVA/partita IVA. */
 export const PARTITA_IVA_PATTERN =
-  /\b(?:P\.?\s?IVA\s*:?\s*)?([0-9]{11})\b/gi
+  /\b(?:P\.?[ \t]*IVA|partita[ \t]+iva)[ \t]*:?[ \t]*([0-9]{11})\b/gi
 
 /** IBAN italiano — gestisce sia formato compatto che con spazi ogni 4 char */
 export const IBAN_PATTERN =

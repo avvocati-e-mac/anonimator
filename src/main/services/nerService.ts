@@ -157,8 +157,11 @@ const ALLCAPS_BLOCKLIST = new Set([
   'inps','inail','inpgi','inpdap','spa','srl','snc','sas','sapa','onlus','ong',
   'asl','usl','ssr','ssn','pec','iban','cig','cup',
   'tribunale','corte','procura','ministero','comune','regione',
-  'repubblica','italiana','stato','governo'
+  'repubblica','italiana','stato','governo',
+  'dati','richiedente','parte','costituita'
 ])
+
+const ALLCAPS_NAME_PARTICLES = new Set(['da', 'de', 'del', 'della', 'di'])
 
 const SCORE_THRESHOLDS: Record<string, number> = { PER: 0.50, ORG: 0.60, LOC: 0.65 }
 
@@ -256,6 +259,11 @@ function buildEntity(originalText: string, type: EntityType, source: DetectedEnt
     confirmed: type !== 'LUOGO',
     source,
   }
+}
+
+/** Restituisce il primo gruppo catturato, qualunque sia il ramo alternativo. */
+export function firstDefinedCapture(match: RegExpMatchArray): string {
+  return match.slice(1).find((value) => value !== undefined)?.trim() ?? match[0].trim()
 }
 
 function countOccurrences(text: string, entityText: string): number {
@@ -458,20 +466,25 @@ export async function analyzeText(
     allEntities.push(buildEntity(raw, 'PERSONA'))
   }
 
-  for (const { pattern, type } of STRUCTURED_LEGAL_PATTERNS) {
+  for (const { pattern, type, allowSingleToken = false } of STRUCTURED_LEGAL_PATTERNS) {
     pattern.lastIndex = 0
     for (const match of text.matchAll(pattern)) {
-      const raw = (match[1] ?? match[2] ?? match[0]).trim()
+      const raw = firstDefinedCapture(match)
       if (!raw) continue
-      if (type === 'PERSONA' && raw.split(/\s+/).length < 2) continue
+      if (type === 'PERSONA' && !allowSingleToken && raw.split(/\s+/).length < 2) continue
       if (foundTexts.has(raw.toLowerCase())) continue
       if (type === 'PERSONA' && isAllCaps(raw)) {
         if (isSectionHeader(raw)) continue
         const tokens = raw.split(/\s+/)
-        if (tokens.some((t) => t.length <= 2 || ALLCAPS_BLOCKLIST.has(t.toLowerCase()))) continue
+        if (tokens.some((t) =>
+          (t.length <= 2 && !ALLCAPS_NAME_PARTICLES.has(t.toLowerCase())) ||
+          ALLCAPS_BLOCKLIST.has(t.toLowerCase())
+        )) continue
       }
       foundTexts.add(raw.toLowerCase())
-      allEntities.push(buildEntity(raw, type))
+      const entity = buildEntity(raw, type)
+      if (type === 'ORGANIZZAZIONE') entity.confirmed = false
+      allEntities.push(entity)
     }
   }
 
@@ -503,7 +516,7 @@ export async function analyzeText(
   for (const { type, pattern } of effectiveRegexPatterns) {
     pattern.lastIndex = 0
     for (const match of text.matchAll(pattern)) {
-      const raw = (match[1] ?? match[0]).trim()
+      const raw = firstDefinedCapture(match)
       if (!raw || foundTexts.has(raw.toLowerCase())) continue
       foundTexts.add(raw.toLowerCase())
       allEntities.push(buildEntity(raw, type))
@@ -795,4 +808,3 @@ function splitTextIntoChunks(text: string, targetWords: number): string[] {
   const tokens = text.split(/\s+/).filter(t => t.length > 0)
   return createOverlappingChunks(tokens, targetWords, 40)
 }
-
