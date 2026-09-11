@@ -48,13 +48,51 @@ rettangolo pdf-lib.
 - `CHANGELOG.md` — stub `## [1.6.0] - non rilasciata`, per non lasciare il repo con una
   versione senza voce se ci si ferma a metà (CLAUDE.md §5b)
 
+### Onda 1 — E2 (qualità linguistica) — COMPLETATO
+- `src/main/services/textQuality.ts` (271 righe) — modulo puro, unico import è
+  `import type` da `@shared/types`. `scoreTextQuality()`, `ITALIAN_FUNCTION_WORDS`
+  (166 voci), `TEXT_QUALITY_TUNING` con tutte le soglie in un punto solo.
+- `tests/textQuality.test.ts` (270 righe, 23 test) — soli dati sintetici.
+
+Scelte degne di nota:
+- **I token puramente numerici sono esclusi da tutte le metriche.** Un atto legale è
+  pieno di date, importi e numeri di ruolo: includerli falserebbe lunghezza media e
+  conteggio dei token singoli. Restano i misti tipo `art5`.
+- **Forme elise nel set** (`dell`, `nell`, `all`…): il tokenizzatore spezza sull'apostrofo,
+  e senza quelle voci il tasso sarebbe sottostimato proprio sui testi giuridici.
+- **Nota per la taratura (E4):** le voci di un solo carattere (`a`, `e`, `i`, `o`, `l`, `d`)
+  fanno sì che sul testo a lettere spaziate il `functionWordRatio` risulti *alto* (0,54)
+  invece che crollato — le lettere isolate coincidono con le parole funzionali corte.
+  Il caso resta `poor` grazie a due segnali indipendenti, e c'è un test di regressione
+  che congela il comportamento. Se in taratura si tolgono le voci monocarattere, quel
+  test lo segnala subito.
+- «OCR in lingua sbagliata» esce `suspect`, non `poor`: l'inglese fallisce un solo
+  segnale. Corretto così — il testo è leggibile, solo non italiano — e `suspect` basta
+  comunque a far comparire il banner.
+
+Verifica: typecheck pulito, 23/23 test del modulo, 314 test complessivi.
+Audit indipendente dell'orchestratore: nessun `any`/`@ts-ignore`, nessun import di
+`electron`, regex senza flag `g` nei `.test()` in ciclo (bug classico evitato),
+divisione per zero protetta, file UTF-8 puri.
+
+## Debito tecnico individuato (attività separata)
+
+`tsconfig.json` ha `"include": ["src"]`: **`npm run typecheck` non controlla `tests/`**.
+Vitest transpila senza type-checking, quindi oggi un `any` o un errore di tipo in un
+test non lo rileva nessuno, nonostante `CLAUDE.md` §3 lo vieti ovunque. Misurato:
+aggiungendo `tests` a `include` emergono solo **5 errori preesistenti** (3 import morti,
+un accesso a `.text` su `DetectedEntity` che non esiste — bug latente vero — e un `.mock`
+da sostituire con `vi.mocked`). Non corretto adesso per non cambiare il significato di
+`npm run typecheck` mentre gli esecutori sono in corso. Aperta come attività a sé.
+
 ## Problemi ambientali incontrati (utili a chi riprende)
 
 1. **`npm ci` non esegue gli install-script delle dipendenze** (npm 11.19 richiede
    `allowScripts`). Il `postinstall` del progetto — `patch-package` — gira comunque, quindi
-   la patch a `tesseract.js` è applicata. Restano da eseguire a mano quelli delle dipendenze:
-   `electron`, `esbuild`, `onnxruntime-node`, `sharp`, `protobufjs`
-   (`electron-winstaller` serve solo per la build Windows).
+   la patch a `tesseract.js` è applicata. Degli 8 script bloccati, **solo `electron` conta
+   davvero**: verificato che `sharp` (libvips 8.17.3), `esbuild` (0.25.12) e `onnxruntime-node`
+   funzionano comunque, perché i loro binari arrivano da pacchetti per piattaforma già
+   installati. `electron-winstaller` serve solo alla build Windows.
 2. **L'estrazione dello zip di Electron fallisce in silenzio** dentro iCloud Drive:
    `install.js` esce con 0 ma produce un `dist/` da 244K invece di 281M, e non scrive
    `path.txt`. Coerente con gli altri problemi iCloud già documentati in `CLAUDE.md`.
@@ -70,7 +108,7 @@ rettangolo pdf-lib.
 ## HANDOFF — stato al 2026-09-11
 
 - **Blocco corrente:** 1 · **Ultima onda completata:** Onda 0 · **Ultimo gate superato:** nessuno
-- **Ultimo commit buono:** _(da assegnare al commit di Onda 0)_
+- **Ultimo commit buono:** `91c203a` — chore(ocr): contratto dei tipi per l'analisi del layer OCR (v1.6.0)
 - **typecheck:** OK · **test:** 291/291
 - **Fatto:** ambiente installato e riparato, branch creato, contratto dei tipi completo,
   versione e lock allineati, stub CHANGELOG, questo file

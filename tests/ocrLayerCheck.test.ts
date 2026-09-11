@@ -420,11 +420,26 @@ describe('allineamento su griglie sintetiche', () => {
     ).toEqual({ verdict: 'misaligned', reason: 'low-line-agreement' })
   })
 
-  it('layer del tutto scorrelato: coverage bassa e accordo nullo', () => {
+  it('layer del tutto scorrelato: coverage bassa e accordo sotto soglia', () => {
     const m = misura(37, INTERLINEA + 8)
     expect(m.coverage).toBeLessThan(OCR_CHECK_TUNING.COVERAGE_MIN)
     expect(m.lift).toBeLessThan(OCR_CHECK_TUNING.LIFT_MIN)
-    expect(m.accordo).toBe(0)
+    // Non esattamente 0: lineAgreement confronta ogni riga con l'inchiostro
+    // nella SUA finestra x, non sull'intera larghezza di pagina (che in un
+    // layout a due colonne o con filetti di tabella darebbe falsi disaccordi).
+    // Un layer traslato di 37px trova quindi ancora inchiostro sotto qualche
+    // riga. Quello che conta è che l'accordo resti sotto la soglia di giudizio.
+    expect(m.accordo).toBeLessThan(OCR_CHECK_TUNING.LINE_AGREEMENT_MIN)
+    expect(
+      classifyPage({
+        coverage: m.coverage,
+        lift: m.lift,
+        lineAgreement: m.accordo,
+        scaleY: 1,
+        offsetXPt: 0,
+        offsetYPt: 0
+      }).verdict
+    ).toBe('misaligned')
   })
 })
 

@@ -13,6 +13,7 @@
  */
 
 import log from 'electron-log'
+import { scoreTextQuality } from './textQuality'
 import { z } from 'zod'
 import type {
   ImageQualityMetrics,
@@ -100,6 +101,9 @@ export const OCR_CHECK_TUNING = {
   /** ...e almeno questa frazione delle parole: a 72 DPI gli spazi stretti fondono
    *  parole vicine, ma oltre il 40% di fusione la riga non accorda più. */
   RUNS_MIN_RATIO: 0.55,
+  /** Sopra questa frazione di colonne inchiostrate la banda è un filetto o un
+   *  fondo pieno, non testo: la riga esce dal calcolo dell'accordo. */
+  BAND_SOLID_RATIO: 0.95,
 
   // --- Skew ---
   SKEW_MAX_DEG: 5,
@@ -533,7 +537,8 @@ export function lineAgreement(
     EXTENT_TOL_RATIO,
     RUNS_TOL_ABS,
     RUNS_MIN_RATIO,
-    LINE_AGREEMENT_MIN_LINES
+    LINE_AGREEMENT_MIN_LINES,
+    BAND_SOLID_RATIO
   } = OCR_CHECK_TUNING
 
   if (inkMask.length < width * height) return null
@@ -552,13 +557,32 @@ export function lineAgreement(
     const y1 = Math.min(height, Math.ceil(box.y1))
     if (y1 <= y0) continue
 
-    // Profilo colonna dell'inchiostro dentro la banda y della riga.
+    // Profilo colonna dell'inchiostro dentro la banda y della riga, RISTRETTO
+    // all'estensione orizzontale della riga stessa (più la tolleranza).
+    // Scorrere l'intera larghezza della pagina è sbagliato: in un layout a due
+    // colonne la banda y di una riga attraversa anche l'altra colonna, e
+    // `first`/`last` finirebbero per descrivere la pagina invece della riga.
+    const xPad = Math.round(EXTENT_TOL_PX + EXTENT_TOL_RATIO * boxW)
+    const xLo = Math.max(0, Math.floor(box.x0) - xPad)
+    const xHi = Math.min(width, Math.ceil(box.x1) + xPad)
+    if (xHi <= xLo) continue
+
     colHasInk.fill(0)
     for (let y = y0; y < y1; y++) {
       const base = y * width
-      for (let x = 0; x < width; x++) {
+      for (let x = xLo; x < xHi; x++) {
         if (inkMask[base + x] === 1) colHasInk[x] = 1
       }
+    }
+
+    // Banda quasi interamente inchiostrata: è un filetto di tabella o un fondo
+    // pieno, non testo. La struttura dei run non porta informazione, quindi
+    // ci si astiene invece di dichiarare un disaccordo inventato.
+    let bandInk = 0
+    for (let x = xLo; x < xHi; x++) if (colHasInk[x] === 1) bandInk++
+    if (bandInk >= (xHi - xLo) * BAND_SOLID_RATIO) {
+      usable--
+      continue
     }
 
     let first = -1
@@ -568,7 +592,7 @@ export function lineAgreement(
     let inRun = false
     const gapPx = Math.max(LINE_GAP_MIN_PX, Math.round(LINE_GAP_RATIO * boxH))
 
-    for (let x = 0; x < width; x++) {
+    for (let x = xLo; x < xHi; x++) {
       if (colHasInk[x] === 1) {
         if (first < 0) first = x
         last = x
@@ -744,7 +768,20 @@ export function fitScaleY(
   const yTop = topFrom + third / 2
   const yBottom = botFrom + third / 2
   const distanza = yBottom - yTop
-  const slope = distanza > 0 ? (bottom.subLag - top.subLag) / distanza : 0
+
+  // Braccio verticale insufficiente: ci si astiene.
+  // Lo scarto di scala è (lagBot - lagTop) / distanza, quindi UN SOLO pixel di
+  // rumore sul lag si traduce in un errore di scala pari a 1/distanza. Perché
+  // quel rumore resti sotto metà della soglia di giudizio serve
+  //     distanza >= 2 / SCALE_TOLERANCE
+  // cioè ~400px a 72 DPI con tolleranza 0,005. Una pagina piena di A4 (842px)
+  // ci arriva; una pagina di coda con poche righe no — ed è il caso che
+  // produceva un falso 'scale-mismatch' su pagine finali perfettamente sane,
+  // che quasi ogni documento reale possiede.
+  const distanzaMinima = 2 / OCR_CHECK_TUNING.SCALE_TOLERANCE
+  if (distanza < distanzaMinima) return neutro
+
+  const slope = (bottom.subLag - top.subLag) / distanza
   return { scaleY: 1 + slope, lagTop: top.subLag, lagBottom: bottom.subLag }
 }
 
@@ -963,11 +1000,22 @@ export function classifyImageQuality(m: ImageQualityMetrics): {
 export function aggregatePages(pages: readonly OcrPageMetrics[]): OcrLayerVerdict {
   let aligned = 0
   let misaligned = 0
+  let noTextLayer = 0
   for (const p of pages) {
     if (p.verdict === 'aligned') aligned++
     else if (p.verdict === 'misaligned') misaligned++
+    else if (p.reason === 'no-text-layer') noTextLayer++
   }
   if (aligned === 0 && misaligned === 0) return 'inconclusive'
+
+  // Layer PARZIALE: alcune pagine hanno il testo, altre no. È il difetto
+  // documentato "OCR solo sulla prima pagina" degli MFP. Il contenuto delle
+  // pagine scoperte non sarebbe mai anonimizzabile tramite il layer, quindi
+  // il layer non va usato per il percorso veloce, anche se dove c'è è perfetto.
+  // Il costo di sbagliare in questa direzione è solo tempo (si rifà l'OCR);
+  // sbagliare nell'altra lascia dati personali in chiaro.
+  if (noTextLayer > 0) return 'misaligned'
+
   return aligned > misaligned ? 'aligned' : 'misaligned'
 }
 
@@ -1060,7 +1108,10 @@ function emptyPage(page: number, verdict: OcrLayerVerdict, reason: OcrPageReason
 function analyzePage(
   mupdf: MuPdfModule,
   page: import('mupdf').PDFPage,
-  pageNumber: number
+  pageNumber: number,
+  /** Accumulatore del testo di riga per il punteggio linguistico.
+   *  Resta in memoria nel main process e non entra MAI nel report né nei log. */
+  textSink: string[]
 ): PageOutcome {
   const { RENDER_DPI, CELL_PX, IMAGE_AREA_MIN_RATIO, CORR_MAX_LAG_PX } = OCR_CHECK_TUNING
   const scale = RENDER_DPI / 72
@@ -1099,6 +1150,7 @@ function analyzePage(
             h: line.bbox.h,
             words: countWords(line.text)
           })
+          if (line.text) textSink.push(line.text)
           const name = line.font?.name
           if (name) fontCount.set(name, (fontCount.get(name) ?? 0) + 1)
         }
@@ -1403,13 +1455,16 @@ export async function analyzeOcrLayer(
     const indices = samplePageIndices(pageCount, maxPages)
 
     const pages: OcrPageMetrics[] = []
+    // Testo delle pagine campionate, solo per il punteggio linguistico.
+    // Non viene mai loggato né inserito nel report (CLAUDE.md §6).
+    const textSink: string[] = []
     const imageSamples: ImageQualityMetrics[] = []
     const kinds: PdfLayerKind[] = []
     const fonts: string[] = []
 
     for (const index of indices) {
       try {
-        const outcome = analyzePage(mupdf, doc.loadPage(index), index + 1)
+        const outcome = analyzePage(mupdf, doc.loadPage(index), index + 1, textSink)
         pages.push(outcome.metrics)
         kinds.push(outcome.layerKind)
         if (outcome.image) imageSamples.push(outcome.image)
@@ -1458,6 +1513,10 @@ export async function analyzeOcrLayer(
     const producerFont =
       fonts.find((f) => f.toLowerCase().includes('glyphless')) ?? fonts[0] ?? null
 
+    // Qualità linguistica sul testo delle pagine campionate. Il verdetto e le
+    // etichette escono; il testo no — resta in questa variabile locale.
+    const qualitaTesto = scoreTextQuality(textSink.join(' '))
+
     const report: OcrLayerReport = {
       layerKind,
       verdict,
@@ -1467,9 +1526,8 @@ export async function analyzeOcrLayer(
       maxOffsetMm: maxOffsetPt * PT_PER_MM,
       producerFont,
       pages,
-      // TODO(E2): riempiti da textQuality.ts, collegati dall'orchestratore.
-      textQuality: 'good',
-      textQualityReasons: [],
+      textQuality: qualitaTesto.verdict,
+      textQualityReasons: qualitaTesto.reasons,
       imageQuality,
       imageQualityReasons,
       imageMetrics,
