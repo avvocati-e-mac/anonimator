@@ -10,6 +10,7 @@ import { ENTITY_CONFIG } from '../utils/entityConfig'
 import { sanitizeDocxHtml, buildHighlightHtml, buildAnonymizedHtml } from '../utils/docxPreview'
 import type { PreviewMode } from '../utils/docxPreview'
 import AddEntityModal from './AddEntityModal'
+import OcrQualityBanner from './OcrQualityBanner'
 import type { DetectedEntity, EntityType } from '@shared/types'
 
 // ─── Componente header pannello anteprima con tab bar ────────────────────────
@@ -215,7 +216,7 @@ export default function EntityReview(): React.JSX.Element {
   const {
     entities, analysisResult, filePath, processingStartedAt,
     setScreen, setProgress, setSuccessInfo, setSessionStats, setError, reset,
-    addEntity, importEntitiesToSingle, setFilePathAndMerge,
+    addEntity, importEntitiesToSingle, setFilePathAndMerge, setAnalysisResult,
   } = useSessionStore()
 
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -292,6 +293,36 @@ export default function EntityReview(): React.JSX.Element {
     }
   }, [setProgress, setError, setFilePathAndMerge])
 
+  // Rifà l'OCR con DPI più alto quando il banner di qualità lo suggerisce.
+  // A differenza di onDropDocument, qui il risultato SOSTITUISCE l'analisi
+  // corrente (nuovo layer di testo, nuove entità) invece di fondersi con essa.
+  const handleRedoOcr = useCallback(async (): Promise<void> => {
+    if (!filePath || !analysisResult?.ocrReport) return
+
+    setIsAnalyzing(true)
+    setProgress(0, 'Nuovo riconoscimento del testo in corso...')
+
+    const removeListener = window.electronAPI.onProgress(({ percent, message }) => {
+      setProgress(percent, message)
+    })
+    try {
+      const result = await window.electronAPI.processDocument(filePath, {
+        forceOcr: true,
+        ocrDpi: analysisResult.ocrReport.suggestedOcrDpi,
+      })
+      if ('error' in result && result.error) {
+        setError(String(result.error))
+        return
+      }
+      setAnalysisResult(result as import('@shared/types').DocumentAnalysisResult)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Errore durante l'analisi.")
+    } finally {
+      removeListener()
+      setIsAnalyzing(false)
+    }
+  }, [filePath, analysisResult, setProgress, setError, setAnalysisResult])
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: onDropDocument,
     accept: ACCEPTED_MIME,
@@ -327,6 +358,9 @@ export default function EntityReview(): React.JSX.Element {
         outputPath: saved.outputPath,
         entitiesReplaced: saved.entitiesReplaced,
         fileName: filePath.split('/').pop() ?? '',
+        sizeRatio: saved.sizeRatio,
+        sizeWarning: saved.sizeWarning,
+        fellBackToOverlay: saved.fellBackToOverlay,
       })
       setSessionStats({
         totalFiles: 1,
@@ -472,6 +506,15 @@ export default function EntityReview(): React.JSX.Element {
                 />
               </div>
             )}
+
+            {/* Banner qualità OCR — sopra gli avvisi generali */}
+            <OcrQualityBanner
+              report={analysisResult?.ocrReport}
+              pageCount={analysisResult?.pageCount ?? 0}
+              onRedoOcr={() => void handleRedoOcr()}
+              isBusy={isAnalyzing || isSubmitting}
+              canRedo={!isRestoredSession}
+            />
 
             {/* Warnings */}
             {warnings.length > 0 && (

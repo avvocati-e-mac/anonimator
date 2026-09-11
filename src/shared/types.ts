@@ -205,9 +205,22 @@ export interface AnonymizeRequest {
 }
 
 // Risposta dopo il salvataggio (Main → Renderer)
+export type RedactionMode = 'digital' | 'pixels-from-text-layer' | 'pixels-from-ocr' | 'overlay'
+
 export interface SaveResult {
   outputPath: string
   entitiesReplaced: number
+  /** Rapporto fra dimensione dell'output e dell'originale.
+   *  La redazione reale dei pixel ri-codifica l'immagine NON compressa: una
+   *  scansione JPEG può crescere di 50 volte. Con i limiti di dimensione di un
+   *  deposito telematico non è un dettaglio estetico, e non va taciuto. */
+  sizeRatio?: number
+  /** true quando la crescita supera le soglie: va detto all'utente. */
+  sizeWarning?: boolean
+  redactionMode?: RedactionMode
+  /** true quando le guardie hanno impedito la rimozione reale dei pixel e si è
+   *  ripiegato sul rettangolo sovrapposto: i pixel originali restano nel file. */
+  fellBackToOverlay?: boolean
 }
 
 // ─── Batch processing ────────────────────────────────────────────────────────

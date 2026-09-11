@@ -30,7 +30,11 @@ const ProcessDocumentSchema = z.object({
           p.toLowerCase().endsWith(ext)
         ),
       { message: 'Formato file non supportato' }
-    )
+    ),
+  // Forza l'OCR interno ignorando il layer di testo esistente (dopo banner di layer disallineato)
+  forceOcr: z.boolean().optional(),
+  // DPI di rendering per l'OCR forzato — clamp ragionevole per evitare rendering abnormi
+  ocrDpi: z.number().int().min(72).max(1200).optional()
 })
 
 const AnonymizeRequestSchema = z.object({
@@ -45,7 +49,10 @@ const AnonymizeRequestSchema = z.object({
       confirmed: z.boolean()
     })
   ),
-  isScanned: z.boolean().optional()
+  isScanned: z.boolean().optional(),
+  // Natura del PDF e allineamento del layer OCR: sceglie il modo di redazione in pdfGenerator (E6)
+  layerKind: z.enum(['digital', 'scan-with-text', 'scan-no-text']).optional(),
+  ocrAligned: z.boolean().optional()
 })
 
 const EntityTypeEnum = z.enum([
@@ -90,7 +97,7 @@ export function registerIpcHandlers(): void {
       return { error: 'Formato file non supportato o percorso non valido.' }
     }
 
-    const { filePath } = parsed.data
+    const { filePath, forceOcr, ocrDpi } = parsed.data
     const llmConfig = settingsManager.getLlmConfig()
 
     try {
@@ -99,8 +106,33 @@ export function registerIpcHandlers(): void {
       const format = detectFormat(filePath)
       log.info('Inizio elaborazione documento', { format })
 
+      // Se si sta rifacendo l'OCR (forceOcr), la passata precedente potrebbe aver già
+      // arricchito e registrato pseudonimi nel dizionario di sessione (enrichEntities
+      // gira anche solo per l'anteprima, prima che l'utente confermi alcunché). Uno
+      // snapshot/restore evita che quella passata scartata lasci voci spurie permanenti.
+      const sessionSnapshot = forceOcr ? sessionManager.snapshot() : null
+
       sendProgress('parsing', 30, 'Estrazione testo...')
-      const { text, pageCount, warnings: parseWarnings, isScanned: docIsScanned, previewHtml } = await extractText(filePath, format)
+      const { text, pageCount, warnings: parseWarnings, isScanned: docIsScanned, previewHtml, ocrReport } =
+        await extractText(filePath, format, { forceOcr, ocrDpi })
+
+      if (sessionSnapshot) {
+        sessionManager.restore(sessionSnapshot)
+      }
+
+      if (ocrReport) {
+        // Solo metadati numerici/etichette — mai contenuto documentale (CLAUDE.md §6)
+        log.info('Layer OCR verificato', {
+          layerKind: ocrReport.layerKind,
+          verdict: ocrReport.verdict,
+          imageQuality: ocrReport.imageQuality,
+          pagesSampled: ocrReport.pagesSampled
+        })
+      }
+
+      if (format === 'pdf') {
+        sendProgress('ocr', 40, 'Verifica del testo della scansione...')
+      }
 
       // Fase 2: analisi NER (BERT + regex, opzionalmente LLM)
       sendProgress('ner', 50, 'Riconoscimento entità...')
@@ -139,6 +171,8 @@ export function registerIpcHandlers(): void {
         isScanned: docIsScanned ?? false,
         // previewHtml presente solo per DOCX — mai loggarne il contenuto
         ...(previewHtml ? { previewHtml } : {}),
+        // ocrReport presente solo per PDF — solo metriche numeriche/etichette, mai testo
+        ...(ocrReport ? { ocrReport } : {}),
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -155,17 +189,22 @@ export function registerIpcHandlers(): void {
       return { error: 'Dati non validi.' }
     }
 
-    const { filePath, entities, isScanned } = parsed.data
+    const { filePath, entities, isScanned, layerKind, ocrAligned } = parsed.data
     const confirmed = entities.filter((e) => e.confirmed)
     const format = detectFormat(filePath)
 
     try {
       sendProgress('parsing', 20, 'Preparazione anonimizzazione...')
-      log.info('Anonimizzazione richiesta', { format, entitiesConfirmed: confirmed.length, isScanned })
+      log.info('Anonimizzazione richiesta', { format, entitiesConfirmed: confirmed.length, isScanned, layerKind, ocrAligned })
 
       sendProgress('parsing', 50, 'Sostituzione entità...')
       const typedEntities = entities as import('@shared/types').DetectedEntity[]
-      const { outputPath, entitiesReplaced } = await generateOutput(filePath, format, typedEntities, { isScanned })
+      const { outputPath, entitiesReplaced, sizeRatio, sizeWarning, redactionMode, fellBackToOverlay } =
+        await generateOutput(filePath, format, typedEntities, {
+        isScanned,
+        layerKind,
+        ocrAligned
+      })
 
       // Aggiorna il sessionManager con i pseudonimi confermati
       for (const entity of typedEntities.filter((e) => e.confirmed)) {
@@ -173,12 +212,15 @@ export function registerIpcHandlers(): void {
       }
 
       sendProgress('done', 100, 'Anonimizzazione completata.')
-      log.info('Documento anonimizzato', { outputPath, entitiesReplaced })
+      log.info('Documento anonimizzato', {
+        outputPath, entitiesReplaced, redactionMode, fellBackToOverlay,
+        sizeRatio: sizeRatio !== undefined ? Math.round(sizeRatio * 10) / 10 : undefined
+      })
 
       // Auto-save sessione su disco
       try { sessionManager.saveToDisk(getSessionDictPath()) } catch { /* ignorato */ }
 
-      return { outputPath, entitiesReplaced }
+      return { outputPath, entitiesReplaced, sizeRatio, sizeWarning, redactionMode, fellBackToOverlay }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.error('Errore anonimizzazione', { error: message })
@@ -198,14 +240,18 @@ export function registerIpcHandlers(): void {
     const results: import('@shared/types').BatchResultItem[] = []
 
     for (const req of parsed.data) {
-      const { filePath, entities, isScanned } = req
+      const { filePath, entities, isScanned, layerKind, ocrAligned } = req
       const format = detectFormat(filePath)
       const fileName = filePath.split('/').pop() ?? filePath
 
       try {
         sendProgress('parsing', 0, `Anonimizzazione: ${fileName}...`)
         const typedEntities = entities as import('@shared/types').DetectedEntity[]
-        const { outputPath, entitiesReplaced } = await generateOutput(filePath, format, typedEntities, { isScanned })
+        const { outputPath, entitiesReplaced } = await generateOutput(filePath, format, typedEntities, {
+          isScanned,
+          layerKind,
+          ocrAligned
+        })
 
         for (const entity of typedEntities.filter((e) => e.confirmed)) {
           sessionManager.getOrCreatePseudonym(entity.originalText, entity.type)

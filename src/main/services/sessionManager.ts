@@ -16,9 +16,21 @@ const STRUCTURED_PREFIX: Partial<Record<EntityType, string>> = {
   TARGA: 'TARGA'
 }
 
-interface SessionEntry {
+export interface SessionEntry {
   pseudonym: string
   type: EntityType
+}
+
+/**
+ * Copia serializzabile e ripristinabile del dizionario pseudonimi in un dato istante.
+ * Usata per annullare gli effetti collaterali di un `enrichEntities` scartato
+ * (es. una passata OCR rifatta perché il layer precedente era disallineato):
+ * senza questo, `getOrCreatePseudonym` avrebbe già registrato pseudonimi per un
+ * testo OCR sbagliato, sporcando il dizionario per il resto della sessione.
+ */
+export interface SessionSnapshot {
+  dictionary: Array<[string, SessionEntry]>
+  counters: Array<[EntityType, number]>
 }
 
 /**
@@ -273,6 +285,42 @@ export class SessionManager {
     this.dictionary.clear()
     this.counters.clear()
     log.info('SessionManager: dizionario resettato')
+  }
+
+  /**
+   * Cattura una copia profonda dello stato corrente (dizionario + contatori),
+   * da usare con `restore()` per annullare le voci create da una passata scartata.
+   */
+  snapshot(): SessionSnapshot {
+    const dictionary: Array<[string, SessionEntry]> = []
+    for (const [key, entry] of this.dictionary.entries()) {
+      dictionary.push([key, { pseudonym: entry.pseudonym, type: entry.type }])
+    }
+
+    const counters: Array<[EntityType, number]> = []
+    for (const [type, count] of this.counters.entries()) {
+      counters.push([type, count])
+    }
+
+    return { dictionary, counters }
+  }
+
+  /**
+   * Ripristina dizionario e contatori da uno snapshot precedente, sostituendo
+   * completamente lo stato corrente (copia profonda, nessun riferimento condiviso).
+   */
+  restore(snap: SessionSnapshot): void {
+    this.dictionary.clear()
+    this.counters.clear()
+
+    for (const [key, entry] of snap.dictionary) {
+      this.dictionary.set(key, { pseudonym: entry.pseudonym, type: entry.type })
+    }
+    for (const [type, count] of snap.counters) {
+      this.counters.set(type, count)
+    }
+
+    log.debug('SessionManager: stato ripristinato da snapshot', { entries: this.dictionary.size })
   }
 }
 

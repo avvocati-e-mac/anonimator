@@ -1,5 +1,5 @@
 import React from 'react'
-import { CheckCircle2, FolderOpen, RotateCcw, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, FolderOpen, RotateCcw, ShieldCheck } from 'lucide-react'
 import { useSessionStore } from '../store/sessionStore'
 import SessionStatsBanner from './SessionStatsBanner'
 
@@ -8,7 +8,7 @@ export default function SuccessScreen(): React.JSX.Element {
 
   if (!successInfo) return <></>
 
-  const { outputPath, entitiesReplaced, fileName } = successInfo
+  const { outputPath, entitiesReplaced, fileName, sizeRatio, sizeWarning, fellBackToOverlay } = successInfo
   const outputName = outputPath.split('/').pop() ?? outputPath
 
   async function openOutputFolder(): Promise<void> {
@@ -41,6 +41,31 @@ export default function SuccessScreen(): React.JSX.Element {
             {fileName}
           </p>
         </div>
+
+        {/* Avvisi sulla redazione: crescita del file e pixel non rimossi.
+            Vanno detti qui, dove l'utente vede l'esito, non solo nei log. */}
+        {sizeWarning && (
+          <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3 text-left flex gap-2">
+            <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-amber-800 dark:text-amber-300">
+              Il file è diventato{sizeRatio ? ` circa ${Math.round(sizeRatio)} volte` : ' molto'} più
+              grande dell'originale. È il costo della rimozione effettiva dei dati dall'immagine
+              scansionata: i pixel vengono riscritti senza compressione. Verificare la dimensione
+              prima di un deposito telematico.
+            </p>
+          </div>
+        )}
+
+        {fellBackToOverlay && (
+          <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3 text-left flex gap-2">
+            <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-amber-800 dark:text-amber-300">
+              Su questo documento non è stato possibile rimuovere i pixel dall'immagine: i dati sono
+              coperti da un rettangolo, ma restano presenti nel file. Non condividere il documento
+              se richiede la cancellazione definitiva dei dati.
+            </p>
+          </div>
+        )}
 
         {/* File di output */}
         <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 text-left">

@@ -20,6 +20,11 @@ export interface SuccessInfo {
   outputPath: string
   entitiesReplaced: number
   fileName: string
+  /** Quanto è cresciuto il file rispetto all'originale. */
+  sizeRatio?: number
+  sizeWarning?: boolean
+  /** true quando i pixel NON sono stati rimossi e c'è solo un rettangolo sopra. */
+  fellBackToOverlay?: boolean
 }
 
 export interface SessionStats {
