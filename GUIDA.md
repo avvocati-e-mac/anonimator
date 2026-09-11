@@ -529,6 +529,7 @@ Eseguito sempre, indipendentemente dalla disponibilità del modello BERT. Tutte 
 - `CODICE_FISCALE_PATTERN_LENIENT` (default): accetta qualsiasi lettera in posizione mese. Usato su documenti OCR dove le lettere possono essere distorte (es. `B→8`, `O→0`).
 - `CODICE_FISCALE_PATTERN_STRICT`: valida la lettera di mese (`[ABCDEHLMPRST]`) e il range giorno (`01–71`). Riduce falsi positivi su documenti nativi.
 - Il flag `strictCF` (default `false`) seleziona la variante — configurabile via `setStrictCF()` nel Main. Non esposto nell'UI del Renderer.
+- `PARTITA_IVA_PATTERN` richiede l'etichetta `P.IVA` o `partita IVA`: una sequenza isolata di undici cifre può essere un protocollo e non viene proposta automaticamente.
 
 Questi pattern usano `\b` (word boundary) anziché `^`/`$` perché il matching avviene su testo estratto da paragrafi, non su righe isolate.
 
@@ -545,17 +546,23 @@ Rileva titoli (`Dott.`, `Avv.`, `Prof.`, `Ing.`), nomi (anche con apostrofi come
 
 #### Pattern per strutture legali (Step 0b)
 
-12 pattern in `STRUCTURED_LEGAL_PATTERNS`. Le entità contestuali prodotte da questi pattern hanno `source: 'regex'` e possono fungere da **booster** per entità BERT sotto soglia (vedi §7.2 score boosting).
+I pattern in `STRUCTURED_LEGAL_PATTERNS` sono vincolati da contesto legale o da etichette di campo. Le entità prodotte hanno `source: 'regex'`; i valori PERSONA a token singolo sono ammessi soltanto nei campi `Cognome:`/`Nome:`. Le organizzazioni contestuali restano opzionali (`confirmed: false`).
 
 | ID | Costante | Tipo rilevato | Esempio |
 |----|---------|---------------|---------|
 | A1 | `PROCESSO_PARTE_PATTERN` | PERSONA | `ricorrente: MARIO ROSSI` |
 | A2 | `DIFENSORE_PATTERN` | PERSONA | `difeso dall'avv. ANNA BIANCHI` |
 | A3 | `ALLCAPS_NAME_PATTERN` | PERSONA | `COLOMBO LUIGI` (su riga propria) |
+| A4 | `PERSONA_FIELD_PATTERN` | PERSONA | `Cognome: Neri` / `N0ME: LUCA` |
+| A5 | `DIPENDENTE_PATTERN` | PERSONA | `Dipendente: Sara Conti` |
+| A6 | `DATORE_LAVORO_PATTERN` | ORGANIZZAZIONE | `Datore di lavoro: Officina Gamma S.r.l.` |
 | B0 | `LUOGO_NASCITA_PATTERN` | LUOGO_NASCITA | `nato a Napoli il 23 luglio 1968` |
+| B0a | `LUOGO_NASCITA_FIELD_PATTERN` | LUOGO_NASCITA | `Luogo di nascita: Cittafinta` |
 | B1 | `DATA_NASCITA_PATTERN` | DATA_NASCITA | `nato a Roma il 15/03/1980` |
 | B2a | `INDIRIZZO_PATTERN_STANDARD` | INDIRIZZO | `residente in Via Roma 123, 00100` |
 | B2b | `INDIRIZZO_PATTERN_CORSO` | INDIRIZZO | `domiciliato in Corso Vittorio 12, 10100` (NON "corso di indagini") |
+| B2c | `INDIRIZZO_PATTERN_NO_CAP` | INDIRIZZO | `residente in Via delle Querce 8` |
+| B2d | `INDIRIZZO_FIELD_PATTERN` | INDIRIZZO | `Residenza:` seguito dall'indirizzo |
 | B3 | `NUMERO_DOCUMENTO_PATTERN` | NUMERO_DOCUMENTO | `carta d'identità n. CA 5528847` / `rilasciata con n. AB1234567` |
 | C1 | `POLIZZA_PARTE_PATTERN` | PERSONA | `Contraente: LUIGI ROSSI` |
 | C2 | `CONTRATTO_PARTE_PATTERN` | PERSONA | `tra MARIO ROSSI, nato a...` |
@@ -563,7 +570,9 @@ Rileva titoli (`Dott.`, `Avv.`, `Prof.`, `Ing.`), nomi (anche con apostrofi come
 | D1 | `AVV_LISTA_PATTERN` | PERSONA | `avvocati MARIO ROSSI, ANNA BIANCHI` |
 | D2 | `PKI_FIRMA_PATTERN` | PERSONA | `Firmato Da: COLOMBO LUIGI Emesso Da:` |
 | E1 | `TITOLO_NOME_PATTERN` | PERSONA | `Ing. Stefano Moretti Ricci` / `Dott.ssa Carla Russo` |
-| F1 | `TARGA_PATTERN` | TARGA | `FX 523 KL` / `AB123CD` |
+| F1 | `TARGA_PATTERN` | TARGA | `veicolo targato FX 523 KL` / `tg. AB123CD` |
+| G1 | `TELEFONO_OCR_FIELD_PATTERN` | TELEFONO | `Telefono: 333 I234567` |
+| G2 | `CODICE_FISCALE_OCR_FIELD_PATTERN` | CODICE_FISCALE | `Codice fiscale: VRDGLI8AC52Z4O4Q` |
 
 **Nota B2 — split `INDIRIZZO_PATTERN_CORSO`:** Il vecchio pattern unificato includeva "Corso" come prefisso indistintamente, generando falsi positivi su formule processuali penali ("nel corso delle indagini", "corso di istruzione"). Il pattern è ora separato: `INDIRIZZO_PATTERN_STANDARD` gestisce Via/Viale/Piazza/Largo/ecc.; `INDIRIZZO_PATTERN_CORSO` matcha "Corso" **solo se preceduto da contesto di residenza/domicilio** (es. "residente in Corso Roma 15, 00100").
 
@@ -641,7 +650,11 @@ Entità BERT con score nel range `[0.35, threshold)` — sotto soglia ma con seg
 
 **Organizzazioni opzionali (v1.5.0+):**
 
-Le entità `ORGANIZZAZIONE` rilevate da BERT ricevono `confirmed: false` — appaiono in grigio (opacity-40) nella lista entità dell'EntityReview. L'utente le seleziona manualmente se desidera anonimizzarle. Le organizzazioni rilevate dai pattern regex Step 0b (es. strutture contrattuali) mantengono `confirmed: true`.
+Le entità `ORGANIZZAZIONE` rilevate da BERT ricevono `confirmed: false` — appaiono in grigio (opacity-40) nella lista entità dell'EntityReview. L'utente le seleziona manualmente se desidera anonimizzarle. Anche il datore di lavoro rilevato dal nuovo pattern contestuale resta opzionale; nessuna organizzazione viene anonimizzata senza conferma dell'utente.
+
+### 7.3 Evaluation sintetica del recall
+
+`tests/fixtures/nerRecallCorpus.ts` contiene esclusivamente casi inventati per atti legali, moduli amministrativi e distorsioni OCR. `tests/nerRecallEvaluation.test.ts` attraversa `analyzeText()` senza modello o LLM e calcola TP/FP/FN, precision, recall e F1 per tipo, micro e macro con confronto exact-match occurrence-aware. Il report espone solo conteggi aggregati, mai i valori delle entità. I controlli negativi devono restare a zero falsi positivi.
 
 **Co-reference resolution:**
 
@@ -1313,6 +1326,7 @@ npm run typecheck      # Verifica TypeScript
 npm run typecheck:tests # Verifica tipi di test e fixture TypeScript
 npm run typecheck:fixtures # Verifica la sintassi dei generatori fixture MJS
 npm test               # Vitest unit test
+npm run test:ner-recall # Evaluation sintetica precision/recall/F1 NER
 npm run test:corpus    # Corpus OCR
 npm run test:roundtrip # Roundtrip OCR reale (richiede ita.traineddata)
 npm run test:pixel-leak # Prova pixel con pdfimages/Poppler

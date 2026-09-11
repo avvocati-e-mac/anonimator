@@ -46,6 +46,9 @@ jobs:
       - name: Unit tests
         run: npm run test:unit
 
+      - name: Synthetic NER recall evaluation
+        run: npm run test:ner-recall
+
       - name: OCR quality corpus
         run: npm run test:corpus
 

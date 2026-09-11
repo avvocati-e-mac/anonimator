@@ -5,6 +5,16 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [Unreleased]
+
+### Novità
+- **Recall NER/OCR misurabile**: corpus esclusivamente sintetico per atti legali e moduli amministrativi, con precision, recall e F1 aggregate e per tipo, controlli negativi e budget esplicito sui falsi positivi.
+- **Campi amministrativi e rumore OCR**: riconoscimento contestuale di Cognome/Nome, dipendente, datore di lavoro, nascita, indirizzi senza CAP e varianti OCR di codice fiscale e telefono.
+
+### Fix
+- **Pattern contestuali più precisi**: Partita IVA e targa richiedono ora una etichetta o un contesto coerente; il terzo ramo alternativo dei numeri documento restituisce il solo identificativo.
+- **Ledger delle entità manuali/importate**: la cardinalità intenzionalmente ignota resta `null`, evitando falsi `entity-count-mismatch` quando tutte le occorrenze vengono redatte.
+
 ## [1.7.0-beta.1] - 2026-09-11
 
 ### Novita

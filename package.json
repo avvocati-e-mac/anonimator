@@ -17,6 +17,7 @@
     "dist:win": "npx electron-vite build && npx electron-builder --win --config electron-builder.config.js",
     "test": "vitest run",
     "test:unit": "vitest run --exclude tests/ocrCorpus.test.ts --exclude tests/pixelLeak.test.ts",
+    "test:ner-recall": "vitest run tests/nerRecallEvaluation.test.ts",
     "test:corpus": "vitest run tests/ocrCorpus.test.ts",
     "test:roundtrip": "node tests/corpus-ocr/generate.mjs --roundtrip --require-roundtrip && node tests/corpus-ocr/verify.mjs roundtrip",
     "test:pixel-leak": "vitest run tests/pixelLeak.test.ts",
