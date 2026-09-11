@@ -204,3 +204,46 @@ describe('selectOcrBannerMessage — privacy dei messaggi', () => {
     }
   })
 })
+
+// ─── Dopo che l'utente ha già rifatto il riconoscimento ───────────────────────
+
+describe('selectOcrBannerMessage — ocrRedone: non riproporre il rimedio appena eseguito', () => {
+  it('testo ancora illeggibile: nessun pulsante, e il messaggio lo dice', () => {
+    const m = selectOcrBannerMessage(makeReport({ textQuality: 'poor' }), 10, true)
+    expect(m?.showRedoButton).toBe(false)
+    expect(m?.estimatedMinutes).toBeNull()
+    expect(m?.severity).toBe('critical')
+    expect(m?.title).toMatch(/dopo il nuovo riconoscimento/i)
+  })
+
+  it('testo ancora irregolare: nessun pulsante', () => {
+    const m = selectOcrBannerMessage(makeReport({ textQuality: 'suspect' }), 10, true)
+    expect(m?.showRedoButton).toBe(false)
+    expect(m?.estimatedMinutes).toBeNull()
+  })
+
+  it('senza il flag il pulsante resta offerto — è la prima volta', () => {
+    const m = selectOcrBannerMessage(makeReport({ textQuality: 'poor' }), 10, false)
+    expect(m?.showRedoButton).toBe(true)
+    expect(m?.estimatedMinutes).toBeGreaterThan(0)
+  })
+
+  it('il flag omesso equivale a "non ancora rifatto"', () => {
+    const m = selectOcrBannerMessage(makeReport({ textQuality: 'suspect' }), 10)
+    expect(m?.showRedoButton).toBe(true)
+  })
+
+  it('immagine pessima: il messaggio non cambia, non offriva rimedio nemmeno prima', () => {
+    const prima = selectOcrBannerMessage(makeReport({ imageQuality: 'poor' }), 10, false)
+    const dopo = selectOcrBannerMessage(makeReport({ imageQuality: 'poor' }), 10, true)
+    expect(dopo).toEqual(prima)
+    expect(dopo?.showRedoButton).toBe(false)
+  })
+
+  it('layer disallineato dopo un nuovo OCR: nessun pulsante (caso difensivo)', () => {
+    // In pratica non accade — dopo un OCR forzato il verdetto diventa
+    // 'inconclusive' — ma se accadesse, riproporre il pulsante sarebbe un loop.
+    const m = selectOcrBannerMessage(makeReport({ verdict: 'misaligned', maxOffsetMm: 5 }), 10, true)
+    expect(m?.showRedoButton).toBe(false)
+  })
+})

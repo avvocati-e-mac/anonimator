@@ -37,9 +37,17 @@ function formatMm(mm: number): string {
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)
 }
 
+/**
+ * @param ocrRedone true se in questa schermata l'utente ha gia' fatto rifare il
+ *   riconoscimento del testo. Cambia i messaggi che altrimenti proporrebbero
+ *   come rimedio proprio l'operazione appena eseguita: offrire di nuovo
+ *   "Rifai OCR" a chi lo ha appena fatto e' un invito a girare in tondo, e
+ *   fa sembrare rotto uno strumento che ha semplicemente fatto il possibile.
+ */
 export function selectOcrBannerMessage(
   report: OcrLayerReport | undefined,
-  pageCount: number
+  pageCount: number,
+  ocrRedone = false
 ): OcrBannerMessage | null {
   if (!report || report.layerKind === 'digital') return null
 
@@ -78,12 +86,25 @@ export function selectOcrBannerMessage(
         `Il testo ricercabile di questa scansione non corrisponde all'immagine (scostamento di circa ` +
         `${formatMm(report.maxOffsetMm)} mm). I riquadri di anonimizzazione rischiano di finire nel punto ` +
         `sbagliato, lasciando visibili i dati che dovrebbero coprire.${marginalNote}`,
-      showRedoButton: true,
-      estimatedMinutes: estimateMinutes(pageCount),
+      showRedoButton: !ocrRedone,
+      estimatedMinutes: ocrRedone ? null : estimateMinutes(pageCount),
     }
   }
 
   if (report.textQuality === 'poor') {
+    if (ocrRedone) {
+      return {
+        severity: 'critical',
+        title: 'Testo illeggibile anche dopo il nuovo riconoscimento',
+        body:
+          'Anche ripetendo il riconoscimento, il testo di questa scansione resta in gran parte illeggibile: ' +
+          'molti dati personali possono non essere stati rilevati. Rifarlo un\'altra volta darebbe lo stesso ' +
+          'risultato. Verificare a mano l\'elenco delle entità, oppure procurarsi una scansione migliore ' +
+          'dello stesso documento.',
+        showRedoButton: false,
+        estimatedMinutes: null,
+      }
+    }
     return {
       severity: 'warning',
       title: 'Testo della scansione poco leggibile',
@@ -97,6 +118,18 @@ export function selectOcrBannerMessage(
   }
 
   if (report.textQuality === 'suspect') {
+    if (ocrRedone) {
+      return {
+        severity: 'warning',
+        title: 'Testo da verificare anche dopo il nuovo riconoscimento',
+        body:
+          'Il riconoscimento è stato rifatto, ma il testo presenta ancora alcune irregolarità: è possibile ' +
+          'che qualche dato personale non sia stato riconosciuto correttamente. Conviene scorrere l\'elenco ' +
+          'delle entità prima di procedere.',
+        showRedoButton: false,
+        estimatedMinutes: null,
+      }
+    }
     return {
       severity: 'warning',
       title: 'Testo della scansione da verificare',

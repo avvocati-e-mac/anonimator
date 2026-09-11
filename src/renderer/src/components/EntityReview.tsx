@@ -224,8 +224,17 @@ export default function EntityReview(): React.JSX.Element {
   const [showAddModal, setShowAddModal] = useState(false)
   const [isAddingEntity, setIsAddingEntity] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
+  // Ricorda se su QUESTO documento il riconoscimento è già stato rifatto:
+  // serve al banner per non riproporre come rimedio l'operazione appena fatta.
+  const [ocrRedone, setOcrRedone] = useState(false)
   const [showPreview, setShowPreview] = useState(true)
   const [previewMode, setPreviewMode] = useState<PreviewMode>('original')
+
+  // Cambiando documento il "gia' rifatto" non vale piu': il nuovo file ha il
+  // suo layer di testo e merita di vedersi offrire il rimedio, se serve.
+  useEffect(() => {
+    setOcrRedone(false)
+  }, [filePath])
 
   const rawPreviewHtml = analysisResult?.previewHtml
   const sanitizedBase = useMemo(
@@ -315,6 +324,7 @@ export default function EntityReview(): React.JSX.Element {
         return
       }
       setAnalysisResult(result as import('@shared/types').DocumentAnalysisResult)
+      setOcrRedone(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Errore durante l'analisi.")
     } finally {
@@ -514,6 +524,7 @@ export default function EntityReview(): React.JSX.Element {
               onRedoOcr={() => void handleRedoOcr()}
               isBusy={isAnalyzing || isSubmitting}
               canRedo={!isRestoredSession}
+              ocrRedone={ocrRedone}
             />
 
             {/* Warnings */}

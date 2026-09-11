@@ -7,7 +7,64 @@ import AdmZip from 'adm-zip'
 import { parseTxt } from '../src/main/parsers/txtParser'
 import { parseDocx } from '../src/main/parsers/docxParser'
 import { parseOdt } from '../src/main/parsers/odtParser'
-import { detectFormat } from '../src/main/parsers/index'
+import {
+  detectFormat,
+  buildOcrParseOptions,
+  reportAfterForcedOcr
+} from '../src/main/parsers/index'
+import type {
+  ImageQualityReason,
+  ImageQualityVerdict,
+  OcrLayerReport,
+  OcrLayerVerdict,
+  TextQualityVerdict
+} from '@shared/types'
+
+/** Report minimo e realistico, da variare campo per campo nei singoli test. */
+function makeReport(over: {
+  verdict?: OcrLayerVerdict
+  suggestedOcrDpi?: number
+  skewDeg?: number
+  imageQuality?: ImageQualityVerdict
+  imageQualityReasons?: ImageQualityReason[]
+  textQuality?: TextQualityVerdict
+}): OcrLayerReport {
+  return {
+    layerKind: 'scan-with-text',
+    verdict: over.verdict ?? 'aligned',
+    pagesSampled: 5,
+    pagesMisaligned: 0,
+    pagesInconclusive: 0,
+    maxOffsetMm: 1.2,
+    producerFont: 'GlyphLessFont',
+    pages: [
+      {
+        page: 1,
+        verdict: over.verdict ?? 'aligned',
+        reason: 'ok',
+        coverage: 0.9,
+        lift: 2,
+        lineAgreement: 0.8,
+        scaleY: 1,
+        offsetXPt: 0,
+        offsetYPt: 0
+      }
+    ],
+    textQuality: over.textQuality ?? 'good',
+    textQualityReasons: [],
+    imageQuality: over.imageQuality ?? 'good',
+    imageQualityReasons: over.imageQualityReasons ?? [],
+    imageMetrics: {
+      nativeDpi: 300,
+      xHeightPx: 20,
+      separability: 0.8,
+      skewDeg: over.skewDeg ?? 0,
+      blurScore: 0.5
+    },
+    suggestedOcrDpi: over.suggestedOcrDpi ?? 300,
+    elapsedMs: 120
+  }
+}
 
 const FIXTURES = join(__dirname, 'fixtures')
 
@@ -222,5 +279,90 @@ describe('parseOdt', () => {
 
   it('lancia errore su file non ODT', async () => {
     await expect(parseOdt(join(FIXTURES, 'sample.txt'))).rejects.toThrow()
+  })
+})
+
+// ─── Opzioni di rendering OCR derivate dal report ────────────────────────────
+
+describe('buildOcrParseOptions — dal report alle opzioni di rendering', () => {
+  it('senza report non impone nulla: DPI, skew e Sauvola restano indefiniti', () => {
+    const opts = buildOcrParseOptions(undefined)
+    expect(opts.dpi).toBeUndefined()
+    expect(opts.skewDeg).toBeUndefined()
+    expect(opts.unevenLighting).toBe(false)
+  })
+
+  it('usa il DPI suggerito dal report e l\'inclinazione misurata', () => {
+    const opts = buildOcrParseOptions(makeReport({ suggestedOcrDpi: 240, skewDeg: 3.5 }))
+    expect(opts.dpi).toBe(240)
+    expect(opts.skewDeg).toBe(3.5)
+  })
+
+  it('il DPI esplicito del chiamante ha la precedenza su quello suggerito', () => {
+    const opts = buildOcrParseOptions(makeReport({ suggestedOcrDpi: 240 }), 400)
+    expect(opts.dpi).toBe(400)
+  })
+
+  it('attiva Sauvola solo quando la separabilità è risultata bassa', () => {
+    expect(buildOcrParseOptions(makeReport({})).unevenLighting).toBe(false)
+    expect(
+      buildOcrParseOptions(makeReport({ imageQualityReasons: ['low-separability'] })).unevenLighting
+    ).toBe(true)
+  })
+
+  it('non attiva Sauvola per un difetto diverso dalla separabilità', () => {
+    expect(
+      buildOcrParseOptions(makeReport({ imageQualityReasons: ['low-native-dpi'] })).unevenLighting
+    ).toBe(false)
+  })
+})
+
+// ─── Report dopo un OCR rifatto da noi ───────────────────────────────────────
+
+describe('reportAfterForcedOcr — il report dopo un nuovo riconoscimento', () => {
+  const PROSA_BUONA =
+    'Il Tribunale di Cittafinta, riunito in camera di consiglio, ha pronunciato la seguente ' +
+    'ordinanza nella causa civile promossa dal ricorrente contro il resistente, avendo esaminato ' +
+    'gli atti e sentite le parti, e ritenuto che la domanda sia fondata nei limiti che seguono.'
+
+  it('senza report di partenza non ne inventa uno', () => {
+    expect(reportAfterForcedOcr(undefined, PROSA_BUONA)).toBeUndefined()
+  })
+
+  it('declassa il layer a scan-no-text e il verdetto a inconclusive', () => {
+    // Il layer preesistente non viene più letto: dichiararlo 'aligned'
+    // instraderebbe l'output sul percorso veloce page.search() sopra un layer
+    // che non stiamo più usando.
+    const r = reportAfterForcedOcr(makeReport({ verdict: 'misaligned' }), PROSA_BUONA)
+    expect(r?.layerKind).toBe('scan-no-text')
+    expect(r?.verdict).toBe('inconclusive')
+    expect(r?.maxOffsetMm).toBe(0)
+    expect(r?.pages).toEqual([])
+  })
+
+  it('conserva la qualità dell\'immagine: una scansione a 100 DPI lo resta', () => {
+    const r = reportAfterForcedOcr(
+      makeReport({ imageQuality: 'poor', imageQualityReasons: ['very-low-native-dpi'] }),
+      PROSA_BUONA
+    )
+    expect(r?.imageQuality).toBe('poor')
+    expect(r?.imageQualityReasons).toEqual(['very-low-native-dpi'])
+  })
+
+  it('ricalcola la qualità del testo su quello che abbiamo prodotto noi', () => {
+    const buono = reportAfterForcedOcr(makeReport({ textQuality: 'poor' }), PROSA_BUONA)
+    expect(buono?.textQuality).toBe('good')
+
+    // OCR fallito su scansione illeggibile: tanti token, nessuna parola vera.
+    const spazzatura = reportAfterForcedOcr(
+      makeReport({ textQuality: 'good' }),
+      'x '.repeat(30) + 'zx kq xw vz qj bx wq zk jv xq nn tt rr ss dd ff gg hh kk ll mm pp'
+    )
+    expect(spazzatura?.textQuality).toBe('poor')
+  })
+
+  it('non lascia trapelare testo del documento nel report', () => {
+    const r = reportAfterForcedOcr(makeReport({}), 'Mario Rossi RSSMRA80A01H501U')
+    expect(JSON.stringify(r)).not.toMatch(/Mario Rossi|RSSMRA80A01H501U/)
   })
 })

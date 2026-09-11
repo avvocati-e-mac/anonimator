@@ -10,6 +10,8 @@ interface OcrQualityBannerProps {
   isBusy: boolean
   /** false in sessione ripristinata (filePath === null): non c'è un file da ri-processare. */
   canRedo: boolean
+  /** true se l'utente ha già rifatto il riconoscimento del testo su questo documento. */
+  ocrRedone: boolean
 }
 
 const SEVERITY_STYLES = {
@@ -37,8 +39,9 @@ export default function OcrQualityBanner({
   onRedoOcr,
   isBusy,
   canRedo,
+  ocrRedone,
 }: OcrQualityBannerProps): React.JSX.Element | null {
-  const message = selectOcrBannerMessage(report, pageCount)
+  const message = selectOcrBannerMessage(report, pageCount, ocrRedone)
   if (!message) return null
 
   const styles = SEVERITY_STYLES[message.severity]
