@@ -5,7 +5,7 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
-## [1.7.0] - 2026-09-11
+## [1.7.0-beta.1] - 2026-09-11
 
 ### Novita
 - **PDF scansionati nuovamente ricercabili**: una singola passata OCR alimenta analisi, redazione e layer testuale pseudonimizzato. Il testo invisibile contiene gli pseudonimi, mai le entita originali confermate.

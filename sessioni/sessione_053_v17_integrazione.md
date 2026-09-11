@@ -5,7 +5,7 @@ Data: 2026-09-11
 ## Stato
 
 - Branch v1.6 verificata: `release/v1.6.0-beta.2` su `5aa192a`.
-- Branch v1.7: `feat/ocr-cache-layer-v17`.
+- Branch v1.7 beta: `feat/ocr-cache-layer-v17`, versione `1.7.0-beta.1`.
 - Il ritiro remoto di `v1.6.0-beta.1` e il force-push della branch sanificata restano pendenti: l'autenticazione GitHub locale non è valida.
 - Nessuna promozione stabile eseguita: resta obbligatoria la finestra di sette giorni senza P0/P1 e lo smoke test dei pacchetti sulle tre piattaforme.
 

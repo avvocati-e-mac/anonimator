@@ -1,6 +1,6 @@
 {
   "name": "anonimator",
-  "version": "1.7.0",
+  "version": "1.7.0-beta.1",
   "description": "App desktop per la pseudoanonimizzazione offline di documenti legali italiani (GDPR compliant)",
   "main": "out/main/index.js",
   "scripts": {
