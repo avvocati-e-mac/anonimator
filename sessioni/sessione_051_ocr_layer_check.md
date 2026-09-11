@@ -177,32 +177,172 @@ Test: `tests/ocrCorpus.test.ts`, 56 casi, 2,2 s. Totale suite **437/437**, typec
       lettere spaziate. Il caso resta `poor` per altri due segnali, e un test lo congela.
 - [ ] **Debito tecnico:** `tsconfig.json` non typecheckka `tests/` (attività separata aperta).
 
+## Onda 2 — stato e questioni aperte (commit `c112eef`)
+
+E5, E6, E7 integrati e committati. E8 (`ocrParser.ts`) **ancora in corso** al momento
+in cui questo paragrafo è stato scritto.
+
+### Da collegare appena E8 rientra
+- [ ] **`ocrDpi` non arriva a `parsePdfWithOcr`.** E5 ha lasciato il commento
+      `// DPI gestito da E8` in `src/main/parsers/index.ts` senza forzare la firma di un
+      file altrui — corretto come disciplina, ma il filo resta scoperto: oggi il pulsante
+      "Rifai OCR" userebbe il DPI di default invece di `suggestedOcrDpi` del report.
+      Il pulsante funzionerebbe **senza fare davvero quello che promette**.
+
+### Questioni aperte lasciate da E6 (nessuna bloccante, tutte reali)
+- [ ] **`ICCBased` escluso dalla redazione dei pixel.** È lo spazio colore più comune
+      nelle scansioni a colori vere: escluderlo significa che molti documenti reali
+      ricadono sull'overlay, cioè **i pixel restano nel file**. Il bug MuPDF 709269
+      riguarda Indexed/Separation/DeviceN, non ICC che avvolge Gray/RGB/CMYK. Valutare
+      di ammettere ICCBased con 1/3/4 componenti, verificando su scansioni a colori vere.
+- [ ] **Guardie su `SMask`/`Mask` e `ImageMask` prudenziali.** E6 ha verificato che su
+      MuPDF 1.27 le fixture `img-11-smask` e `img-12-indexed` **non** mostrano il difetto
+      documentato. Le guardie quindi oggi costano privacy reale su file che
+      probabilmente si potrebbero redigere. Da rivalutare, idealmente con MuPDF ≥ 1.28.1
+      (che corregge 709269) — ma ricordare che la 1.28 rompe `search()` e
+      `toStructuredText()`, vedi il pin in `package.json`.
+- [ ] **`pixels-from-ocr` e `generatePdfFromImage` non testati**: manca
+      `resources/tessdata/ita.traineddata` (c'è solo in userData). È il buco di copertura
+      più grande dell'Onda 2.
+- [ ] **Percorso `digital`: nessuno scrub dei metadati.** Una miniatura `/Thumb` su un
+      PDF nativo può conservare la pagina pre-redazione. Fuori scope per scelta, ma va
+      saputo.
+
+### Da riesaminare (E7)
+- [ ] Quando l'immagine è pessima **e** il layer è disallineato, il banner fa vincere
+      "immagine pessima" e **nasconde** il pulsante. È difendibile — sotto i 150 DPI un
+      nuovo OCR non recupera dettaglio che non c'è — e regge perché la geometria viene
+      comunque corretta a valle: con un layer non certificato allineato, il generatore
+      ricade sui box Tesseract, auto-consistenti per costruzione. Quindi il pulsante
+      serve a migliorare il *rilevamento entità*, non a raddrizzare i riquadri.
+      Verificare che questo ragionamento regga leggendo il codice di E6.
+
+### Misure da ricordare
+Rapporti di dimensione dopo la redazione reale (l'immagine viene ri-codificata **non
+compressa**): G4 `img-14` **2,62×**; scansione JPEG `neg-03` **53×** (3,7 MB/pagina);
+grigio 300 DPI **449×** (8,3 MB). Su 10 pagine JPEG si superano i 20 MB: la soglia di
+avviso serve davvero, ed è il motivo per cui `SaveResult` è stato esteso e
+`SuccessScreen` mostra l'avviso.
+
+## Onda 2 — chiusura di E8 e giunzioni fra esecutori
+
+### E8 — OCR interno (`ocrParser.ts`, commit `7a95282`)
+
+`parsePdfWithOcr` e `parseImage` accettano ora `OcrParseOptions { dpi?, skewDeg?,
+unevenLighting? }`, retrocompatibili. Il DPI è risolto **sempre** da
+`ocrRenderConfig.ts`: nessuna costante locale, quindi il file non può divergere
+in silenzio da `pdfGenerator.ts` (era R9 del piano, il punto di rottura più
+insidioso dell'Onda 2 — ora chiuso da entrambi i lati).
+
+- **`thresholding_method` esiste davvero.** Lo spike previsto dal piano ha dato
+  esito positivo: verificato nelle stringhe del WASM di `tesseract.js-core@5.1.1`
+  ("Thresholding method: 0 = Otsu, 1 = LeptonicaOtsu, 2 = Sauvola") e
+  raggiungibile da `setParameters` (passthrough generico a `SetVariable`, non è
+  fra i parametri solo-init). Il rimedio non decade.
+- **`user_defined_dpi`** viene passato al worker: senza, Tesseract assume un
+  default interno e può segnalare una risoluzione "non valida".
+- **Deskew** implementato come funzione pura `buildOcrRenderMatrix(dpi, skewDeg?)`,
+  che rifà a mano la matematica di `mupdf.Matrix.scale/rotate/concat` (verificata
+  riga per riga sul sorgente). Il motivo è pratico: importare `mupdf` istanzia il
+  runtime WASM al solo import, anche solo per usare `Matrix`, e questo avrebbe
+  reso i test pesanti e fragili.
+- **Un solo worker per documento**, non più uno per pagina (~14 MB di
+  `ita.traineddata` ricaricati ogni volta). Se la creazione fallisce, tutte le
+  pagine degradano al testo digitale invece di ritentare una creazione già
+  fallita a ogni pagina.
+
+### Prova dell'ipotesi dei 150 DPI — esito: **inconcludente**
+
+Il piano imponeva di scrivere il risultato nel registro *in entrambi i casi*.
+Misura su fixture sintetica di 8 pagine (sandwich scansione + testo, nessun
+contenuto reale):
+
+| Rendering | Tempo | Caratteri estratti |
+|---|---|---|
+| 150 DPI | 10 858 ms | 7 270 |
+| 300 DPI | 13 917 ms | 7 270 |
+
+300 DPI costa ~28% di tempo in più e non estrae un carattere in più. È un
+**effetto soffitto**: la fixture è un sandwich sintetico pulito, non una
+scansione degradata. La misura quindi **non conferma e non smentisce** il
+collegamento con il divario di recall 80,0% → 62,9% di `sessione_049`, che
+riguardava il NER su documenti reali e non il conteggio di caratteri su una
+fixture. Per chiudere la pista serve una scansione reale di bassa qualità con
+verità di riferimento: finché non c'è, 300 DPI resta la scelta giustificata
+dalla documentazione Tesseract (x-height ~10 px a 150 DPI), non da una misura
+fatta in casa.
+
+### Giunzioni fra esecutori chiuse dall'orchestratore (commit `e3fd471`)
+
+Tre fili che nessun esecutore poteva chiudere da solo, perché stavano fra i
+rispettivi elenchi di file:
+
+1. **`parsePdfWithOcr` veniva chiamato senza opzioni.** Il pulsante "Rifai OCR"
+   avrebbe usato il DPI di default invece di `suggestedOcrDpi`, e
+   `skewDeg`/`unevenLighting` non avevano alcun chiamante: due dei tre rimedi di
+   E8 sarebbero rimasti codice morto. Ora `buildOcrParseOptions(report, dpi?)`
+   traduce il report in opzioni, e il percorso `forceOcr` rianalizza l'immagine
+   prima di ricominciare — ~150-300 ms dentro un'attesa di minuti.
+2. **Dopo un OCR rifatto da noi il report restava quello del layer vecchio.**
+   `reportAfterForcedOcr` lo declassa a `scan-no-text` / `inconclusive`: è la
+   coppia che porta la redazione sui riquadri di Tesseract, auto-consistenti per
+   costruzione. Dichiararlo `aligned` sarebbe stato peggio che inutile —
+   instraderebbe l'output sul percorso veloce `page.search()` sopra un layer che
+   non stiamo più leggendo. La qualità dell'**immagine** sopravvive (una
+   scansione a 100 DPI lo resta anche dopo); la qualità del **testo** si
+   ricalcola su ciò che abbiamo prodotto noi.
+3. **Il banner riproponeva il rimedio appena eseguito.** Con `ocrRedone` i
+   messaggi post-OCR diventano quelli onesti ("rifarlo darebbe lo stesso
+   risultato, verificare a mano") e il pulsante sparisce.
+
+**Limite noto:** `scoreTextQuality` si astiene sotto i 40 token
+(`text-too-short` → verdetto `good`). È corretto per giudicare un layer
+preesistente — un frontespizio non va accusato — ma significa che un nuovo OCR
+che restituisce quasi nulla non viene marcato `poor` da questa via. È coperto
+altrove (warning di bassa confidenza di Tesseract, elenco entità vuoto), ma va
+saputo.
+
 ## HANDOFF — stato al 2026-09-11
 
-- **Blocco corrente:** 1 **COMPLETATO** · **Ultimo gate superato:** Gate A
-- **Ultimo commit buono:** `1cf5b33` — feat(ocr): corpus di 56 PDF di riferimento e taratura
-- **typecheck:** OK · **test:** 437/437 (291 preesistenti + 67 E1 + 23 E2 + 56 corpus)
-- **Fatto:** ambiente riparato, contratto dei tipi, motore di rilevamento, qualità
-  linguistica, corpus da 56 fixture con README, taratura completa, Gate A superato.
-  **Nulla è ancora collegato alla pipeline: l'utente non vede alcun cambiamento.**
-- **Prossimo passo:** Blocco 2 — Onda 2, quattro esecutori su file disgiunti:
-  - **E5** pipeline e IPC (`parsers/index.ts`, `ipcHandlers.ts`, `preload`, `env.d.ts`)
-        — include il fix dei disposer `removeAllListeners` e lo snapshot del sessionManager
-  - **E6** percorso di output (`outputGenerators/`) — `REDACT_IMAGE_PIXELS` con le guardie
-        su spazio colore, `/SMask`, area 25% e validazione dopo la scrittura
-  - **E7** interfaccia (`OcrQualityBanner.tsx`, `EntityReview.tsx`, store)
-  - **E8** qualità dell'OCR interno (`ocrParser.ts`) — 300 DPI, Sauvola, deskew al rendering
-- **Decisioni aperte:** nessuna bloccante; vedi TODO.
+- **Blocco corrente:** 2 · **Ultima onda completata:** Onda 2 (E5-E8 integrati) ·
+  **Ultimo gate superato:** Gate A
+- **Ultimo commit buono:** `e3fd471` — feat(ocr): collega il rendering dell'OCR forzato
+- **typecheck:** OK · **test:** 525/525
+- **Fatto:** contratto dei tipi, motore di rilevamento, qualità linguistica, corpus da
+  56 fixture, taratura (Gate A), pipeline e IPC, redazione reale dei pixel con guardie,
+  banner utente, OCR interno a 300 DPI con deskew e Sauvola, e le tre giunzioni fra
+  esecutori. **La funzione è ora visibile all'utente e l'app è provabile con `npm start`.**
+- **Prossimo passo: Gate B**, che è l'unica cosa che manca al Blocco 2:
+  1. prova manuale con `npm start` sul corpus — `neg-*` nessun banner, `geo-*` banner
+     con "Rifai OCR" funzionante, `img-03` avviso senza pulsante, PDF nativo invariato,
+     DOCX intatto;
+  2. **prova della fuga di pixel**, la più importante:
+     `pdfimages -png documento_anonimizzato.pdf /tmp/estratte` deve mostrare **bianco**
+     dove c'era il nome. Se non passa, E6 non è finito;
+  3. verifiche accessorie su E6: oggetto originale rimosso, XObject condiviso, rapporto
+     di dimensione, scrub di `/Thumb` e `/Metadata`, ricaduta su overlay per SMask e
+     Indexed.
+- **Poi Blocco 3 (Onda 3, E9):** `GUIDA.md`, `CLAUDE.md` (compresi gli errori
+  preesistenti: `ProgressPayload`/`AnonymizeResult` non esistono, i nomi veri sono
+  `ProcessingProgress`/`SaveResult`; `winston` è elencato ma il logger reale è
+  `electron-log`), `CHANGELOG.md`, `README.md`. Poi merge su `master` e tag `v1.6.0`.
+- **Decisioni aperte:** vedi "Onda 2 — stato e questioni aperte" (ICCBased escluso dalla
+  redazione pixel, guardie SMask/ImageMask prudenziali, `pixels-from-ocr` e
+  `generatePdfFromImage` non testati per mancanza di `resources/tessdata/ita.traineddata`,
+  percorso `digital` senza scrub dei metadati).
+- **Non fatto, dichiarato:** le fixture `roundtrip/` sono **vuote** — è il gruppo che
+  spezza la circolarità del corpus (rendering → Tesseract vero → ricostruzione con
+  offset noto). Finché mancano, il rilevatore è tarato solo su difetti che abbiamo
+  costruito noi.
 - **Trappole da rispettare (confermate sul campo):**
   - `getPixels()` è una vista viva sulla heap WASM: si stacca in silenzio.
   - `showExtras` vale `true` di default: passare `false`.
   - Omettere `onChar` salta l'intero ciclo dei caratteri.
-  - Una sola `toStructuredText()` per pagina; `asJSON()` è un metodo della stessa istanza
-    e restituisce **il testo del documento**: mai nei log né nel report.
-  - **R9 del piano:** `pdfGenerator.ts` L167-169 ricalcola `scale = 150/72` a mano,
-    duplicando la costante di `ocrParser.ts`. Se E8 rende il DPI variabile e E6 non lo
-    riceve, le redazioni finiscono fuori posto **in silenzio**. Il DPI va passato, mai
-    ricalcolato, e va verificato con almeno due valori diversi.
+  - Una sola `toStructuredText()` per pagina; `asJSON()` restituisce **il testo del
+    documento**: mai nei log né nel report.
+  - **R9 chiuso:** il DPI passa da `ocrRenderConfig.ts` sia in `ocrParser.ts` sia in
+    `pdfGenerator.ts`. Non reintrodurre costanti locali: le redazioni finirebbero fuori
+    posto **in silenzio**.
 - **Per riprendere:**
   ```bash
   git checkout feat/ocr-layer-quality-check
