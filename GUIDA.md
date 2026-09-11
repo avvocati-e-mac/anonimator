@@ -3,7 +3,7 @@
 Documentazione tecnica per sviluppatori. Descrive architettura, flussi di dati, logica di anonimizzazione e componenti del software.
 
 **Versione documentata:** 1.8.0
-**Stack:** Electron 40 + React 18 + TypeScript (strict mode)
+**Stack:** Electron 40 + React 18 + TypeScript (strict mode) + electron-vite 5 + Vite 7.3
 **Scopo:** Pseudonimizzazione locale di documenti legali italiani (PDF, DOCX, ODT, TXT, immagini). Nessuna connessione di rete durante l'elaborazione.
 
 ---

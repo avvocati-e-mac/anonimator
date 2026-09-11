@@ -219,7 +219,6 @@ For raster or mixed PDFs, `pdfSafeGenerator.ts` creates a new flattened PDF and 
 ## File Structure
 ```
 /
-├── PROJECT_MASTER v2.1.md  # Primary reference doc - read before operating
 ├── CLAUDE.md               # This file — keep in sync with GUIDA.md
 ├── GUIDA.md                # Full technical documentation — keep in sync with CLAUDE.md
 ├── CHANGELOG.md            # Version history in Italian
@@ -250,7 +249,8 @@ For raster or mixed PDFs, `pdfSafeGenerator.ts` creates a new flattened PDF and 
 
 ## Development Workflow
 1. **Run Session Startup Checklist** (see above)
-2. **Read PROJECT_MASTER v2.1.md** for the overall roadmap and post-launch priorities
+2. **Read `GUIDA.md`, `CHANGELOG.md` and the latest session file** for architecture,
+   release history and post-launch priorities
 3. All 6 initial phases are **DONE** — new work consists of feature extensions, bugfixes, and quality improvements:
    - Phase 1: Setup & Scaffolding — **DONE** (see sessione_001_fase1.md)
    - Phase 2: NER Engine + SessionManager — **DONE**
@@ -530,9 +530,9 @@ Passaggi standard per una release:
 
 ## Notes
 
-- Vite version pinned to ^5.4.x (electron-vite 2.3 does not support Vite 6)
+- Build stack: electron-vite ^5.0.0 con Vite ^7.3.1 (vedi `package.json`)
 - NER model changed from generic Xenova to Italian_NER_XXL_v2 (decision: sessione_001_fase1.md)
 - Prefer simplicity over elegance - target users are lawyers, not developers
 - Don't refactor working code without explicit request
-- Don't install libraries not mentioned in PROJECT_MASTER v2.1.md without asking first
+- Don't add or replace runtime dependencies without asking first and documenting the rationale
 - When uncertain between approaches, describe pros/cons and wait for user decision
