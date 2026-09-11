@@ -64,6 +64,14 @@ export interface OcrParseOptions {
    * illuminazione non uniforme.
    */
   unevenLighting?: boolean
+  /**
+   * Chiamata all'inizio di ogni pagina con (pagina corrente 1-based, totale).
+   * L'OCR di un documento lungo occupa minuti interi: senza questo segnale
+   * l'interfaccia resta ferma su un messaggio generico per tutto il tempo, e
+   * chi guarda non ha modo di distinguere "sta lavorando" da "si e' piantato".
+   * Riceve solo numeri: nessun contenuto documentale attraversa questo canale.
+   */
+  onPageProgress?: (page: number, totalPages: number) => void
 }
 
 /**
@@ -320,6 +328,7 @@ export async function parsePdfWithOcr(filePath: string, opts?: OcrParseOptions):
   try {
     for (let i = 0; i < pageCount; i++) {
       log.info(`OCR pagina ${i + 1}/${pageCount}`)
+      opts?.onPageProgress?.(i + 1, pageCount)
       const page = doc.loadPage(i) as import('mupdf').PDFPage
 
       let pageText = ''

@@ -9,6 +9,12 @@ import { parseMarkdown } from './markdownParser'
 import { analyzeOcrLayer } from '../services/ocrLayerCheck'
 import { scoreTextQuality } from '../services/textQuality'
 
+/**
+ * Avanzamento dell'OCR interno, pagina per pagina. Solo numeri: e' un canale
+ * verso l'interfaccia e non deve trasportare nulla del documento.
+ */
+export type OcrPageProgress = (page: number, totalPages: number) => void
+
 export interface ParseResult {
   text: string
   pageCount: number
@@ -67,10 +73,12 @@ async function analyzeOcrLayerSafe(filePath: string): Promise<OcrLayerReport | u
  */
 export function buildOcrParseOptions(
   report: OcrLayerReport | undefined,
-  dpiOverride?: number
+  dpiOverride?: number,
+  onPageProgress?: OcrPageProgress
 ): OcrParseOptions {
   return {
     dpi: dpiOverride ?? report?.suggestedOcrDpi,
+    onPageProgress,
     skewDeg: report?.imageMetrics.skewDeg,
     // Sauvola solo quando la separabilità inchiostro/carta è risultata bassa:
     // su una scansione pulita la pre-binarizzazione toglie al motore LSTM
@@ -128,14 +136,21 @@ export function reportAfterForcedOcr(
  * riconosciuto, si ricade sull'euristica `isScanned` di `parsePdf` — il controllo di
  * qualità non deve mai far fallire l'analisi del documento.
  */
-async function extractPdfText(filePath: string, opts?: ProcessDocumentOptions): Promise<ParseResult> {
+async function extractPdfText(
+  filePath: string,
+  opts?: ProcessDocumentOptions,
+  onOcrProgress?: OcrPageProgress
+): Promise<ParseResult> {
   if (opts?.forceOcr) {
     // Si rianalizza l'immagine anche qui, prima di rifare l'OCR. Costa
     // ~150-300 ms su un percorso in cui l'utente sta già aspettando minuti, e
     // in cambio dà al rendering l'inclinazione da correggere e la separabilità
     // che decide fra Otsu e Sauvola.
     const preReport = await analyzeOcrLayerSafe(filePath)
-    const ocrResult = await parsePdfWithOcr(filePath, buildOcrParseOptions(preReport, opts.ocrDpi))
+    const ocrResult = await parsePdfWithOcr(
+      filePath,
+      buildOcrParseOptions(preReport, opts.ocrDpi, onOcrProgress)
+    )
     return {
       ...ocrResult,
       isScanned: true,
@@ -153,7 +168,10 @@ async function extractPdfText(filePath: string, opts?: ProcessDocumentOptions): 
   if (ocrReport && isRecognizedKind) {
     if (layerKind === 'scan-no-text') {
       // Scansione priva di layer di testo: serve l'OCR interno.
-      const ocrResult = await parsePdfWithOcr(filePath, buildOcrParseOptions(ocrReport))
+      const ocrResult = await parsePdfWithOcr(
+        filePath,
+        buildOcrParseOptions(ocrReport, undefined, onOcrProgress)
+      )
       return {
         ...ocrResult,
         isScanned: true,
@@ -170,7 +188,7 @@ async function extractPdfText(filePath: string, opts?: ProcessDocumentOptions): 
 
   // Rete di sicurezza: nessun report attendibile, ricadi sull'euristica isScanned.
   if (pdfResult.isScanned) {
-    const ocrResult = await parsePdfWithOcr(filePath)
+    const ocrResult = await parsePdfWithOcr(filePath, { onPageProgress: onOcrProgress })
     return {
       ...ocrResult,
       isScanned: true,
@@ -189,7 +207,8 @@ async function extractPdfText(filePath: string, opts?: ProcessDocumentOptions): 
 export async function extractText(
   filePath: string,
   format: DocumentFormat,
-  opts?: ProcessDocumentOptions
+  opts?: ProcessDocumentOptions,
+  onOcrProgress?: OcrPageProgress
 ): Promise<ParseResult> {
   switch (format) {
     case 'txt':
@@ -202,7 +221,7 @@ export async function extractText(
       return parseOdt(filePath)
 
     case 'pdf':
-      return extractPdfText(filePath, opts)
+      return extractPdfText(filePath, opts, onOcrProgress)
 
     case 'image': {
       const imgResult = await parseImage(filePath)

@@ -12,6 +12,7 @@ import { sessionManager } from './services/sessionManager'
 import { settingsManager } from './services/settingsManager'
 import { testLlmConnection, listLlmModels, SYSTEM_PROMPT_IT, SYSTEM_PROMPT_EN } from './services/llmService'
 import { detectFormat, extractText } from './parsers/index'
+import { buildOcrProgressMessage, ocrProgressPercent } from './services/ocrProgressMessage'
 import { generateOutput } from './outputGenerators/index'
 
 function getSessionDictPath(): string {
@@ -112,9 +113,27 @@ export function registerIpcHandlers(): void {
       // snapshot/restore evita che quella passata scartata lasci voci spurie permanenti.
       const sessionSnapshot = forceOcr ? sessionManager.snapshot() : null
 
-      sendProgress('parsing', 30, 'Estrazione testo...')
+      sendProgress('parsing', 30, 'Lettura del testo...')
+
+      // L'OCR di un documento lungo occupa minuti. Senza un segnale per pagina la
+      // barra resta ferma dall'inizio alla fine e l'unica informazione che arriva
+      // e' un messaggio generico: chi guarda non puo' distinguere "sta lavorando"
+      // da "si e' piantato". Qui l'avanzamento reale occupa la banda 30-48%.
+      const ocrStartedAt = Date.now()
+      let ocrPagesDone = 0
+      const onOcrProgress = (page: number, totalPages: number): void => {
+        sendProgress(
+          'ocr',
+          ocrProgressPercent(page, totalPages),
+          buildOcrProgressMessage(page, totalPages, ocrStartedAt, ocrPagesDone)
+        )
+        // Il conteggio si incrementa DOPO: la stima deve basarsi sulle pagine
+        // davvero concluse, non su quella appena iniziata.
+        ocrPagesDone = page
+      }
+
       const { text, pageCount, warnings: parseWarnings, isScanned: docIsScanned, previewHtml, ocrReport } =
-        await extractText(filePath, format, { forceOcr, ocrDpi })
+        await extractText(filePath, format, { forceOcr, ocrDpi }, onOcrProgress)
 
       if (sessionSnapshot) {
         sessionManager.restore(sessionSnapshot)
@@ -128,10 +147,6 @@ export function registerIpcHandlers(): void {
           imageQuality: ocrReport.imageQuality,
           pagesSampled: ocrReport.pagesSampled
         })
-      }
-
-      if (format === 'pdf') {
-        sendProgress('ocr', 40, 'Verifica del testo della scansione...')
       }
 
       // Fase 2: analisi NER (BERT + regex, opzionalmente LLM)
