@@ -4,6 +4,7 @@ import { tmpdir } from 'os'
 import { mkdtemp, copyFile, readFile, readdir, rm, writeFile } from 'fs/promises'
 import { randomUUID } from 'crypto'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
+import sharp from 'sharp'
 import type { DetectedEntity } from '../src/shared/types'
 
 // Mock electron — non c'è finestra Electron in vitest.
@@ -20,6 +21,7 @@ import {
   computeSizeWarning,
   evaluatePageImageSafety,
   generatePdf,
+  generatePdfFromImage,
   isRedactionAreaAcceptable,
   matchEntitiesInWords,
   pixelBoxToPdfPoints,
@@ -390,6 +392,31 @@ describe('percorso digital (non regressione)', () => {
 })
 
 describe('confine fail-closed dell’entry point pubblico', () => {
+  it('rispetta il routing flattened esplicito anche per una sorgente con layer digitale', async () => {
+    const { input, dir } = await inCartellaTemporanea(join(FIXTURES, 'sample.pdf'))
+
+    try {
+      const result = await generatePdf(input, [entita('Mario Rossi', 'PERSONA_1')], {
+        routing: 'flattened-scan',
+        layerKind: 'digital',
+      })
+      expect(result.redactionMode).toBe('flattened-scan')
+
+      const mupdf = await loadMupdf()
+      const source = new mupdf.PDFDocument(new Uint8Array(await readFile(input)))
+      const output = new mupdf.PDFDocument(new Uint8Array(await readFile(result.outputPath)))
+      try {
+        expect(output.countPages()).toBe(source.countPages())
+        expect(testoDocumento(output)).not.toContain('Mario Rossi')
+      } finally {
+        source.destroy()
+        output.destroy()
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
+
   it('senza artefatto OCR token-bound non scrive alcun output per una scansione non attendibile', async () => {
     const { input, dir } = await inCartellaTemporanea(
       join(CORPUS_IMG, 'img-13-xobject-condiviso.pdf')
@@ -401,6 +428,22 @@ describe('confine fail-closed dell’entry point pubblico', () => {
         ocrAligned: false,
       })).rejects.toMatchObject({ code: 'ocr-artifact-missing' })
 
+      expect((await readdir(dir)).filter((name) => name.includes('_anonimizzato'))).toEqual([])
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
+
+  it('senza artefatto OCR token-bound non scrive output neppure dall’entry point immagini', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'anonimator-image-entry-'))
+    const input = join(dir, 'immagine-sintetica.png')
+    await sharp({
+      create: { width: 320, height: 200, channels: 3, background: '#ffffff' },
+    }).png().toFile(input)
+
+    try {
+      await expect(generatePdfFromImage(input, [entita('Mario Rossi', 'PERSONA_1')]))
+        .rejects.toMatchObject({ code: 'ocr-artifact-missing' })
       expect((await readdir(dir)).filter((name) => name.includes('_anonimizzato'))).toEqual([])
     } finally {
       await rm(dir, { recursive: true, force: true })

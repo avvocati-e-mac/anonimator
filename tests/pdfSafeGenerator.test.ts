@@ -66,6 +66,42 @@ describe('primitive D1 fail-closed', () => {
     }
     expect(() => enforcePixelBudget(10_000, MAX_PAGE_PIXELS / 10_000)).not.toThrow()
   })
+
+  it('rifiuta tramite il ledger un rettangolo oltre il 25% e marca l’output da verificare', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'anonimator-large-rect-'))
+    const input = join(dir, 'rettangolo-sintetico.pdf')
+    const document = await PDFDocument.create()
+    const font = await document.embedFont(StandardFonts.Helvetica)
+    document.addPage([595, 842]).drawText('IDENTIFICATIVO SINTETICO', {
+      x: 10,
+      y: 300,
+      size: 400,
+      font,
+    })
+    await writeFile(input, await document.save())
+    const largeEntity: DetectedEntity = {
+      id: 'large-1',
+      type: 'PERSONA',
+      originalText: 'IDENTIFICATIVO SINTETICO',
+      pseudonym: 'PERSONA_1',
+      occurrences: 1,
+      confirmed: true,
+    }
+
+    try {
+      const result = await generatePdfSafe(input, [largeEntity], { routing: 'digital' })
+      expect(result.safetyStatus).toBe('partial')
+      expect(result.partialReasons).toContain('rejected-rectangle')
+      expect(result.outcomes[0]).toMatchObject({
+        matchedOccurrences: 1,
+        redactedOccurrences: 0,
+        rejectedOccurrences: 1,
+      })
+      expect(result.outputPath).toContain('_DA_VERIFICARE')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('ricostruzione raster D1', () => {
