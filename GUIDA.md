@@ -1358,6 +1358,7 @@ npm run test:ner-recall # Evaluation sintetica precision/recall/F1 NER
 npm run test:corpus    # Corpus OCR
 npm run test:roundtrip # Roundtrip OCR reale (richiede ita.traineddata)
 npm run test:pixel-leak # Prova pixel con pdfimages/Poppler
+npm run bench:dpi       # Benchmark manuale OCR 200/300/400 su fixture sintetiche
 npm run build:electron # Pacchettizzazione completa
 ```
 
@@ -1514,6 +1515,8 @@ File: `tests/` — Framework: Vitest
 | `settingsMigration.test.ts` | Migrazione configurazione LLM da versioni precedenti |
 | `settingsScreenUtils.test.ts` | Logica utilità per SettingsScreen (validazione URL, preset) |
 | `nerPageMode.test.ts` | Modalità page-mode NER con array pages[] |
+| `dpiBenchmarkMetrics.test.ts` | Metriche, gate, schema e gestione errori del benchmark DPI |
+| `dpiBenchmarkRunner.test.ts` | Pipeline OCR/PDF reale del benchmark DPI; resta disabilitata nei test ordinari e viene attivata soltanto dal runner dedicato |
 | `dropzone.test.ts` | Formati accettati dalla DropZone: `.md`/`.MD`, `text/markdown`, `text/x-markdown`, regression formati preesistenti, rifiuto formati non supportati |
 
 ```bash
@@ -1521,6 +1524,57 @@ npm test              # Esegue tutti i test
 npm run typecheck     # Verifica tipi (senza eseguire)
 npm run typecheck:all # Sorgenti, test e sintassi dei generatori fixture
 ```
+
+### Benchmark della strategia DPI
+
+Il benchmark DPI è intenzionalmente separato da `test:unit`: carica davvero
+MuPDF e Tesseract, crea un worker nuovo per ciascun run e misura anche risorse e
+generazione dell'output. Richiede `ita.traineddata` nella normale directory dati
+dell'app oppure nel percorso indicato da `ANONIMATOR_TESSDATA`.
+
+```bash
+npm run bench:dpi                    # tre repliche per combinazione
+npm run bench:dpi -- --repetitions=1 # smoke rapido della matrice completa
+```
+
+Ogni esecuzione costruisce e cancella in una directory temporanea tre fixture
+prive di dati personali:
+
+- `clean`: raster sorgente a 300 DPI e testo regolare;
+- `small-7pt`: raster sorgente a 300 DPI con target a 7 punti;
+- `degraded-150dpi`: raster sorgente a 150 DPI, compressione JPEG e rumore
+  pseudocasuale con seed fisso.
+
+Le tre fixture vengono elaborate separatamente a `ocrDpi` 200, 300 e 400. Il
+`sourceDpi` descrive il raster incorporato; non è un quarto candidato OCR e non
+aggira il clamp produttivo 200–400. Il parent avvia un processo fresco per ogni
+combinazione, applica un timeout, convalida nuovamente schema e matrice e pubblica
+soltanto JSON aggregato. I risultati individuali e i PDF restano in `tmp` e sono
+rimossi al termine.
+
+Le metriche includono recall exact-match delle sequenze sensibili, token recall
+basata sulla longest common subsequence, WER, CER, copertura/IoU dei bbox, errore
+del centro e dei bordi in punti, tempi OCR/output/totale, picchi RSS/heap e
+dimensione dell'output. CER usa testo NFKC, case-folded e senza spazi. Le metriche
+di dimensione sono etichettate `source-native-independent-of-ocr-dpi`: il
+generatore raster sceglie la risoluzione dalla sorgente, non dal DPI usato per
+Tesseract; servono quindi a rilevare regressioni nel disaccoppiamento, non a
+stimare direttamente il costo del rendering OCR.
+
+I gate non mediano mai un falso negativo:
+
+- invarianti per ogni fixture e replica: recall sensibile 100%, output
+  `complete`, tutti i target associati e errore del centro non superiore a 4 pt;
+- `clean`: token recall almeno 0,98 e CER non oltre 0,02;
+- `small-7pt`: token recall almeno 0,90 e CER non oltre 0,08;
+- `degraded-150dpi`: token recall almeno 0,85 e CER non oltre 0,12.
+
+Un candidato è accettato soltanto se supera ogni fixture e replica. Il fallimento
+del baseline 300 DPI rende il comando non verde. Un pass, da solo, non autorizza
+un cambio del default: occorrono più repliche, fixture discriminanti e un
+vantaggio riproducibile senza perdita di recall o geometria. Fino ad allora il
+default resta 300 DPI; 400 DPI può essere valutato soltanto per falsi negativi
+riproducibili, mai come retry automatico dopo un errore o un `resource-limit`.
 
 ---
 
