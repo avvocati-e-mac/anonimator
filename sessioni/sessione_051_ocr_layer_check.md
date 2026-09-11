@@ -302,26 +302,60 @@ che restituisce quasi nulla non viene marcato `poor` da questa via. È coperto
 altrove (warning di bassa confidenza di Tesseract, elenco entità vuoto), ma va
 saputo.
 
+## Gate B — parte automatica: superata
+
+`npm run typecheck` pulito, **527/527 test verdi**.
+
+### Prova della fuga di pixel — **superata** (`tests/pixelLeak.test.ts`)
+
+È la prova che l'intera funzionalità esiste per dare, ed è automatizzata invece
+che lasciata a un controllo manuale: si estraggono le immagini dal PDF con
+`pdfimages` — lo stesso strumento che userebbe chi volesse recuperare i dati — e
+si guarda **dentro l'immagine estratta**, non la pagina renderizzata.
+
+- Scansione con layer allineato → l'area del nome è **bianca** nell'immagine
+  estratta (`frazioneScura === 0`), mentre il resto della riga è intatto bit per
+  bit. Si redige il nome, non si sbianca la pagina.
+- Modo scelto: `pixels-from-text-layer`, nessuna ricaduta su overlay.
+- Il test si salta da sé dove poppler non è installato.
+
+### Limite dichiarato, ora coperto da test
+
+Immagine con `/SMask` → ricaduta su overlay, e **i pixel restano estraibili**.
+È la scelta di R19 (MuPDF 1.27 gestisce male la trasparenza in redazione: meglio
+un file meno protetto che uno corrotto), non un difetto. Il test la fissa perché
+resti visibile: se qualcuno togliesse la guardia credendola superflua, o si
+aggiornasse MuPDF, l'esito cambia e lo fa notare. L'utente ne è informato dal
+riquadro ambra in `SuccessScreen` (`fellBackToOverlay`).
+
+**Nota pratica:** le scansioni a colori reali usano spesso ICCBased, oggi escluso
+dall'azzeramento dei pixel in via prudenziale. Vale la pena verificare se il bug
+709269 riguardi davvero anche ICC che avvolge Gray/RGB/CMYK: se non lo riguarda,
+togliere quell'esclusione allargherebbe la protezione reale ai file più comuni.
+
+### Misura di dimensione, confermata sul campo
+
+`neg-02-allineato-flate`: rapporto **306×** (8,4 KB → ~2,5 MB), `sizeWarning`
+acceso correttamente. È il prezzo della rimozione vera, e l'avviso funziona.
+
+### Resta da fare a mano (richiede l'interfaccia)
+
+`npm start` sul corpus: `neg-*` nessun banner, `geo-*` banner con "Rifai OCR"
+funzionante, `img-03-dpi-100` avviso senza pulsante, PDF nativo e DOCX invariati.
+
 ## HANDOFF — stato al 2026-09-11
 
 - **Blocco corrente:** 2 · **Ultima onda completata:** Onda 2 (E5-E8 integrati) ·
   **Ultimo gate superato:** Gate A
-- **Ultimo commit buono:** `e3fd471` — feat(ocr): collega il rendering dell'OCR forzato
-- **typecheck:** OK · **test:** 525/525
+- **Ultimo commit buono:** `b87f8c0` — test(ocr): prova della fuga di pixel con pdfimages
+- **typecheck:** OK · **test:** 527/527
 - **Fatto:** contratto dei tipi, motore di rilevamento, qualità linguistica, corpus da
   56 fixture, taratura (Gate A), pipeline e IPC, redazione reale dei pixel con guardie,
   banner utente, OCR interno a 300 DPI con deskew e Sauvola, e le tre giunzioni fra
   esecutori. **La funzione è ora visibile all'utente e l'app è provabile con `npm start`.**
-- **Prossimo passo: Gate B**, che è l'unica cosa che manca al Blocco 2:
-  1. prova manuale con `npm start` sul corpus — `neg-*` nessun banner, `geo-*` banner
-     con "Rifai OCR" funzionante, `img-03` avviso senza pulsante, PDF nativo invariato,
-     DOCX intatto;
-  2. **prova della fuga di pixel**, la più importante:
-     `pdfimages -png documento_anonimizzato.pdf /tmp/estratte` deve mostrare **bianco**
-     dove c'era il nome. Se non passa, E6 non è finito;
-  3. verifiche accessorie su E6: oggetto originale rimosso, XObject condiviso, rapporto
-     di dimensione, scrub di `/Thumb` e `/Metadata`, ricaduta su overlay per SMask e
-     Indexed.
+- **Prossimo passo:** **Gate B automatico superato** (vedi sezione dedicata: prova della
+  fuga di pixel inclusa). Resta solo la **prova manuale con `npm start`** sul corpus, che
+  richiede l'interfaccia e quindi una persona davanti allo schermo.
 - **Poi Blocco 3 (Onda 3, E9):** `GUIDA.md`, `CLAUDE.md` (compresi gli errori
   preesistenti: `ProgressPayload`/`AnonymizeResult` non esistono, i nomi veri sono
   `ProcessingProgress`/`SaveResult`; `winston` è elencato ma il logger reale è

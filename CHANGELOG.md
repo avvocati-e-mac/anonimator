@@ -11,12 +11,21 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 > Vedi `sessioni/sessione_051_ocr_layer_check.md` per lo stato di avanzamento.
 
 ### Novità
-- **Controllo automatico del layer OCR nei PDF scansionati** (in corso, non ancora attivo nell'interfaccia): l'app riconosce se un PDF è una scansione con testo ricercabile sovrapposto e verifica che quel testo sia allineato all'immagine. Se non lo è, i riquadri di anonimizzazione finirebbero nel punto sbagliato lasciando i nomi leggibili. Il controllo gira solo sui PDF che sono davvero scansioni e costa circa 35 millesimi di secondo per pagina.
-- **Valutazione della qualità della scansione**: risoluzione reale dell'immagine, leggibilità del testo, inclinazione e contrasto, per avvisare quando una scansione è troppo scadente perché il riconoscimento dia risultati affidabili.
-- **Valutazione della qualità del testo riconosciuto**: individua i layer OCR illeggibili (mappa caratteri rotta, riconoscimento fatto in un'altra lingua).
+- **Controllo automatico del layer OCR nei PDF scansionati**: l'app riconosce se un PDF è una scansione con testo ricercabile sovrapposto e verifica che quel testo sia allineato all'immagine. Se non lo è, i riquadri di anonimizzazione finirebbero nel punto sbagliato lasciando i nomi leggibili. Il controllo è automatico, non richiede alcuna scelta all'utente e costa circa 35 millesimi di secondo per pagina.
+- **Avviso e nuovo riconoscimento del testo**: quando il controllo trova un problema compare un avviso nella schermata di revisione, con un pulsante per rifare il riconoscimento del testo con il motore interno. L'avviso spiega anche quanto tempo serve e che le entità già modificate a mano verranno ricalcolate.
+- **Valutazione della qualità della scansione**: risoluzione reale dell'immagine, leggibilità del testo, inclinazione e contrasto. Quando la scansione è troppo scadente perché un riconoscimento dia risultati affidabili, l'app lo dice chiaramente e **non** offre un rimedio che non funzionerebbe: invita a verificare a mano.
+- **Valutazione della qualità del testo riconosciuto**: individua i layer OCR illeggibili (mappa caratteri rotta, riconoscimento fatto in un'altra lingua), sia su quelli già presenti nel file sia su quelli prodotti dall'app.
+- **Riconoscimento del testo interno più accurato**: rendering a 300 DPI invece di 150 (a 150 DPI il testo di un atto normale è sotto la dimensione minima dichiarata da Tesseract), raddrizzamento automatico delle scansioni storte e binarizzazione adattiva quando l'illuminazione è disuniforme.
+- **Segnalazione dei file che crescono troppo**: rimuovere davvero i pixel comporta riscrivere l'immagine senza compressione, e un file può diventare molto più grande dell'originale. Quando supera tre volte l'originale o i 20 MB, la schermata finale lo dice — importante per i limiti di dimensione del deposito telematico.
 
 ### Fix
-- _(in corso)_
+- **I dati anonimizzati nelle scansioni venivano solo coperti, non rimossi**: sui PDF scansionati l'app disegnava un riquadro grigio sopra il nome, ma i pixel originali restavano dentro il file ed erano recuperabili estraendo l'immagine. Ora vengono davvero azzerati. Nei casi in cui l'operazione non è sicura (immagini con trasparenza o spazi colore non standard) l'app ripiega sul riquadro sovrapposto e **lo segnala nella schermata finale** invece di lasciar credere che il dato sia stato rimosso.
+- **Le scansioni con testo ricercabile prendevano il percorso sbagliato**: venivano trattate come PDF digitali perché contengono molto testo, e finivano sul percorso di anonimizzazione che non tocca le immagini.
+- **Avviso di scansione perso**: il messaggio "Il PDF sembra una scansione" prodotto durante la lettura veniva scartato quando l'app passava al riconoscimento ottico.
+- **Rifare l'analisi sporcava il dizionario degli pseudonimi**: una passata scartata lasciava comunque le sue voci nel dizionario di sessione, e lo stesso nome finiva poi su uno pseudonimo diverso (`M. R. (2)` invece di `M. R.`), anche nei documenti successivi.
+- **Avvisi di avanzamento che sparivano**: il primo componente che smetteva di ascoltare gli aggiornamenti di avanzamento zittiva anche tutti gli altri per il resto della sessione.
+- **Conteggio delle entità sostituite errato sui PDF scansionati**: veniva sovrascritto dall'ultima pagina invece di essere sommato.
+- **Immagini PNG/JPG instradate al generatore sbagliato**, con errore invece dell'output.
 
 ---
 
