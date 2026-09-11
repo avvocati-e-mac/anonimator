@@ -7,8 +7,9 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ## [1.6.0] - non rilasciata
 
-> Voce in lavorazione: viene completata a ogni gate del branch `feat/ocr-layer-quality-check`.
-> Vedi `sessioni/sessione_051_ocr_layer_check.md` per lo stato di avanzamento.
+> Versione dedicata ai PDF scansionati: l'app ora capisce da sola se una scansione
+> ha un testo ricercabile affidabile, e rimuove davvero i dati dalle immagini invece
+> di limitarsi a coprirli.
 
 ### Novità
 - **Controllo automatico del layer OCR nei PDF scansionati**: l'app riconosce se un PDF è una scansione con testo ricercabile sovrapposto e verifica che quel testo sia allineato all'immagine. Se non lo è, i riquadri di anonimizzazione finirebbero nel punto sbagliato lasciando i nomi leggibili. Il controllo è automatico, non richiede alcuna scelta all'utente e costa circa 35 millesimi di secondo per pagina.

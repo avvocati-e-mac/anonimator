@@ -143,6 +143,15 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           NOTES=$(awk "/^## \[$VERSION\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md)
+          # Un tag di prerelease (v1.6.0-beta.1) non ha una voce di CHANGELOG
+          # propria: si ricade sulle note della versione base (1.6.0). La
+          # corrispondenza esatta si tenta per prima, cosi' una beta con voce
+          # dedicata resta comunque possibile.
+          if [ -z "$NOTES" ]; then
+            BASE="${VERSION%%-*}"
+            NOTES=$(awk "/^## \\[$BASE\\]/{found=1; next} found && /^## \\[/{exit} found{print}" CHANGELOG.md)
+            NOTES="> **Versione di prova ($VERSION).** Non usare su fascicoli reali senza verificare a mano il risultato."$'\n\n'"$NOTES"
+          fi
           echo "notes<<EOF" >> $GITHUB_OUTPUT
           echo "$NOTES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -174,4 +183,6 @@ jobs:
             artifacts/windows-installer/*.exe
             artifacts/linux-appimage/*.AppImage
           draft: false
-          prerelease: false
+          # Qualunque tag con suffisso semver (v1.6.0-beta.1, -rc.2) e' una
+          # prerelease: su GitHub resta fuori da "Latest release".
+          prerelease: ${{ contains(github.ref_name, '-') }}
