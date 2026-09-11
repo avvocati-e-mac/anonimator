@@ -5,11 +5,18 @@ import { tmpdir } from 'os'
 import { randomBytes } from 'crypto'
 import { writeFile, unlink, readFile } from 'fs/promises'
 import { app } from 'electron'
+import sharp from 'sharp'
 import type { ParseResult } from './index'
 import { privacyLog as log, safeErrorCode } from '../services/privacyLogger'
 import { getTessdataPath } from '../services/nerService'
 import { resolveOcrDpi, dpiToScale } from '../services/ocrRenderConfig'
 import type { Matrix as MupdfMatrix } from 'mupdf'
+import type { AffineMatrix } from '../services/geometry'
+import {
+  RenderBudgetError,
+  assertPixelDimensions,
+  renderWithinPixelBudget,
+} from '../services/renderBudget'
 import {
   ocrArtifactCache,
   type OcrArtifactWord,
@@ -18,6 +25,13 @@ import {
 
 /** Soglia di confidenza Tesseract (0-100) sotto la quale si avvisa l'utente. */
 export const OCR_CONFIDENCE_THRESHOLD = 60
+
+export class OcrProcessingError extends Error {
+  constructor(readonly code: 'render-failed' | 'ocr-unavailable' | 'ocr-failed', message: string) {
+    super(message)
+    this.name = 'OcrProcessingError'
+  }
+}
 
 /**
  * Sotto questa soglia (gradi) non si applica la contro-rotazione di deskew:
@@ -278,18 +292,23 @@ async function createOcrWorker(options?: {
   // noi); per parseImage è solo un'indicazione, perché un'immagine già
   // rasterizzata non può essere "ri-renderizzata" a un DPI diverso — farlo
   // sarebbe pura interpolazione (vedi OcrParseOptions.dpi).
-  if (options?.userDefinedDpi !== undefined) {
-    await worker.setParameters({ user_defined_dpi: String(options.userDefinedDpi) })
-  }
+  try {
+    if (options?.userDefinedDpi !== undefined) {
+      await worker.setParameters({ user_defined_dpi: String(options.userDefinedDpi) })
+    }
 
-  if (options?.unevenLighting) {
-    // Sauvola (2 = Sauvola, vedi thresholding_method in tesseract.js-core@5.1.1):
-    // aiuta SOLO con illuminazione non uniforme. Su scansioni pulite peggiora
-    // o è indifferente — vedi OcrParseOptions.unevenLighting.
-    await worker.setParameters({ thresholding_method: '2' })
-  }
+    if (options?.unevenLighting) {
+      // Sauvola (2 = Sauvola, vedi thresholding_method in tesseract.js-core@5.1.1):
+      // aiuta SOLO con illuminazione non uniforme. Su scansioni pulite peggiora
+      // o è indifferente — vedi OcrParseOptions.unevenLighting.
+      await worker.setParameters({ thresholding_method: '2' })
+    }
 
-  return worker
+    return worker
+  } catch (error) {
+    await worker.terminate().catch(() => undefined)
+    throw error
+  }
 }
 
 async function ocrSingleImage(
@@ -337,14 +356,35 @@ export async function parseImage(filePath: string, opts?: OcrParseOptions): Prom
   const dpi = resolveRenderDpi(opts?.dpi)
   log.info('ocr-image-dpi-resolved', { dpiRequested: opts?.dpi ?? null, dpi })
 
+  let metadata: sharp.Metadata
+  try {
+    metadata = await sharp(filePath).metadata()
+  } catch {
+    throw new OcrProcessingError('render-failed', 'Immagine non leggibile per OCR.')
+  }
+  if (!metadata.width || !metadata.height) {
+    throw new OcrProcessingError('render-failed', 'Immagine non leggibile per OCR.')
+  }
+  assertPixelDimensions(metadata.width, metadata.height)
+
   // Immagine singola: un worker usa-e-getta va bene, non c'è riuso da fare.
-  const worker = await createOcrWorker({ unevenLighting: opts?.unevenLighting, userDefinedDpi: dpi })
+  let worker: import('tesseract.js').Worker
+  try {
+    worker = await createOcrWorker({ unevenLighting: opts?.unevenLighting, userDefinedDpi: dpi })
+  } catch {
+    throw new OcrProcessingError('ocr-unavailable', 'Motore OCR non disponibile.')
+  }
 
   let text: string
   let confidence: number
   let words: OcrArtifactWord[]
   try {
-    const result = await ocrSingleImage(worker, filePath, 1)
+    let result: OcrPageResult
+    try {
+      result = await ocrSingleImage(worker, filePath, 1)
+    } catch {
+      throw new OcrProcessingError('ocr-failed', 'Riconoscimento OCR non riuscito.')
+    }
     text = result.text
     confidence = result.confidence
     words = result.words
@@ -396,72 +436,74 @@ export async function parsePdfWithOcr(filePath: string, opts?: OcrParseOptions):
   const pageTexts: string[] = []
   let totalConfidence = 0
   let lowConfidencePages = 0
-  let digitalFallbackPages = 0
   const artifactPages: OcrPageArtifact[] = []
 
   const startTime = Date.now()
   const startHeapUsed = process.memoryUsage().heapUsed
 
-  // Un solo worker per l'intero documento (vedi createOcrWorker). Se la
-  // creazione fallisce (es. tessdata mancante), si degrada a testo digitale
-  // per TUTTE le pagine invece di ritentare — inutilmente — una creazione già
-  // fallita a ogni singola pagina.
+  // Un solo worker per l'intero documento (vedi createOcrWorker). Ogni errore
+  // OCR interrompe l'analisi: un fallback al testo digitale potrebbe restituire
+  // una pagina vuota o incompleta proprio quando l'OCR era necessario.
   let sharedWorker: import('tesseract.js').Worker | null = null
   try {
-    sharedWorker = await createOcrWorker({ unevenLighting: opts?.unevenLighting, userDefinedDpi: dpi })
-  } catch (err) {
-    log.warn('ocr-worker-creation-failed-digital-fallback', {
-      stage: 'ocr',
-      errorCode: safeErrorCode(err),
-    })
-  }
+    try {
+      sharedWorker = await createOcrWorker({ unevenLighting: opts?.unevenLighting, userDefinedDpi: dpi })
+    } catch (error) {
+      log.warn('ocr-worker-creation-failed', {
+        stage: 'ocr',
+        errorCode: safeErrorCode(error),
+      })
+      throw new OcrProcessingError('ocr-unavailable', 'Motore OCR non disponibile.')
+    }
 
-  try {
     for (let i = 0; i < pageCount; i++) {
       log.info('ocr-page-started', { page: i + 1, pageCount })
       opts?.onPageProgress?.(i + 1, pageCount)
       const page = doc.loadPage(i) as import('mupdf').PDFPage
 
-      let pageText = ''
-      let confidence = 100
-      let words: OcrArtifactWord[] = []
+      let pageText: string
+      let confidence: number
+      let words: OcrArtifactWord[]
       let pixmapOrigin = { x: 0, y: 0 }
 
       try {
-        if (!sharedWorker) {
-          throw new Error('worker OCR non disponibile')
-        }
-
         // Una sola pagina "in volo" per volta: a 300 DPI un A4 RGB è
         // 2480×3508×3 ≈ 26 MB solo per il pixmap. Va distrutto subito dopo
         // aver estratto il PNG, prima di passare alla pagina successiva —
         // altrimenti su documenti lunghi il main process va in OOM, che in
         // Electron è un crash secco, non un errore gestibile.
-        const pixmap = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false)
+        let pixmap: import('mupdf').Pixmap
+        try {
+          pixmap = renderWithinPixelBudget(
+            page.getBounds(),
+            matrix as AffineMatrix,
+            () => page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false),
+          )
+        } catch (error) {
+          if (error instanceof RenderBudgetError) throw error
+          throw new OcrProcessingError('render-failed', 'Rendering pagina per OCR non riuscito.')
+        }
         let pngBuffer: Buffer
         try {
           pixmapOrigin = { x: pixmap.getX(), y: pixmap.getY() }
-          pngBuffer = Buffer.from(pixmap.asPNG())
+          try {
+            pngBuffer = Buffer.from(pixmap.asPNG())
+          } catch {
+            throw new OcrProcessingError('render-failed', 'Rendering pagina per OCR non riuscito.')
+          }
         } finally {
           pixmap.destroy()
         }
 
-        const ocrResult = await ocrSingleImage(sharedWorker, pngBuffer, i + 1)
+        let ocrResult: OcrPageResult
+        try {
+          ocrResult = await ocrSingleImage(sharedWorker, pngBuffer, i + 1)
+        } catch {
+          throw new OcrProcessingError('ocr-failed', 'Riconoscimento OCR non riuscito.')
+        }
         pageText = ocrResult.text
         confidence = ocrResult.confidence
         words = ocrResult.words
-      } catch (err) {
-        // Fallback: estrai il testo digitale se disponibile (es. PDF ibridi)
-        digitalFallbackPages++
-        log.warn('ocr-page-render-failed-digital-fallback', {
-          page: i + 1,
-          errorCode: safeErrorCode(err),
-        })
-
-        const stext = page.toStructuredText()
-        pageText = stext.asText()
-        stext.destroy()
-        confidence = 100
       } finally {
         page.destroy()
       }
@@ -476,32 +518,28 @@ export async function parsePdfWithOcr(filePath: string, opts?: OcrParseOptions):
       totalConfidence += confidence
       if (isLowConfidence(confidence)) lowConfidencePages++
     }
-  } finally {
-    if (sharedWorker) {
-      await sharedWorker.terminate()
+
+    const elapsedMs = Date.now() - startTime
+    const heapDeltaMB = Math.round((process.memoryUsage().heapUsed - startHeapUsed) / (1024 * 1024))
+    log.info('PDF OCR performance', { pageCount, dpi, elapsedMs, heapDeltaMB })
+
+    const text = pageTexts.join('\n\n')
+    const avgConfidence = pageCount > 0 ? totalConfidence / pageCount : 100
+
+    if (lowConfidencePages > 0) {
+      warnings.push(buildPdfLowConfidenceWarning(lowConfidencePages))
     }
+
+    log.info('PDF OCR completed', {
+      pageCount,
+      chars: text.length,
+      avgConfidence: Math.round(avgConfidence),
+    })
+
+    const ocrArtifactHandle = ocrArtifactCache.stage({ pages: artifactPages })
+    return { text, pageCount, warnings, ocrArtifactHandle }
+  } finally {
+    if (sharedWorker) await sharedWorker.terminate().catch(() => undefined)
+    doc.destroy()
   }
-
-  const elapsedMs = Date.now() - startTime
-  const heapDeltaMB = Math.round((process.memoryUsage().heapUsed - startHeapUsed) / (1024 * 1024))
-  log.info('PDF OCR performance', { pageCount, dpi, elapsedMs, heapDeltaMB })
-
-  const text = pageTexts.join('\n\n')
-  const avgConfidence = pageCount > 0 ? totalConfidence / pageCount : 100
-
-  if (lowConfidencePages > 0) {
-    warnings.push(buildPdfLowConfidenceWarning(lowConfidencePages))
-  }
-
-  log.info('PDF OCR completed', {
-    pageCount,
-    chars: text.length,
-    avgConfidence: Math.round(avgConfidence),
-    digitalFallbackPages
-  })
-
-  doc.destroy()
-
-  const ocrArtifactHandle = ocrArtifactCache.stage({ pages: artifactPages })
-  return { text, pageCount, warnings, ocrArtifactHandle }
 }

@@ -142,6 +142,7 @@ npm run build:electron  # Package app with electron-builder
 - `ipcHandlers.ts` - centralized IPC handler registration with Zod validation
 - `services/` - all document processing logic:
   - `nerService.ts` - hybrid NER engine (Regex + Transformers.js + optional LLM)
+  - `renderBudget.ts` - preflight overflow-safe delle pixmap MuPDF e delle immagini OCR (limite 50 MP)
   - `sessionManager.ts` - in-memory substitution dictionary (session persistence)
   - `settingsManager.ts` - LLM configuration persistence on disk
   - `llmService.ts` - client for local LLMs (Ollama/LM Studio) via OpenAI-compatible endpoint
@@ -195,7 +196,7 @@ File dropped
 - `fast-xml-parser` - parse XML content inside ODT archives (used in `odtParser.ts`)
 - `tesseract.js` - offline OCR (tessdata downloaded at first run); una sola passata per pagina, artefatto ridotto in RAM legato all'analysis token (limite globale 128 MiB)
 
-For raster or mixed PDFs, `pdfSafeGenerator.ts` creates a new flattened PDF and never copies the source catalog, attachments, forms, metadata, JavaScript, or image streams. Redactions are painted into each DeviceRGB raster before JPEG encoding. A searchable invisible layer is added only to complete outputs; partial outputs remain raster-only.
+For raster or mixed PDFs, `pdfSafeGenerator.ts` creates a new flattened PDF and never copies the source catalog, attachments, forms, metadata, JavaScript, or image streams. Every MuPDF raster allocation is preceded by the shared 50 MP preflight in `renderBudget.ts`. Redactions are painted into each DeviceRGB raster before JPEG encoding. A searchable invisible layer is added only to complete outputs; partial outputs remain raster-only. OCR rendering/recognition errors abort analysis instead of falling back to potentially empty digital text.
 
 **NER (Named Entity Recognition):**
 - Regex for structured Italian data and context-bound legal/administrative fields, including OCR label variants
@@ -235,7 +236,8 @@ For raster or mixed PDFs, `pdfSafeGenerator.ts` creates a new flattened PDF and 
 │   │   ├── parsers/
 │   │   ├── outputGenerators/
 │   │   └── services/
-│   │       └── privacyLogger.ts # unico accesso autorizzato a electron-log
+│   │       ├── privacyLogger.ts # unico accesso autorizzato a electron-log
+│   │       └── renderBudget.ts  # preflight pixmap/immagini, limite 50 MP
 │   ├── preload/
 │   │   └── index.ts        # contextBridge API
 │   ├── renderer/           # React app (sandboxed)

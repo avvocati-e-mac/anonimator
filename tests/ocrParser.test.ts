@@ -1,20 +1,23 @@
-import { describe, it, expect, vi } from 'vitest'
-import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { randomUUID } from 'crypto'
+import { PDFDocument } from 'pdf-lib'
 
 const ocrTestState = vi.hoisted(() => ({ tessdataDir: '' }))
 const recognizeMock = vi.hoisted(() => vi.fn())
 const terminateMock = vi.hoisted(() => vi.fn())
 const setParametersMock = vi.hoisted(() => vi.fn())
+const createWorkerMock = vi.hoisted(() => vi.fn())
+const imageMetadataMock = vi.hoisted(() => vi.fn())
 
 vi.mock('tesseract.js', () => ({
-  createWorker: vi.fn(async () => ({
-    recognize: recognizeMock,
-    terminate: terminateMock,
-    setParameters: setParametersMock,
-  })),
+  createWorker: createWorkerMock,
+}))
+
+vi.mock('sharp', () => ({
+  default: vi.fn(() => ({ metadata: imageMetadataMock })),
 }))
 
 // Mock electron — non c'è finestra Electron in vitest (stesso pattern di pdfParser.test.ts).
@@ -42,6 +45,7 @@ import {
   extractOcrArtifactWords,
   isLowConfidence,
   parseImage,
+  parsePdfWithOcr,
   resolveRenderDpi
 } from '../src/main/parsers/ocrParser'
 import { getOcrArtifact, ocrArtifactCache } from '../src/main/services/ocrArtifactCache'
@@ -52,6 +56,19 @@ import {
   dpiToScale,
   resolveOcrDpi
 } from '../src/main/services/ocrRenderConfig'
+
+beforeEach(() => {
+  recognizeMock.mockReset()
+  terminateMock.mockReset().mockResolvedValue(undefined)
+  setParametersMock.mockReset().mockResolvedValue(undefined)
+  createWorkerMock.mockReset().mockImplementation(async () => ({
+    recognize: recognizeMock,
+    terminate: terminateMock,
+    setParameters: setParametersMock,
+  }))
+  imageMetadataMock.mockReset().mockResolvedValue({ width: 240, height: 100 })
+  ocrArtifactCache.clear()
+})
 
 describe('artefatto OCR ridotto', () => {
   it('conserva parole, bbox, confidenza, riga e pagina senza duplicare il testo', () => {
@@ -147,6 +164,98 @@ describe('geometria immagini standalone', () => {
     } finally {
       ocrArtifactCache.discard(handle)
       ocrArtifactCache.release(token)
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('rifiuta una bitmap oltre 50 MP prima di creare il worker OCR', async () => {
+    imageMetadataMock.mockResolvedValueOnce({ width: 10_000, height: 5_001 })
+
+    await expect(parseImage('/fixture/sintetica.png')).rejects.toMatchObject({
+      code: 'resource-limit',
+    })
+    expect(createWorkerMock).not.toHaveBeenCalled()
+    expect(ocrArtifactCache.stats().pending).toBe(0)
+  })
+
+  it('termina il worker se la configurazione OCR fallisce', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'anonimator-worker-config-'))
+    const input = join(dir, 'synthetic.png')
+    ocrTestState.tessdataDir = join(dir, 'tessdata')
+    setParametersMock.mockRejectedValueOnce(new Error('synthetic configuration failure'))
+
+    try {
+      await mkdir(ocrTestState.tessdataDir)
+      await writeFile(join(ocrTestState.tessdataDir, 'ita.traineddata'), 'synthetic-test-bytes')
+      await writeFile(input, 'synthetic-image-placeholder')
+
+      await expect(parseImage(input, { dpi: 300 })).rejects.toMatchObject({
+        code: 'ocr-unavailable',
+      })
+      expect(terminateMock).toHaveBeenCalledOnce()
+      expect(recognizeMock).not.toHaveBeenCalled()
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('OCR PDF fail-closed', () => {
+  async function writeSyntheticPdf(filePath: string, size: readonly [number, number]): Promise<void> {
+    const document = await PDFDocument.create()
+    document.addPage([...size])
+    await writeFile(filePath, await document.save())
+  }
+
+  async function prepareTessdata(dir: string): Promise<void> {
+    ocrTestState.tessdataDir = join(dir, 'tessdata')
+    await mkdir(ocrTestState.tessdataDir)
+    await writeFile(join(ocrTestState.tessdataDir, 'ita.traineddata'), 'synthetic-test-bytes')
+  }
+
+  it('non invoca MuPDF quando la pixmap prevista supera 50 MP', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'anonimator-ocr-budget-'))
+    const input = join(dir, 'oversize.pdf')
+    await prepareTessdata(dir)
+    await writeSyntheticPdf(input, [2_000, 2_000])
+
+    const mupdf = (await import('mupdf')).default
+    const probeDocument = new mupdf.PDFDocument(new Uint8Array(await readFile(input)))
+    const probePage = probeDocument.loadPage(0)
+    const pagePrototype = Object.getPrototypeOf(probePage) as { toPixmap: (...args: unknown[]) => unknown }
+    probePage.destroy()
+    probeDocument.destroy()
+    const renderSpy = vi.spyOn(pagePrototype, 'toPixmap').mockImplementation(() => {
+      throw new Error('render must not run')
+    })
+
+    try {
+      await expect(parsePdfWithOcr(input, { dpi: 300 })).rejects.toMatchObject({
+        code: 'resource-limit',
+      })
+      expect(renderSpy).not.toHaveBeenCalled()
+      expect(terminateMock).toHaveBeenCalledOnce()
+      expect(ocrArtifactCache.stats().pending).toBe(0)
+    } finally {
+      renderSpy.mockRestore()
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('un errore OCR non ricade sul testo digitale e non pubblica artefatti parziali', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'anonimator-ocr-closed-'))
+    const input = join(dir, 'blank.pdf')
+    await prepareTessdata(dir)
+    await writeSyntheticPdf(input, [200, 200])
+    recognizeMock.mockRejectedValueOnce(new Error('synthetic recognition failure'))
+
+    try {
+      await expect(parsePdfWithOcr(input, { dpi: 200 })).rejects.toMatchObject({
+        code: 'ocr-failed',
+      })
+      expect(terminateMock).toHaveBeenCalledOnce()
+      expect(ocrArtifactCache.stats()).toMatchObject({ pending: 0, active: 0, usedBytes: 0 })
+    } finally {
       await rm(dir, { recursive: true, force: true })
     }
   })

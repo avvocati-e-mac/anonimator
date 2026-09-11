@@ -13,6 +13,8 @@
  */
 
 import { privacyLog as log, safeErrorCode } from './privacyLogger'
+import { renderWithinPixelBudget } from './renderBudget'
+import type { AffineMatrix } from './geometry'
 import { scoreTextQuality } from './textQuality'
 import { z } from 'zod'
 import type {
@@ -1370,7 +1372,12 @@ function analyzePage(
   }
 
   // --- 3. Render a 72 DPI.
-  const pixmap = page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceGray, false, false)
+  const renderMatrix = mupdf.Matrix.scale(scale, scale)
+  const pixmap = renderWithinPixelBudget(
+    page.getBounds(),
+    renderMatrix as AffineMatrix,
+    () => page.toPixmap(renderMatrix, mupdf.ColorSpace.DeviceGray, false, false),
+  )
   let grid: InkGrid | null = null
   let threshold = 0
   let separability = 0

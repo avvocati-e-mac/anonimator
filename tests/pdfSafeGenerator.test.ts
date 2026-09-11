@@ -67,6 +67,35 @@ describe('primitive D1 fail-closed', () => {
     expect(() => enforcePixelBudget(10_000, MAX_PAGE_PIXELS / 10_000)).not.toThrow()
   })
 
+  it('esegue il preflight prima di chiamare MuPDF nel generatore raster', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'anonimator-generator-budget-'))
+    const input = join(dir, 'oversize.pdf')
+    const document = await PDFDocument.create()
+    document.addPage([2_000, 2_000])
+    await writeFile(input, await document.save())
+
+    const mupdf = (await import('mupdf')).default
+    const probeDocument = new mupdf.PDFDocument(new Uint8Array(await readFile(input)))
+    const probePage = probeDocument.loadPage(0)
+    const pagePrototype = Object.getPrototypeOf(probePage) as { toPixmap: (...args: unknown[]) => unknown }
+    probePage.destroy()
+    probeDocument.destroy()
+    const renderSpy = vi.spyOn(pagePrototype, 'toPixmap').mockImplementation(() => {
+      throw new Error('render must not run')
+    })
+
+    try {
+      await expect(generatePdfSafe(input, [], {
+        routing: 'flattened-scan',
+        layerKind: 'digital',
+      })).rejects.toMatchObject({ code: 'resource-limit' })
+      expect(renderSpy).not.toHaveBeenCalled()
+    } finally {
+      renderSpy.mockRestore()
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
   it('rifiuta tramite il ledger un rettangolo oltre il 25% e marca l’output da verificare', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'anonimator-large-rect-'))
     const input = join(dir, 'rettangolo-sintetico.pdf')

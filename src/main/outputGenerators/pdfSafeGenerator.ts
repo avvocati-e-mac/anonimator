@@ -12,11 +12,16 @@ import { matchEntitiesOnPage, type MatchWord } from '../services/entityMatcher'
 import { mupdfRectToPdfUserSpace, renderedPixelRectToMupdf, transformRect, type AffineMatrix, type Rect } from '../services/geometry'
 import { getOcrArtifact } from '../services/ocrArtifactCache'
 import {
+  RenderBudgetError,
+  assertPixelDimensions,
+  renderWithinPixelBudget,
+} from '../services/renderBudget'
+import {
   applySearchableLayer,
   type SensitiveWordSequence,
 } from '../services/searchableLayer'
 
-export const MAX_PAGE_PIXELS = 50_000_000
+export { MAX_PAGE_PIXELS } from '../services/renderBudget'
 export const RASTER_JPEG_QUALITY = 85
 export const MIXED_DIGITAL_DPI = 300
 const MAX_RECT_RATIO = 0.25
@@ -62,7 +67,9 @@ export function weightedMedian(samples: readonly { value: number; weight: number
 }
 
 export function enforcePixelBudget(width: number, height: number): void {
-  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0 || width * height > MAX_PAGE_PIXELS) {
+  try {
+    assertPixelDimensions(width, height)
+  } catch {
     throw new PdfGenerationError('resource-limit', 'La pagina supera il limite sicuro di 50 milioni di pixel.')
   }
 }
@@ -168,7 +175,18 @@ async function flattened(filePath: string, source: Uint8Array, entities: Detecte
       if (!dpi || !Number.isFinite(dpi)) throw new PdfGenerationError('resource-limit', 'DPI della scansione non determinabile in modo affidabile.')
       const matrix = mupdf.Matrix.scale(dpi / PDF_POINTS_PER_INCH, dpi / PDF_POINTS_PER_INCH)
       let pixmap: import('mupdf').Pixmap
-      try { pixmap = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false, true) } catch { throw new PdfGenerationError('render-failed', 'Rendering pagina non riuscito.') }
+      try {
+        pixmap = renderWithinPixelBudget(
+          bounds,
+          matrix as AffineMatrix,
+          () => page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false, true),
+        )
+      } catch (error) {
+        if (error instanceof RenderBudgetError) {
+          throw new PdfGenerationError('resource-limit', error.message)
+        }
+        throw new PdfGenerationError('render-failed', 'Rendering pagina non riuscito.')
+      }
       try {
         const width = pixmap.getWidth(); const height = pixmap.getHeight(); enforcePixelBudget(width, height)
         const boxes: Box[] = []
@@ -397,7 +415,14 @@ function validateDocument(mupdf: Mupdf, source: Uint8Array, output: Uint8Array):
 
 function renderedInk(mupdf: Mupdf, page: import('mupdf').PDFPage): number | null {
   let pixmap: import('mupdf').Pixmap
-  try { pixmap = page.toPixmap(mupdf.Matrix.scale(1, 1), mupdf.ColorSpace.DeviceGray, false, true) } catch { return null }
+  const matrix = mupdf.Matrix.scale(1, 1)
+  try {
+    pixmap = renderWithinPixelBudget(
+      page.getBounds(),
+      matrix as AffineMatrix,
+      () => page.toPixmap(matrix, mupdf.ColorSpace.DeviceGray, false, true),
+    )
+  } catch { return null }
   try {
     const width = pixmap.getWidth(); const height = pixmap.getHeight(); const stride = pixmap.getStride(); const pixels = pixmap.getPixels()
     if (!width || !height || pixels.length < stride * height) return null

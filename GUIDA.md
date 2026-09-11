@@ -89,6 +89,7 @@ Ha accesso completo a Node.js (file system, moduli nativi). Contiene tutta la lo
 | `services/llmService.ts` | Client per LLM locali (Ollama/LM Studio) via endpoint OpenAI-compatibile. |
 | `services/privacyLogger.ts` | Unico accesso a `electron-log`: eventi fissi, metadata allowlist e conversione degli errori in codici sicuri. |
 | `services/diagnostics.ts` | Formatter puro della diagnostica condivisibile; accetta solo versione, piattaforma e stati booleani, senza log o percorsi. |
+| `services/renderBudget.ts` | Calcola il bounding box raster come MuPDF e applica prima dell'allocazione il limite condiviso di 50 milioni di pixel, con aritmetica overflow-safe. |
 | `parsers/` | Estrattori di testo per ogni formato (txt, docx, odt, pdf, ocr, markdown). |
 | `outputGenerators/` | Generatori di file anonimizzati per ogni formato. |
 
@@ -437,17 +438,19 @@ parsePdfWithOcr(filePath: string): Promise<ParseResult> // PDF scansionato
 ```
 
 **Per PDF scansionato:**
-1. Per ogni pagina, renderizza usando **MuPDF** con matrice e origine della pixmap registrate
+1. Per ogni pagina, calcola prima la pixmap prevista e rifiuta oltre 50 MP; solo dopo renderizza usando **MuPDF** con matrice e origine registrate
 2. Esegue una sola `Tesseract.recognize` e conserva in RAM l'artefatto ridotto (parole, bbox, confidence, riga, pagina e matrice)
 3. Riusa lo stesso artefatto per testo NER, box di redazione e layer ricercabile
 4. Se la confidenza di una pagina è < 60%, aggiunge un warning
-5. Restituisce `{ ...result, isScanned: true }` — propagato fino al Renderer
+5. Un errore di rendering, PNG, worker o riconoscimento interrompe l'intera analisi: non esiste fallback a testo digitale potenzialmente vuoto e non viene pubblicato alcun artefatto parziale
+6. Restituisce `{ ...result, isScanned: true }` — propagato fino al Renderer
 
 **Per immagine singola:**
-1. Crea un worker tesseract con lingua 'ita'
-2. Il file `ita.traineddata` viene letto in memoria con `readFile()` e passato come `{ code, data }` — bypassa `node-fetch` e il path-loading di tesseract.js (necessario in Electron)
-3. Il `workerPath` viene risolto con path assoluto: `app.asar.unpacked` in produzione, `createRequire.resolve()` in dev
-4. Riconosce il testo e restituisce `{text, confidence}`
+1. Legge i soli metadati dimensionali e rifiuta immagini oltre 50 MP prima di creare il worker
+2. Crea un worker tesseract con lingua 'ita'
+3. Il file `ita.traineddata` viene letto in memoria con `readFile()` e passato come `{ code, data }` — bypassa `node-fetch` e il path-loading di tesseract.js (necessario in Electron)
+4. Il `workerPath` viene risolto con path assoluto: `app.asar.unpacked` in produzione, `createRequire.resolve()` in dev
+5. Riconosce il testo e restituisce `{text, confidence}`
 
 **Cache OCR:** è esclusivamente RAM, legata all'analysis token e limitata globalmente a 128 MiB. Non ha TTL né eviction dei token attivi; viene rilasciata su reset, redo OCR, abbandono, chiusura o termine del workflow.
 
@@ -947,6 +950,8 @@ Il façade richiede sempre un routing Main-only esplicito (`digital` oppure
 esiste più il codice pre-v1.6 che poteva degradare a un overlay del sorgente.
 
 Il Renderer invia soltanto il token di analisi e le decisioni sulle entità. Il Main recupera classificazione per pagina e ledger dal registro autenticato. Un PDF interamente digitale usa il percorso vettoriale; la presenza di una sola pagina raster rende l'intero documento `flattened-scan`.
+
+Prima di ogni `page.toPixmap()`, il servizio condiviso `renderBudget.ts` proietta i quattro angoli della pagina con la matrice effettiva, replica l'arrotondamento del bounding box MuPDF e rifiuta in modo overflow-safe oltre 50 MP. Il controllo successivo sulle dimensioni reali resta come difesa in profondità.
 
 ---
 
