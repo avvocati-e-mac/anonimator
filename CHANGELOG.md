@@ -5,6 +5,19 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.6.0] - non rilasciata
+
+> Voce in lavorazione: viene completata a ogni gate del branch `feat/ocr-layer-quality-check`.
+> Vedi `sessioni/sessione_051_ocr_layer_check.md` per lo stato di avanzamento.
+
+### Novità
+- _(in corso)_
+
+### Fix
+- _(in corso)_
+
+---
+
 ## [1.5.0] - 2026-03-30
 
 ### Novità
