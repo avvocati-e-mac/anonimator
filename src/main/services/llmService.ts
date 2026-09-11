@@ -1,4 +1,4 @@
-import log from 'electron-log'
+import { privacyLog as log, safeErrorCode } from './privacyLogger'
 import { z } from 'zod'
 import { LlmConfig, LlmDetectedName, LlmTestResult } from '@shared/types'
 import { OllamaAdapter } from './llm/providers/OllamaAdapter'
@@ -129,7 +129,10 @@ export async function detectNamesWithLlm(
 
     return validatedNames
   } catch (err) {
-    log.error('llmService: errore durante detectNamesWithLlm', err)
+    log.error('llm-detection-failed', {
+      stage: 'llm',
+      errorCode: safeErrorCode(err),
+    })
     // Non rilanciamo l'errore per non rompere il flusso principale (BERT + Regex continueranno)
     onError?.(err)
     return []

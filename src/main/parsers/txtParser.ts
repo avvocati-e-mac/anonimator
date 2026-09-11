@@ -1,6 +1,6 @@
 import { readFile } from 'fs/promises'
 import type { ParseResult } from './index'
-import log from 'electron-log'
+import { privacyLog as log } from '../services/privacyLogger'
 
 /**
  * Estrae il testo da un file .txt.
@@ -12,7 +12,7 @@ export async function parseTxt(filePath: string): Promise<ParseResult> {
   try {
     text = await readFile(filePath, 'utf-8')
   } catch {
-    log.warn('TXT: lettura UTF-8 fallita, riprovo con latin1', { filePath })
+    log.warn('txt-utf8-read-failed-latin1-fallback', { stage: 'parser' })
     const buf = await readFile(filePath)
     text = buf.toString('latin1')
   }

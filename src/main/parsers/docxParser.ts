@@ -1,5 +1,5 @@
 import mammoth from 'mammoth'
-import log from 'electron-log'
+import { privacyLog as log, safeErrorCode } from '../services/privacyLogger'
 import type { ParseResult } from './index'
 
 /**
@@ -31,8 +31,7 @@ export async function parseDocx(filePath: string): Promise<ParseResult> {
 
   // Se l'estrazione testo fallisce, è un errore bloccante
   if (textSettled.status === 'rejected') {
-    const msg = textSettled.reason instanceof Error ? textSettled.reason.message : String(textSettled.reason)
-    throw new Error(`Il file DOCX è corrotto o protetto da password. Prova a riaprirlo e salvarlo nuovamente. (${msg})`)
+    throw new Error('Il file DOCX è corrotto o protetto da password. Prova a riaprirlo e salvarlo nuovamente.')
   }
 
   const text = textSettled.value.value
@@ -46,8 +45,10 @@ export async function parseDocx(filePath: string): Promise<ParseResult> {
     const html = htmlSettled.value.value
     previewHtml = html.trim().length > 0 ? html : undefined
   } else {
-    const msg = htmlSettled.reason instanceof Error ? htmlSettled.reason.message : String(htmlSettled.reason)
-    log.warn('DOCX preview HTML generation failed, proceeding without preview', { error: msg })
+    log.warn('docx-preview-generation-failed', {
+      stage: 'parser',
+      errorCode: safeErrorCode(htmlSettled.reason),
+    })
   }
 
   const pageCount = Math.max(1, Math.ceil(text.length / 3000))

@@ -1,5 +1,5 @@
 import type { DocumentFormat, OcrLayerReport, ProcessDocumentOptions } from '@shared/types'
-import log from 'electron-log'
+import { privacyLog as log, safeErrorCode } from '../services/privacyLogger'
 import { parseTxt } from './txtParser'
 import { parseDocx } from './docxParser'
 import { parseOdt } from './odtParser'
@@ -60,8 +60,9 @@ async function analyzeOcrLayerSafe(filePath: string): Promise<PdfQualityAnalysis
   try {
     return await analyzePdfQuality(filePath)
   } catch (err) {
-    log.warn('Controllo layer OCR fallito — ricado sull\'euristica isScanned', {
-      error: err instanceof Error ? err.message : String(err)
+    log.warn('ocr-layer-check-failed-heuristic-fallback', {
+      stage: 'ocr',
+      errorCode: safeErrorCode(err),
     })
     return undefined
   }

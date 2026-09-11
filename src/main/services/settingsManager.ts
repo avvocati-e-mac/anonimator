@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { join } from 'path'
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
-import log from 'electron-log'
+import { privacyLog as log, safeErrorCode } from './privacyLogger'
 import type { LlmConfig } from '@shared/types'
 import { DEFAULT_LLM_CONFIG } from '@shared/types'
 
@@ -60,7 +60,10 @@ function load(): AppSettings {
       llm: migrateLlmConfig(parsed.llm)
     }
   } catch (err) {
-    log.warn('settingsManager: errore lettura settings, uso default', { err })
+    log.warn('settings-read-failed-defaults-used', {
+      stage: 'settings',
+      errorCode: safeErrorCode(err),
+    })
     return { ...DEFAULT_SETTINGS, llm: { ...DEFAULT_LLM_CONFIG } }
   }
 }
@@ -71,7 +74,10 @@ function save(settings: AppSettings): void {
     mkdirSync(app.getPath('userData'), { recursive: true })
     writeFileSync(p, JSON.stringify(settings, null, 2), 'utf-8')
   } catch (err) {
-    log.error('settingsManager: errore scrittura settings', { err })
+    log.error('settings-write-failed', {
+      stage: 'settings',
+      errorCode: safeErrorCode(err),
+    })
   }
 }
 
@@ -85,8 +91,6 @@ export const settingsManager = {
     save({ ...current, llm: config })
     log.info('settingsManager: LLM config aggiornata', {
       enabled: config.enabled,
-      model: config.model,
-      promptLanguage: config.promptLanguage,
       hasCustomPrompt: !!config.customPrompt,
       chunkSize: config.chunkSize
     })

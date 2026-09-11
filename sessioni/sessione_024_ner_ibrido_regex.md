@@ -64,7 +64,7 @@ Analisi comparativa di 5 PDF anonimizzati della stessa sentenza ha rivelato due 
 ```
 - Cattura l'intero blocco dopo "avvocati/avvocato", poi split su virgola → N entità separate
 - Pattern A2 (DIFENSORE) richiedeva "difeso dall'avv." — non copriva "avvocati X, Y"
-- Test con sentenza reale: cattura "VINCENZO LIGUORI" e "MICHELE LIGUORI" ✅
+- Test storico: cattura `[nominativo reale rimosso 1]` e `[nominativo reale rimosso 2]` ✅
 
 ### D2 — Firma digitale PKI (`Firmato Da: COGNOME NOME Emesso Da:`)
 ```

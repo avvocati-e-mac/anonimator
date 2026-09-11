@@ -2,9 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { OpenAiCompatAdapter } from '../src/main/services/llm/providers/OpenAiCompatAdapter'
 import type { LlmConfig } from '../src/shared/types'
 
-vi.mock('electron-log', () => ({
-  default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+const logMock = vi.hoisted(() => ({
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
 }))
+
+vi.mock('electron-log', () => ({ default: logMock }))
 
 const globalFetch = vi.fn()
 vi.stubGlobal('fetch', globalFetch)
@@ -25,6 +30,7 @@ const mockConfig: LlmConfig = {
 }
 
 const adapter = new OpenAiCompatAdapter()
+const PRIVACY_CANARY = 'PERSONA_SINTETICA_OPENAI_CANARY'
 
 function makeOkResponse(content: string) {
   return {
@@ -158,6 +164,38 @@ describe('OpenAiCompatAdapter', () => {
       await expect(adapter.detectNames('Testo', mockConfig, 'prompt'))
         .rejects.toThrow(/context overflow/i)
       expect(globalFetch).toHaveBeenCalledTimes(1)
+    })
+
+    it('non propaga il body HTTP sintetico in errori o log', async () => {
+      globalFetch.mockResolvedValueOnce(make400ContextOverflow(
+        `maximum context length: ${PRIVACY_CANARY}`,
+      ))
+
+      const error = await adapter.detectNames('Testo sintetico', mockConfig, 'prompt')
+        .catch((caught: unknown) => caught)
+
+      expect(error).toBeInstanceOf(Error)
+      if (!(error instanceof Error)) throw new Error('Errore atteso')
+      expect(error.message).not.toContain(PRIVACY_CANARY)
+      const logCalls = Object.values(logMock).flatMap((mock) => mock.mock.calls)
+      expect(JSON.stringify(logCalls)).not.toContain(PRIVACY_CANARY)
+    })
+  })
+
+  describe('detectNames — logging fail-closed', () => {
+    it('non registra una risposta JSON malformata sintetica', async () => {
+      globalFetch.mockResolvedValue(makeOkResponse(`{${PRIVACY_CANARY}`))
+
+      await expect(adapter.detectNames('Testo sintetico', mockConfig, 'prompt'))
+        .resolves.toEqual([])
+
+      expect(JSON.stringify(logMock.warn.mock.calls)).not.toContain(PRIVACY_CANARY)
+      expect(logMock.warn).toHaveBeenCalledWith('openai-invalid-json-response', {
+        stage: 'llm',
+        code: 'invalid-json',
+        responseChars: PRIVACY_CANARY.length + 1,
+        errorCode: 'unexpected-error',
+      })
     })
   })
 

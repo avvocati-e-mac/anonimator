@@ -1,7 +1,7 @@
 import AdmZip from 'adm-zip'
 import { XMLParser } from 'fast-xml-parser'
 import type { ParseResult } from './index'
-import log from 'electron-log'
+import { privacyLog as log } from '../services/privacyLogger'
 
 const xmlParser = new XMLParser({
   ignoreAttributes: false,

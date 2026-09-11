@@ -1,5 +1,5 @@
 import type { EntityType, DetectedEntity, EntityDecision, EntityDictionaryFile } from '@shared/types'
-import log from 'electron-log'
+import { privacyLog as log, safeErrorCode } from './privacyLogger'
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs'
 import crypto from 'crypto'
 
@@ -114,7 +114,7 @@ export class SessionManager {
     }
 
     this.dictionary.set(key, { pseudonym, type })
-    log.debug('Nuovo pseudonimo assegnato', { type, pseudonym })
+    log.debug('pseudonym-assigned', { count: 1 })
 
     return pseudonym
   }
@@ -137,7 +137,7 @@ export class SessionManager {
       conflicting.length > 0 ? `${llmReplacement} (${conflicting.length + 1})` : llmReplacement
 
     this.dictionary.set(key, { pseudonym, type })
-    log.debug('Pseudonimo LLM registrato', { type, pseudonym })
+    log.debug('llm-pseudonym-registered', { count: 1 })
     return pseudonym
   }
 
@@ -197,7 +197,10 @@ export class SessionManager {
       writeFileSync(filePath, JSON.stringify(data), 'utf-8')
       log.info('SessionManager: sessione salvata su disco', { entries: this.dictionary.size })
     } catch (err) {
-      log.error('SessionManager: errore salvataggio sessione', { error: err instanceof Error ? err.message : String(err) })
+      log.error('session-save-failed', {
+        stage: 'session',
+        errorCode: safeErrorCode(err),
+      })
     }
   }
 
@@ -238,7 +241,10 @@ export class SessionManager {
       log.info('SessionManager: sessione caricata da disco', { entries: entities.length })
       return entities
     } catch (err) {
-      log.error('SessionManager: errore caricamento sessione', { error: err instanceof Error ? err.message : String(err) })
+      log.error('session-load-failed', {
+        stage: 'session',
+        errorCode: safeErrorCode(err),
+      })
       return null
     }
   }
@@ -252,7 +258,10 @@ export class SessionManager {
       unlinkSync(filePath)
       log.info('SessionManager: sessione eliminata dal disco')
     } catch (err) {
-      log.error('SessionManager: errore eliminazione sessione', { error: err instanceof Error ? err.message : String(err) })
+      log.error('session-delete-failed', {
+        stage: 'session',
+        errorCode: safeErrorCode(err),
+      })
     }
   }
 

@@ -31,7 +31,7 @@ Module._resolveFilename = function (request: unknown, ...rest: unknown[]): strin
 import { app, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { registerIpcHandlers } from './ipcHandlers'
-import log from 'electron-log'
+import { privacyLog as log } from './services/privacyLogger'
 
 log.initialize()
 log.info('App avviata', { version: app.getVersion() })
@@ -57,7 +57,7 @@ function createWindow(): BrowserWindow {
   win.webContents.on('will-navigate', (event, url) => {
     if (!url.startsWith('file://') && !url.startsWith('http://localhost')) {
       event.preventDefault()
-      log.warn('Navigazione esterna bloccata', { url })
+      log.warn('blocked-external-navigation')
     }
   })
 

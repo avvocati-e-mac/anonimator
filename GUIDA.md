@@ -67,7 +67,7 @@ L'applicazione segue il modello Electron a tre processi, con una netta separazio
 - **Zero rete** durante l'elaborazione. NER, OCR e parsing avvengono interamente offline una volta scaricati i modelli (tramite wizard o Impostazioni).
 
 - **Sicurezza Electron:** il Renderer gira in sandbox (`nodeIntegration: false`, `contextIsolation: true`). Tutta la comunicazione avviene tramite `ipcRenderer.invoke` e canali validati con Zod.
-- **Privacy:** nessun contenuto dei documenti viene mai loggato. Solo metadati (formato, dimensione, conteggi, warning).
+- **Privacy:** nessun contenuto o identificatore derivato dai documenti viene mai loggato. Il Main usa esclusivamente `privacyLogger.ts`, che conserva soltanto metadati allowlist (conteggi, formato, pagina/DPI/confidence, tempi, booleani, enum e codici errore sicuri). Scarta nomi e percorsi file, URL, pseudonimi, nomi modello, risposte LLM e oggetti `Error` grezzi.
 
 ---
 
@@ -87,6 +87,8 @@ Ha accesso completo a Node.js (file system, moduli nativi). Contiene tutta la lo
 | `services/sessionManager.ts` | Dizionario in-memoria degli pseudonimi. Genera e mantiene le corrispondenze originale→pseudonimo. |
 | `services/settingsManager.ts` | Configurazione LLM persistente su disco (`{userData}/legalshield-settings.json`). |
 | `services/llmService.ts` | Client per LLM locali (Ollama/LM Studio) via endpoint OpenAI-compatibile. |
+| `services/privacyLogger.ts` | Unico accesso a `electron-log`: eventi fissi, metadata allowlist e conversione degli errori in codici sicuri. |
+| `services/diagnostics.ts` | Formatter puro della diagnostica condivisibile; accetta solo versione, piattaforma e stati booleani, senza log o percorsi. |
 | `parsers/` | Estrattori di testo per ogni formato (txt, docx, odt, pdf, ocr, markdown). |
 | `outputGenerators/` | Generatori di file anonimizzati per ogni formato. |
 
@@ -1203,7 +1205,7 @@ Configurazione dell'integrazione LLM locale e strumenti di supporto. Sezioni:
 5. Impostazioni avanzate (collassabili): maxTokens, timeout, parallelRequests, lingua prompt, chunkSize, prompt personalizzato
 6. Test connessione → `testLlm()`
 8. **Sezione Modello NER**: verifica al mount se `onnx/model_quantized.onnx` è presente (`getModelStatus()` IPC). Se presente: badge verde. Se assente: badge arancione + pulsante "Scarica modello (~65 MB)" → `downloadModel()` IPC → progress bar con file corrente e percentuale globale. Al termine: badge verde + messaggio "Riavvia l'app". La pipeline NER viene resettata automaticamente (`resetNerPipeline()`) senza riavviare il processo.
-8. **Sezione Diagnostica**: pulsante "Copia diagnostica" → `collectDiagnostics()` IPC → raccoglie versione/platform/arch, verifica modello NER + ORT binding + detect-libc, prende ultime 100 righe del log, copia tutto negli appunti. Feedback visivo "Copiato!" per 3 secondi.
+8. **Sezione Diagnostica**: pulsante "Copia diagnostica" → `collectDiagnostics()` IPC → raccoglie esclusivamente versione/platform/arch e lo stato booleano di modello NER, tessdata, ORT binding e detect-libc. Non include log né percorsi locali. Copia il riepilogo negli appunti e mostra "Copiato!" per 3 secondi.
 9. Salva/Annulla
 
 #### `ErrorOverlay.tsx`
@@ -1493,6 +1495,8 @@ File: `tests/` — Framework: Vitest
 | `pdfParser.test.ts` | Estrazione testo da PDF |
 | `llmService.test.ts` | Parsing structured output, filtro falsi positivi, callback `onError` su errore 500, assenza chiamata su successo |
 | `openAiCompatAdapter.test.ts` | Retry logic, context overflow detection (bail immediato su 400), structured output, formato richiesta |
+| `privacyLogger.test.ts` | Allowlist runtime, rimozione canary sintetici e mapping fail-closed dei codici errore |
+| `loggingPolicy.test.ts` | Unico import autorizzato di `electron-log` e divieto di `console.*` nel runtime applicativo |
 | `ollamaAdapter.test.ts` | Formato richiesta Ollama, gestione risposta |
 | `modelSizeUtils.test.ts` | `inferChunkSize()`: mapping nome modello → chunk size (1200 per ≤4B, 3000 per 9B+) |
 | `settingsMigration.test.ts` | Migrazione configurazione LLM da versioni precedenti |

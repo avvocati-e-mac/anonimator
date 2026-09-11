@@ -2,9 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { OllamaAdapter } from '../src/main/services/llm/providers/OllamaAdapter'
 import type { LlmConfig } from '../src/shared/types'
 
-vi.mock('electron-log', () => ({
-  default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+const logMock = vi.hoisted(() => ({
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
 }))
+
+vi.mock('electron-log', () => ({ default: logMock }))
 
 const globalFetch = vi.fn()
 vi.stubGlobal('fetch', globalFetch)
@@ -25,6 +30,7 @@ const mockConfig: LlmConfig = {
 }
 
 const adapter = new OllamaAdapter()
+const PRIVACY_CANARY = 'PERSONA_SINTETICA_OLLAMA_CANARY'
 
 describe('OllamaAdapter', () => {
   beforeEach(() => {
@@ -166,6 +172,24 @@ describe('OllamaAdapter', () => {
       await adapter.detectNames('Testo', mockConfig, 'sistema prompt')
       const body = JSON.parse(globalFetch.mock.calls[0][1].body as string)
       expect(body.stream).toBe(false)
+    })
+
+    it('non registra una risposta JSON malformata sintetica', async () => {
+      globalFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ message: { content: `{${PRIVACY_CANARY}` } }),
+      })
+
+      await expect(adapter.detectNames('Testo sintetico', mockConfig, 'prompt'))
+        .resolves.toEqual([])
+
+      expect(JSON.stringify(logMock.warn.mock.calls)).not.toContain(PRIVACY_CANARY)
+      expect(logMock.warn).toHaveBeenCalledWith('ollama-invalid-json-response', {
+        stage: 'llm',
+        code: 'invalid-json',
+        responseChars: PRIVACY_CANARY.length + 1,
+        errorCode: 'unexpected-error',
+      })
     })
   })
 })

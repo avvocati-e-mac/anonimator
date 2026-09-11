@@ -1,4 +1,4 @@
-import log from 'electron-log'
+import { privacyLog as log, safeErrorCode } from '../../privacyLogger'
 import { LlmConfig, LlmDetectedName, LlmTestResult } from '@shared/types'
 import { LlmProviderAdapter } from './LlmProviderAdapter'
 import { REPLACEMENT_JSON_SCHEMA } from '../schemas'
@@ -16,7 +16,10 @@ export class OllamaAdapter implements LlmProviderAdapter {
       const json = await response.json() as { models?: { name: string }[] }
       return (json.models ?? []).map(m => m.name)
     } catch (err) {
-      log.warn('OllamaAdapter: errore listModels', err)
+      log.warn('ollama-model-list-failed', {
+        stage: 'llm',
+        errorCode: safeErrorCode(err),
+      })
       return []
     }
   }
@@ -94,11 +97,19 @@ export class OllamaAdapter implements LlmProviderAdapter {
         const parsed = JSON.parse(content) as { replacements?: LlmDetectedName[] }
         return parsed.replacements ?? []
       } catch (err) {
-        log.warn('OllamaAdapter: errore parsing JSON structured output', { content, err })
+        log.warn('ollama-invalid-json-response', {
+          stage: 'llm',
+          code: 'invalid-json',
+          responseChars: content.length,
+          errorCode: safeErrorCode(err),
+        })
         return []
       }
     } catch (err) {
-      log.error('OllamaAdapter: errore detectNames', err)
+      log.error('ollama-name-detection-failed', {
+        stage: 'llm',
+        errorCode: safeErrorCode(err),
+      })
       throw err
     }
   }

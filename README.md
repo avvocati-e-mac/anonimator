@@ -45,7 +45,7 @@ Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a se
 - **LLM locale opzionale**: connetti Ollama o LM Studio per migliorare il riconoscimento dei nomi (i dati non escono mai dalla tua macchina); se il server restituisce un errore durante l'elaborazione, l'app continua e mostra un avviso con il numero di sezioni non analizzate
 - **Schermata di benvenuto**: al primo avvio spiega il funzionamento dell'app (tre livelli di analisi, nota hardware per LLM) — disattivabile con un checkbox
 - **Dark mode**: toggle luna/sole nell'interfaccia, preferenza salvata automaticamente
-- **Diagnostica installazione**: pulsante "Copia diagnostica" nelle Impostazioni — raccoglie versione, piattaforma e ultime righe del log (mai contenuto dei documenti) e li copia negli appunti pronti da inviare allo sviluppatore
+- **Diagnostica installazione**: pulsante "Copia diagnostica" nelle Impostazioni — raccoglie soltanto versione, piattaforma e stato dei componenti, senza log o percorsi locali, e copia il riepilogo negli appunti
 - **Download modello NER integrato**: se il modello di riconoscimento entità (BERT, ~65 MB) è assente, le Impostazioni mostrano un badge di avviso e un pulsante per scaricarlo direttamente nell'app, con progress bar e feedback visivo
 - 100% offline — nessuna connessione di rete durante l'elaborazione (GDPR compliant)
 

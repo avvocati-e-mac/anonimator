@@ -9,7 +9,7 @@ type TransformersPipelineFn = typeof import('@huggingface/transformers').pipelin
 
 import { join } from 'path'
 import { app } from 'electron'
-import log from 'electron-log'
+import { privacyLog as log, safeErrorCode } from './privacyLogger'
 import type { DetectedEntity, EntityType, LlmConfig } from '@shared/types'
 import { DEFAULT_LLM_CONFIG } from '@shared/types'
 import { inferChunkSize } from '@shared/modelSizeUtils'
@@ -70,8 +70,9 @@ async function tryLoadTransformers(): Promise<TransformersPipelineFn | null> {
       const ort = require('onnxruntime-node')
       log.info('onnxruntime-node caricato', { version: (ort as any).version, hasInferenceSession: !!(ort as any).InferenceSession })
     } catch (err) {
-      log.warn('onnxruntime-node non caricabile via require, Transformers.js userà il fallback', { 
-        error: err instanceof Error ? err.message : String(err) 
+      log.warn('onnxruntime-load-failed-fallback-used', {
+        stage: 'model',
+        errorCode: safeErrorCode(err),
       })
     }
 
@@ -79,8 +80,9 @@ async function tryLoadTransformers(): Promise<TransformersPipelineFn | null> {
     _pipelineFactory = mod.pipeline as TransformersPipelineFn
     return _pipelineFactory
   } catch (err) {
-    log.error('Errore fatale caricamento Transformers.js', {
-      error: err instanceof Error ? err.stack : String(err)
+    log.error('transformers-load-failed', {
+      stage: 'model',
+      errorCode: safeErrorCode(err),
     })
     return null
   }
@@ -212,11 +214,18 @@ async function getNerPipeline(): Promise<NerPipelineFn | null> {
       fs.renameSync(oldOnnxPath, newOnnxPath)
     }
   } catch (err) {
-    log.warn('Errore migrazione modello', { error: err })
+    log.warn('model-migration-failed', {
+      stage: 'model',
+      errorCode: safeErrorCode(err),
+    })
   }
 
   const modelExists = fs.existsSync(newOnnxPath)
-  log.info('NER diagnostics', { modelPath, modelExists, platform: process.platform, arch: process.arch })
+  log.info('ner-model-diagnostics', {
+    modelExists,
+    platform: process.platform,
+    arch: process.arch,
+  })
 
   const pipelineFactory = await tryLoadTransformers()
   if (!pipelineFactory) {
@@ -225,7 +234,7 @@ async function getNerPipeline(): Promise<NerPipelineFn | null> {
   }
 
   try {
-    log.info('Inizializzazione pipeline NER...', { path: modelPath })
+    log.info('ner-pipeline-initialization-started', { modelExists })
     const startMs = Date.now()
     const numThreads = Math.min(4, require('os').cpus().length)
 
@@ -242,8 +251,10 @@ async function getNerPipeline(): Promise<NerPipelineFn | null> {
     log.info('Modello NER caricato', { ms: Date.now() - startMs, threads: numThreads })
     return nerPipeline
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    log.error('Errore durante inizializzazione pipeline NER', { error: message })
+    log.error('ner-pipeline-initialization-failed', {
+      stage: 'ner',
+      errorCode: safeErrorCode(err),
+    })
     modelLoadFailed = true
     return null
   }
@@ -613,7 +624,10 @@ export async function analyzeText(
 
       nerUsed = true
     } catch (err) {
-      log.error('Errore durante inferenza NER', { error: err })
+      log.error('ner-inference-failed', {
+        stage: 'ner',
+        errorCode: safeErrorCode(err),
+      })
       const modelPath = getModelPath()
       const fs = require('fs')
       const path = require('path')
@@ -660,7 +674,7 @@ export async function analyzeText(
       // ≤4B: KV cache LM Studio troppo piccola per richieste parallele → forza 1
       const isSmallModel = inferChunkSize(llmConfig.model) === 1200
       if (isSmallModel && (llmConfig.parallelRequests ?? 1) > 1) {
-        log.warn(`nerService: modello ≤4B rilevato (${llmConfig.model}) — parallelRequests forzato a 1 per evitare context overflow`)
+        log.warn('llm-small-model-concurrency-limited', { stage: 'llm' })
       }
       const effectiveParallel = isSmallModel ? 1 : Math.max(1, llmConfig.parallelRequests ?? 1)
       const LLM_BATCH = effectiveParallel
@@ -691,7 +705,10 @@ export async function analyzeText(
         llmUsed = true
       }
     } catch (err) {
-      log.warn('nerService: errore LLM, continuo senza', { error: err })
+      log.warn('ner-llm-failed-local-fallback-used', {
+        stage: 'llm',
+        errorCode: safeErrorCode(err),
+      })
       warnings.push('LLM locale non raggiungibile. Usato solo BERT + regex.')
     }
   }

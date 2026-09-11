@@ -1,5 +1,5 @@
 import type { DocumentFormat, DetectedEntity, PdfLayerKind, SaveResult } from '@shared/types'
-import log from 'electron-log'
+import { privacyLog as log, safeErrorCode } from '../services/privacyLogger'
 import { generateTxt } from './txtGenerator'
 import { generateDocx } from './docxGenerator'
 import { generateOdt } from './odtGenerator'
@@ -98,7 +98,8 @@ async function resolvePdfOptions(
   } catch (err) {
     // In dubbio si è prudenti: senza report si mantiene il comportamento del chiamante.
     log.warn('generateOutput: analisi layer OCR non riuscita, opzioni invariate', {
-      code: err instanceof Error ? err.name : 'unknown'
+      stage: 'output',
+      errorCode: safeErrorCode(err),
     })
     return { ...options, routing: 'flattened-scan' }
   }

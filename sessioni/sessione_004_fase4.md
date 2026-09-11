@@ -42,12 +42,12 @@
 
 ## Post-processing: normalizeSpacedLetters (aggiunto post-test)
 
-Test sui PDF reali ha rivelato che il PDF `_20230811_snciv@sL0@a2023@n24532@tO.pdf` (Sezione Lavoro)
+Test su materiale storico ha rivelato che il PDF `[nome PDF reale rimosso]` (Sezione Lavoro)
 produce testo con lettere separate da spazio: "L A C O R T E S U P R E M A".
 Aggiunta funzione `normalizeSpacedLetters` in `pdfParser.ts` che comprime sequenze di 3+
 lettere singole separate da spazio in una parola unica.
 Regex: `/(?<![A-Za-zÀ-ÿ])([A-Za-zÀ-ÿ](?: [A-Za-zÀ-ÿ]){2,})(?![A-Za-zÀ-ÿ])/g`
-I nomi propri (ROSSANA MANCINO, DANIELA CALAFIORE) vengono estratti correttamente — non intaccati.
+I nomi propri `[nominativi reali rimossi]` vengono estratti correttamente — non intaccati.
 Piccolo residuo "CASSAZION E" dove pdfjs spezza un token internamente — non correggibile senza
 analizzare la geometria item per item; non impatta il NER semantico.
 

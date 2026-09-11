@@ -1,6 +1,6 @@
 import type { PDFDocumentProxy, TextItem } from 'pdfjs-dist/types/src/display/api'
 import type { ParseResult } from './index'
-import log from 'electron-log'
+import { privacyLog as log } from '../services/privacyLogger'
 import { createRequire } from 'module'
 import { pathToFileURL } from 'url'
 import path from 'path'

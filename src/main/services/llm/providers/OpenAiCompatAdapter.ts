@@ -1,4 +1,4 @@
-import log from 'electron-log'
+import { privacyLog as log, safeErrorCode } from '../../privacyLogger'
 import { LlmConfig, LlmDetectedName, LlmTestResult } from '@shared/types'
 import { LlmProviderAdapter } from './LlmProviderAdapter'
 import { REPLACEMENT_JSON_SCHEMA } from '../schemas'
@@ -34,7 +34,10 @@ export class OpenAiCompatAdapter implements LlmProviderAdapter {
       const json = await response.json() as { data?: { id: string }[] }
       return (json.data ?? []).map(m => m.id)
     } catch (err) {
-      log.warn('OpenAiCompatAdapter: errore listModels', err)
+      log.warn('openai-model-list-failed', {
+        stage: 'llm',
+        errorCode: safeErrorCode(err),
+      })
       return []
     }
   }
@@ -111,8 +114,7 @@ export class OpenAiCompatAdapter implements LlmProviderAdapter {
       // Tentativo 2: json_schema non supportato (es. MLX vecchi) → riprova con json_object
       if (!response.ok && response.status === 400) {
         if (await this.isContextOverflow(response)) {
-          const errBody = await response.clone().text()
-          throw new Error(`LLM context overflow: il chunk supera il context window del modello. ${errBody.slice(0, 200)}`)
+          throw new Error('LLM context overflow: il chunk supera il context window del modello.')
         }
         log.warn('OpenAiCompatAdapter: structured output fallito (400), riprovo con json_object')
         body.response_format = { type: 'json_object' }
@@ -130,8 +132,7 @@ export class OpenAiCompatAdapter implements LlmProviderAdapter {
       // Tentativo 3: json_object non supportato (es. Phi 3B, modelli molto piccoli) → plain chat
       if (!response.ok && response.status === 400) {
         if (await this.isContextOverflow(response)) {
-          const errBody = await response.clone().text()
-          throw new Error(`LLM context overflow: il chunk supera il context window del modello. ${errBody.slice(0, 200)}`)
+          throw new Error('LLM context overflow: il chunk supera il context window del modello.')
         }
         log.warn('OpenAiCompatAdapter: json_object fallito (400), riprovo senza response_format')
         delete body.response_format
@@ -157,7 +158,10 @@ export class OpenAiCompatAdapter implements LlmProviderAdapter {
 
       return this.parseStructuredContent(content)
     } catch (err) {
-      log.error('OpenAiCompatAdapter: errore detectNames', err)
+      log.error('openai-name-detection-failed', {
+        stage: 'llm',
+        errorCode: safeErrorCode(err),
+      })
       throw err
     }
   }
@@ -189,7 +193,12 @@ export class OpenAiCompatAdapter implements LlmProviderAdapter {
 
       return []
     } catch (err) {
-      log.warn('OpenAiCompatAdapter: errore parsing JSON', { content, err })
+      log.warn('openai-invalid-json-response', {
+        stage: 'llm',
+        code: 'invalid-json',
+        responseChars: content.length,
+        errorCode: safeErrorCode(err),
+      })
       return []
     }
   }

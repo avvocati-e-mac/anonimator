@@ -6,7 +6,7 @@ import { randomBytes } from 'crypto'
 import { writeFile, unlink, readFile } from 'fs/promises'
 import { app } from 'electron'
 import type { ParseResult } from './index'
-import log from 'electron-log'
+import { privacyLog as log, safeErrorCode } from '../services/privacyLogger'
 import { getTessdataPath } from '../services/nerService'
 import { resolveOcrDpi, dpiToScale } from '../services/ocrRenderConfig'
 import type { Matrix as MupdfMatrix } from 'mupdf'
@@ -236,11 +236,9 @@ async function createOcrWorker(options?: {
   const trainedDataBuffer = await readFile(trainedDataPath)
   const langData: import('tesseract.js').Lang = { code: 'ita', data: trainedDataBuffer as unknown }
 
-  log.info('OCR Tesseract paths', {
+  log.info('ocr-worker-configured', {
     isPackaged: app.isPackaged,
-    workerPath,
-    trainedDataPath,
-    trainedDataSize: trainedDataBuffer.length
+    bytes: trainedDataBuffer.length,
   })
 
   const worker = await createWorker([langData], 1, {
@@ -248,16 +246,17 @@ async function createOcrWorker(options?: {
     cacheMethod: 'none' as const,
     gzip: false,
     errorHandler: (err: unknown) => {
-      log.error('OCR worker error (handled)', { error: String(err) })
+      log.error('ocr-worker-error', {
+        stage: 'ocr',
+        errorCode: safeErrorCode(err),
+      })
     },
     logger: (m: { status: string; progress: number }) => {
       if (m.status === 'recognizing text') {
         const pct = Math.round(m.progress * 100)
         if (pct % 25 === 0) {
-          log.debug(`OCR progress: ${pct}%`)
+          log.debug('ocr-progress', { percent: pct })
         }
-      } else {
-        log.debug(`OCR status: ${m.status}`)
       }
     }
   })
@@ -285,7 +284,6 @@ async function createOcrWorker(options?: {
 async function ocrSingleImage(
   worker: import('tesseract.js').Worker,
   source: string | Buffer,
-  pageLabel: string,
   page: number,
 ): Promise<OcrPageResult> {
   let imagePath: string | null = null
@@ -307,14 +305,17 @@ async function ocrSingleImage(
       tsv: false,
     })
     const { text, confidence } = result.data
-    log.info(`OCR ${pageLabel}`, { confidence: Math.round(confidence) })
+    log.info('ocr-page-completed', { page, confidence: Math.round(confidence) })
     return { text: text.trim(), confidence, words: extractOcrArtifactWords(result.data, page) }
   } finally {
     // Cancellazione immediata: niente contenuto documentale deve sopravvivere
     // sul disco più del tempo strettamente necessario al riconoscimento.
     if (tempCreated && imagePath) {
       await unlink(imagePath).catch((e) => {
-        log.warn('OCR: impossibile eliminare temp file', { path: imagePath, error: String(e) })
+        log.warn('ocr-temp-cleanup-failed', {
+          stage: 'ocr',
+          errorCode: safeErrorCode(e),
+        })
       })
     }
   }
@@ -323,7 +324,7 @@ async function ocrSingleImage(
 export async function parseImage(filePath: string, opts?: OcrParseOptions): Promise<ParseResult> {
   const warnings: string[] = []
   const dpi = resolveRenderDpi(opts?.dpi)
-  log.info('OCR immagine: DPI risolto', { dpiRichiesto: opts?.dpi ?? null, dpiUsato: dpi })
+  log.info('ocr-image-dpi-resolved', { dpiRequested: opts?.dpi ?? null, dpi })
 
   // Immagine singola: un worker usa-e-getta va bene, non c'è riuso da fare.
   const worker = await createOcrWorker({ unevenLighting: opts?.unevenLighting, userDefinedDpi: dpi })
@@ -332,7 +333,7 @@ export async function parseImage(filePath: string, opts?: OcrParseOptions): Prom
   let confidence: number
   let words: OcrArtifactWord[]
   try {
-    const result = await ocrSingleImage(worker, filePath, 'immagine', 1)
+    const result = await ocrSingleImage(worker, filePath, 1)
     text = result.text
     confidence = result.confidence
     words = result.words
@@ -375,10 +376,10 @@ export async function parsePdfWithOcr(filePath: string, opts?: OcrParseOptions):
   const pageCount = doc.countPages()
   const dpi = resolveRenderDpi(opts?.dpi)
   const matrix = buildOcrRenderMatrix(dpi, opts?.skewDeg)
-  log.info('OCR PDF: DPI risolto', {
-    dpiRichiesto: opts?.dpi ?? null,
-    dpiUsato: dpi,
-    deskewApplicato: matrix[1] !== 0 || matrix[2] !== 0
+  log.info('ocr-pdf-dpi-resolved', {
+    dpiRequested: opts?.dpi ?? null,
+    dpi,
+    deskewApplied: matrix[1] !== 0 || matrix[2] !== 0,
   })
 
   const pageTexts: string[] = []
@@ -398,15 +399,15 @@ export async function parsePdfWithOcr(filePath: string, opts?: OcrParseOptions):
   try {
     sharedWorker = await createOcrWorker({ unevenLighting: opts?.unevenLighting, userDefinedDpi: dpi })
   } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : String(err)
-    log.warn('OCR: impossibile creare il worker Tesseract, uso testo digitale per tutte le pagine', {
-      error: errorMsg
+    log.warn('ocr-worker-creation-failed-digital-fallback', {
+      stage: 'ocr',
+      errorCode: safeErrorCode(err),
     })
   }
 
   try {
     for (let i = 0; i < pageCount; i++) {
-      log.info(`OCR pagina ${i + 1}/${pageCount}`)
+      log.info('ocr-page-started', { page: i + 1, pageCount })
       opts?.onPageProgress?.(i + 1, pageCount)
       const page = doc.loadPage(i) as import('mupdf').PDFPage
 
@@ -434,15 +435,17 @@ export async function parsePdfWithOcr(filePath: string, opts?: OcrParseOptions):
           pixmap.destroy()
         }
 
-        const ocrResult = await ocrSingleImage(sharedWorker, pngBuffer, `pagina ${i + 1}`, i + 1)
+        const ocrResult = await ocrSingleImage(sharedWorker, pngBuffer, i + 1)
         pageText = ocrResult.text
         confidence = ocrResult.confidence
         words = ocrResult.words
       } catch (err) {
         // Fallback: estrai il testo digitale se disponibile (es. PDF ibridi)
         digitalFallbackPages++
-        const errorMsg = err instanceof Error ? err.message : String(err)
-        log.warn(`OCR rendering fallito per pagina ${i + 1}, uso testo digitale`, { error: errorMsg })
+        log.warn('ocr-page-render-failed-digital-fallback', {
+          page: i + 1,
+          errorCode: safeErrorCode(err),
+        })
 
         const stext = page.toStructuredText()
         pageText = stext.asText()

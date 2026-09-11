@@ -1,6 +1,6 @@
 import fs from 'fs/promises'
 import type { ParseResult } from './index'
-import log from 'electron-log'
+import { privacyLog as log } from '../services/privacyLogger'
 
 /**
  * Rimuove la sintassi Markdown dal testo, restituendo il testo plain visibile.

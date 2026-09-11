@@ -1,6 +1,6 @@
 import { ipcMain, BrowserWindow, shell, app, dialog, clipboard } from 'electron'
 import { z } from 'zod'
-import log from 'electron-log'
+import { privacyLog as log, safeErrorCode } from './services/privacyLogger'
 import { join } from 'path'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, createWriteStream } from 'fs'
 import https from 'https'
@@ -10,6 +10,7 @@ import type { EntityDictionaryFile } from '@shared/types'
 import { analyzeText, getModelPath, getModelDownloadPath, getTessdataPath, getTessdataDownloadPath, resetNerPipeline, clearNerChunkCache } from './services/nerService'
 import { sessionManager } from './services/sessionManager'
 import { settingsManager } from './services/settingsManager'
+import { formatInstallationDiagnostics } from './services/diagnostics'
 import { testLlmConnection, listLlmModels, SYSTEM_PROMPT_IT, SYSTEM_PROMPT_EN } from './services/llmService'
 import { detectFormat, extractText } from './parsers/index'
 import { anonymizationProgressMessage, buildOcrProgressMessage, ocrProgressPercent } from './services/ocrProgressMessage'
@@ -290,7 +291,10 @@ export function registerIpcHandlers(): void {
     } catch (err) {
       ocrArtifactCache.discard(pendingOcrArtifactHandle)
       const message = err instanceof Error ? err.message : String(err)
-      log.error('Errore elaborazione documento', { error: message })
+      log.error('document-processing-failed', {
+        stage: 'analysis',
+        errorCode: safeErrorCode(err),
+      })
       return { error: `Errore durante l'elaborazione: ${message}` }
     }
   })
@@ -333,7 +337,6 @@ export function registerIpcHandlers(): void {
 
       sendProgress('done', 100, 'Anonimizzazione completata.')
       log.info('Documento anonimizzato', {
-        outputPath: result.outputPath,
         entitiesReplaced: result.entitiesReplaced,
         redactionMode: result.redactionMode,
         safetyStatus: result.safetyStatus,
@@ -383,7 +386,9 @@ export function registerIpcHandlers(): void {
         sessionManager.commitDecisions(req.entities)
         analysisRegistry.release(req.analysisToken, event.sender.id)
         log.info('Batch: documento anonimizzato', {
-          fileName, outputPath: save.outputPath, entitiesReplaced: save.entitiesReplaced,
+          entitiesReplaced: save.entitiesReplaced,
+          redactionMode: save.redactionMode,
+          safetyStatus: save.safetyStatus,
         })
         results.push({
           filePath: record.canonicalPath,
@@ -543,7 +548,10 @@ export function registerIpcHandlers(): void {
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      log.error('Errore importazione dizionario', { error: message })
+      log.error('dictionary-import-failed', {
+        stage: 'session',
+        errorCode: safeErrorCode(err),
+      })
       return { error: `Errore durante l'importazione: ${message}` }
     }
   })
@@ -612,26 +620,15 @@ export function registerIpcHandlers(): void {
       app.getAppPath(), '..', 'app.asar.unpacked', 'node_modules', 'detect-libc'
     ))
 
-    // Legge ultime 100 righe del log
-    let logTail = '(log non disponibile)'
-    try {
-      const logFile = (log.transports.file as unknown as { getFile(): { path: string } }).getFile()
-      const content = readFileSync(logFile.path, 'utf-8')
-      logTail = content.split('\n').slice(-100).join('\n')
-    } catch { /* ignorato */ }
-
-    const diagText = [
-      `=== Anonimator Diagnostica ===`,
-      `Versione: ${version}`,
-      `Piattaforma: ${platform}/${arch}`,
-      `Modello NER: ${modelExists ? 'OK' : 'MANCANTE'} (${modelPath})`,
-      `Tessdata OCR: ${tessdataExists ? 'OK' : 'MANCANTE'} (${tessdataPath})`,
-      `ORT binding: ${bindingExists ? 'OK' : 'MANCANTE (o in dev mode)'}`,
-      `detect-libc: ${detectLibcExists ? 'OK' : 'MANCANTE (o in dev mode)'}`,
-      ``,
-      `=== Log (ultime 100 righe) ===`,
-      logTail
-    ].join('\n')
+    const diagText = formatInstallationDiagnostics({
+      version,
+      platform,
+      arch,
+      modelExists,
+      tessdataExists,
+      bindingExists,
+      detectLibcExists,
+    })
 
     clipboard.writeText(diagText)
     log.info('Diagnostica raccolta e copiata negli appunti')
@@ -721,15 +718,21 @@ export function registerIpcHandlers(): void {
           const global = basePercent + Math.round((filePercent / 100) * (nextPercent - basePercent))
           sendProgress(fileName, global, false)
         })
-        log.info('Modelli — file scaricato', { file: fileName })
+        log.info('model-file-downloaded', { count: i + 1, total: FILES.length })
       }
       resetNerPipeline()
       sendProgress('', 100, true)
-      log.info('Modelli scaricati e pipeline resettata', { modelPath, tessdataPath })
+      log.info('models-downloaded-and-pipeline-reset', {
+        modelExists: true,
+        tessdataExists: true,
+      })
       return { ok: true }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      log.error('Errore download modelli', { error: message })
+      log.error('model-download-failed', {
+        stage: 'download',
+        errorCode: safeErrorCode(err),
+      })
       sendProgress('', 0, true, message)
       return { ok: false, error: message }
     }

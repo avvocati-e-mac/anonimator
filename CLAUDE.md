@@ -103,7 +103,7 @@ Before making any changes, understand these absolute requirements have priority 
    - `IPC Channels Reference` (CLAUDE.md) ↔ tabella canali IPC (GUIDA.md)
    - `Architecture` (CLAUDE.md) ↔ sezione Architettura (GUIDA.md)
    Ogni volta che si modifica una delle due, controllare e aggiornare anche l'altra nella stessa sessione/commit.
-6. **Privacy logging & Debugging:** NEVER log document content. Only log metadata (sanitized filename, size, format, page count, timing, warnings, error codes).
+6. **Privacy logging & Debugging:** NEVER log document content or document-derived identifiers. Runtime code must use `services/privacyLogger.ts`; direct imports of `electron-log` and `console.*` are forbidden. Only allowlisted metadata may be persisted: counts, format, page/DPI/confidence, timing/memory, booleans, fixed enums and safe error codes. File names/paths, URLs, model names, pseudonyms, LLM responses and raw `Error` objects are forbidden even if apparently sanitized.
    - **CRITICAL — anche in debug:** non aggiungere MAI `console.log(text)`, `console.log(content)`, `console.log(entity.value)` su dati provenienti da documenti reali. Usare esclusivamente test Vitest con dati sintetici per debug di parser e NER. I log di sviluppo non devono mai contenere contenuto documentale — anche temporaneamente.
 7. **Temporary files:** Prefer in-memory processing. If temp files needed (OCR rendering): use OS temp directory, random names, immediate cleanup on completion or error.
 8. **Mandatory testing for NER/Parser changes:** If you add, modify, or fix a Regex pattern in `nerService.ts`, or change any document parser, you **MUST** write or update the corresponding Vitest unit test in `tests/` before asking for confirmation. Never leave NER/Parser changes untested.
@@ -213,7 +213,7 @@ For raster or mixed PDFs, `pdfSafeGenerator.ts` creates a new flattened PDF and 
 
 **Quality:**
 - `zod` - IPC input validation
-- `winston` - logging
+- `electron-log` behind `services/privacyLogger.ts` - persistent logging with runtime metadata allowlist and safe error-code mapping
 - `vitest` - testing
 
 ## File Structure
@@ -235,6 +235,7 @@ For raster or mixed PDFs, `pdfSafeGenerator.ts` creates a new flattened PDF and 
 │   │   ├── parsers/
 │   │   ├── outputGenerators/
 │   │   └── services/
+│   │       └── privacyLogger.ts # unico accesso autorizzato a electron-log
 │   ├── preload/
 │   │   └── index.ts        # contextBridge API
 │   ├── renderer/           # React app (sandboxed)

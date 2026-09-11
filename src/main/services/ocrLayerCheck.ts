@@ -12,7 +12,7 @@
  * etichette da insiemi chiusi.
  */
 
-import log from 'electron-log'
+import { privacyLog as log, safeErrorCode } from './privacyLogger'
 import { scoreTextQuality } from './textQuality'
 import { z } from 'zod'
 import type {
@@ -1569,7 +1569,8 @@ async function analyzeOcrLayerInternal(
       doc = new mupdf.PDFDocument(bytes)
     } catch (err) {
       log.warn('ocrLayerCheck: PDF non apribile', {
-        code: err instanceof Error ? err.name : 'unknown'
+        stage: 'ocr',
+        errorCode: safeErrorCode(err),
       })
       return emptyReport(Date.now() - started)
     }
@@ -1596,7 +1597,7 @@ async function analyzeOcrLayerInternal(
       } catch (err) {
         log.warn('ocrLayerCheck: errore su pagina', {
           page: index + 1,
-          code: err instanceof Error ? err.name : 'unknown'
+          errorCode: safeErrorCode(err),
         })
         pages.push(emptyPage(index + 1, 'inconclusive', 'page-error'))
         safetySink?.push(errorSafetyOutcome(index + 1))
@@ -1690,7 +1691,8 @@ async function analyzeOcrLayerInternal(
     return report
   } catch (err) {
     log.warn('ocrLayerCheck: analisi fallita', {
-      code: err instanceof Error ? err.name : 'unknown'
+      stage: 'ocr',
+      errorCode: safeErrorCode(err),
     })
     return emptyReport(Date.now() - started)
   }
