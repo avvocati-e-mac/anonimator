@@ -7,6 +7,8 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-09-11
+
 ### Novità
 - **Recall NER/OCR misurabile**: corpus esclusivamente sintetico per atti legali e moduli amministrativi, con precision, recall e F1 aggregate e per tipo, controlli negativi e budget esplicito sui falsi positivi.
 - **Campi amministrativi e rumore OCR**: riconoscimento contestuale di Cognome/Nome, dipendente, datore di lavoro, nascita, indirizzi senza CAP e varianti OCR di codice fiscale e telefono.
