@@ -209,6 +209,52 @@ export interface PageJudgement {
   offsetYPt: number
 }
 
+/** Classificazione di sicurezza per pagina, separata dal report IPC legacy. */
+export type PdfPageSafetyStatus =
+  | 'digital'
+  | 'scan-aligned'
+  | 'scan-untrusted'
+  | 'page-error'
+
+/** Metriche nullable: null significa "non misurato", mai "misurato come zero". */
+export interface NullablePageQualityMetrics {
+  coverage: number | null
+  lift: number | null
+  lineAgreement: number | null
+  scaleY: number | null
+  offsetXPt: number | null
+  offsetYPt: number | null
+}
+
+export interface PdfPageQualityOutcome {
+  page: number
+  status: PdfPageSafetyStatus
+  layerKind: PdfLayerKind | null
+  /** true soltanto per una pagina raster il cui layer e' risultato allineato. */
+  existingTextLayerUsable: boolean
+  reason: OcrPageReason
+  metrics: NullablePageQualityMetrics
+  imageMetrics: ImageQualityMetrics | null
+}
+
+export interface PdfDocumentSafety {
+  pageCount: number
+  /** Ogni PDF contenente almeno una pagina raster segue il percorso raster. */
+  routing: 'digital' | 'flattened-scan'
+  allPagesAnalyzed: boolean
+  hasPageErrors: boolean
+  /** true solo quando ogni pagina raster ha un layer certificato allineato. */
+  existingTextLayerUsable: boolean
+  pages: PdfPageQualityOutcome[]
+  /** Campione per la sola diagnostica UI; non influenza mai il routing. */
+  diagnosticPageNumbers: number[]
+}
+
+export interface PdfQualityAnalysis {
+  report: OcrLayerReport
+  safety: PdfDocumentSafety
+}
+
 // ============================================================================
 // Binarizzazione
 // ============================================================================
@@ -996,27 +1042,63 @@ export function classifyImageQuality(m: ImageQualityMetrics): {
   return { verdict, reasons }
 }
 
-/** Maggioranza delle pagine concludenti. Tutte inconcludenti → inconclusive. Parità → misaligned. */
+/** Aggregazione fail-closed: la maggioranza non e' una garanzia di sicurezza. */
 export function aggregatePages(pages: readonly OcrPageMetrics[]): OcrLayerVerdict {
-  let aligned = 0
-  let misaligned = 0
-  let noTextLayer = 0
-  for (const p of pages) {
-    if (p.verdict === 'aligned') aligned++
-    else if (p.verdict === 'misaligned') misaligned++
-    else if (p.reason === 'no-text-layer') noTextLayer++
+  const relevant = pages.filter((p) => p.reason !== 'not-raster-page')
+  if (relevant.length === 0) return 'inconclusive'
+  if (relevant.some((p) => p.verdict === 'misaligned')) return 'misaligned'
+
+  const aligned = relevant.filter((p) => p.verdict === 'aligned').length
+  const noTextLayer = relevant.some((p) => p.reason === 'no-text-layer')
+  if (aligned > 0 && noTextLayer) return 'misaligned'
+  if (relevant.every((p) => p.verdict === 'aligned')) return 'aligned'
+  return 'inconclusive'
+}
+
+function nullableMetrics(metrics: OcrPageMetrics): NullablePageQualityMetrics {
+  if (metrics.verdict === 'inconclusive') {
+    return {
+      coverage: null,
+      lift: null,
+      lineAgreement: null,
+      scaleY: null,
+      offsetXPt: null,
+      offsetYPt: null
+    }
   }
-  if (aligned === 0 && misaligned === 0) return 'inconclusive'
+  return {
+    coverage: metrics.coverage,
+    lift: metrics.lift,
+    lineAgreement: metrics.lineAgreement,
+    scaleY: metrics.scaleY,
+    offsetXPt: metrics.offsetXPt,
+    offsetYPt: metrics.offsetYPt
+  }
+}
 
-  // Layer PARZIALE: alcune pagine hanno il testo, altre no. È il difetto
-  // documentato "OCR solo sulla prima pagina" degli MFP. Il contenuto delle
-  // pagine scoperte non sarebbe mai anonimizzabile tramite il layer, quindi
-  // il layer non va usato per il percorso veloce, anche se dove c'è è perfetto.
-  // Il costo di sbagliare in questa direzione è solo tempo (si rifà l'OCR);
-  // sbagliare nell'altra lascia dati personali in chiaro.
-  if (noTextLayer > 0) return 'misaligned'
-
-  return aligned > misaligned ? 'aligned' : 'misaligned'
+/** Costruisce il routing del documento esclusivamente dagli outcome per pagina. */
+export function deriveDocumentSafety(
+  pageCount: number,
+  pages: readonly PdfPageQualityOutcome[],
+  diagnosticPageNumbers: readonly number[] = []
+): PdfDocumentSafety {
+  const ordered = [...pages].sort((a, b) => a.page - b.page)
+  const rasterPages = ordered.filter(
+    (page) => page.layerKind === 'scan-with-text' || page.layerKind === 'scan-no-text'
+  )
+  return {
+    pageCount,
+    routing: rasterPages.length > 0 ? 'flattened-scan' : 'digital',
+    allPagesAnalyzed:
+      ordered.length === pageCount &&
+      ordered.every((page, index) => page.page === index + 1),
+    hasPageErrors: ordered.some((page) => page.status === 'page-error'),
+    existingTextLayerUsable:
+      rasterPages.length > 0 &&
+      rasterPages.every((page) => page.status === 'scan-aligned' && page.existingTextLayerUsable),
+    pages: ordered,
+    diagnosticPageNumbers: [...diagnosticPageNumbers]
+  }
 }
 
 // ============================================================================
@@ -1089,6 +1171,44 @@ interface PageOutcome {
   /** null quando la pagina non è arrivata alla fase di misura. */
   image: ImageQualityMetrics | null
   fontName: string | null
+}
+
+function toSafetyOutcome(outcome: PageOutcome): PdfPageQualityOutcome {
+  const { metrics, layerKind, image } = outcome
+  let status: PdfPageSafetyStatus
+  if (metrics.reason === 'page-error') status = 'page-error'
+  else if (layerKind === 'digital') status = 'digital'
+  else if (layerKind === 'scan-with-text' && metrics.verdict === 'aligned') status = 'scan-aligned'
+  else status = 'scan-untrusted'
+
+  return {
+    page: metrics.page,
+    status,
+    layerKind,
+    existingTextLayerUsable: status === 'scan-aligned',
+    reason: metrics.reason,
+    metrics: nullableMetrics(metrics),
+    imageMetrics: image
+  }
+}
+
+function errorSafetyOutcome(page: number): PdfPageQualityOutcome {
+  return {
+    page,
+    status: 'page-error',
+    layerKind: null,
+    existingTextLayerUsable: false,
+    reason: 'page-error',
+    metrics: {
+      coverage: null,
+      lift: null,
+      lineAgreement: null,
+      scaleY: null,
+      offsetXPt: null,
+      offsetYPt: null
+    },
+    imageMetrics: null
+  }
 }
 
 function emptyPage(page: number, verdict: OcrLayerVerdict, reason: OcrPageReason): OcrPageMetrics {
@@ -1431,7 +1551,9 @@ export async function analyzeOcrLayer(
   opts?: { maxPages?: number }
 ): Promise<OcrLayerReport> {
   const started = Date.now()
-  const maxPages = Math.max(1, opts?.maxPages ?? OCR_CHECK_TUNING.MAX_PAGES)
+  // maxPages governa soltanto l'eventuale campione diagnostico esposto dalla
+  // nuova API analyzePdfQuality. Il routing analizza sempre tutte le pagine.
+  void opts
 
   try {
     // Lazy loading: mupdf è pesante, si carica solo quando serve (CLAUDE.md, Livello 2).
@@ -1452,7 +1574,7 @@ export async function analyzeOcrLayer(
     }
 
     const pageCount = doc.countPages()
-    const indices = samplePageIndices(pageCount, maxPages)
+    const indices = Array.from({ length: pageCount }, (_, index) => index)
 
     const pages: OcrPageMetrics[] = []
     // Testo delle pagine campionate, solo per il punteggio linguistico.
@@ -1568,5 +1690,35 @@ export async function analyzeOcrLayer(
       code: err instanceof Error ? err.name : 'unknown'
     })
     return emptyReport(Date.now() - started)
+  }
+}
+
+/**
+ * API interna per il generatore: outcome esplicito per ogni pagina e routing
+ * deterministico. `maxPages` seleziona solo i numeri mostrabili in diagnostica;
+ * non riduce mai le pagine analizzate.
+ */
+export async function analyzePdfQuality(
+  filePath: string,
+  opts?: { maxPages?: number }
+): Promise<PdfQualityAnalysis> {
+  const report = await analyzeOcrLayer(filePath, opts)
+  const pages = report.pages.map((metrics): PdfPageQualityOutcome => {
+    if (metrics.reason === 'page-error') return errorSafetyOutcome(metrics.page)
+    const layerKind: PdfLayerKind =
+      metrics.reason === 'not-raster-page'
+        ? 'digital'
+        : metrics.reason === 'no-text-layer'
+          ? 'scan-no-text'
+          : 'scan-with-text'
+    return toSafetyOutcome({ metrics, layerKind, image: null, fontName: null })
+  })
+  const maxPages = Math.max(1, opts?.maxPages ?? OCR_CHECK_TUNING.MAX_PAGES)
+  const diagnosticPageNumbers = samplePageIndices(report.pages.length, maxPages).map(
+    (index) => index + 1
+  )
+  return {
+    report,
+    safety: deriveDocumentSafety(report.pages.length, pages, diagnosticPageNumbers)
   }
 }

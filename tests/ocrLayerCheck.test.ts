@@ -16,6 +16,7 @@ import {
   dilate1,
   estimateSkew,
   fitScaleY,
+  deriveDocumentSafety,
   gridCoverage,
   laplacianVariance,
   liftBaseline,
@@ -801,10 +802,10 @@ describe('aggregatePages', () => {
     offsetYPt: 0
   })
 
-  it('maggioranza allineata', () => {
+  it('una sola pagina disallineata rende non affidabile l intero layer', () => {
     expect(
       aggregatePages([pagina('aligned', 1), pagina('aligned', 2), pagina('misaligned', 3)])
-    ).toBe('aligned')
+    ).toBe('misaligned')
   })
 
   it('maggioranza disallineata', () => {
@@ -824,10 +825,101 @@ describe('aggregatePages', () => {
     expect(aggregatePages([])).toBe('inconclusive')
   })
 
-  it('le inconcludenti non pesano sulla maggioranza', () => {
+  it('una pagina raster inconcludente impedisce di certificare il layer', () => {
     expect(
       aggregatePages([pagina('inconclusive', 1), pagina('inconclusive', 2), pagina('aligned', 3)])
-    ).toBe('aligned')
+    ).toBe('inconclusive')
+  })
+})
+
+describe('deriveDocumentSafety', () => {
+  const metrics = {
+    coverage: null,
+    lift: null,
+    lineAgreement: null,
+    scaleY: null,
+    offsetXPt: null,
+    offsetYPt: null
+  }
+
+  it('instrada un PDF misto interamente sul percorso raster', () => {
+    const safety = deriveDocumentSafety(2, [
+      {
+        page: 1,
+        status: 'digital',
+        layerKind: 'digital',
+        existingTextLayerUsable: false,
+        reason: 'not-raster-page',
+        metrics,
+        imageMetrics: null
+      },
+      {
+        page: 2,
+        status: 'scan-aligned',
+        layerKind: 'scan-with-text',
+        existingTextLayerUsable: true,
+        reason: 'ok',
+        metrics: { ...metrics, coverage: 0.95, lift: 2, scaleY: 1, offsetXPt: 0, offsetYPt: 0 },
+        imageMetrics: null
+      }
+    ], [1])
+    expect(safety.routing).toBe('flattened-scan')
+    expect(safety.allPagesAnalyzed).toBe(true)
+    expect(safety.existingTextLayerUsable).toBe(true)
+    expect(safety.diagnosticPageNumbers).toEqual([1])
+  })
+
+  it('un errore pagina e una scansione non fidata restano espliciti', () => {
+    const safety = deriveDocumentSafety(3, [
+      {
+        page: 1,
+        status: 'scan-aligned',
+        layerKind: 'scan-with-text',
+        existingTextLayerUsable: true,
+        reason: 'ok',
+        metrics,
+        imageMetrics: null
+      },
+      {
+        page: 2,
+        status: 'page-error',
+        layerKind: null,
+        existingTextLayerUsable: false,
+        reason: 'page-error',
+        metrics,
+        imageMetrics: null
+      },
+      {
+        page: 3,
+        status: 'scan-untrusted',
+        layerKind: 'scan-no-text',
+        existingTextLayerUsable: false,
+        reason: 'no-text-layer',
+        metrics,
+        imageMetrics: null
+      }
+    ])
+    expect(safety.routing).toBe('flattened-scan')
+    expect(safety.hasPageErrors).toBe(true)
+    expect(safety.existingTextLayerUsable).toBe(false)
+    expect(safety.pages.map((page) => page.status)).toEqual([
+      'scan-aligned',
+      'page-error',
+      'scan-untrusted'
+    ])
+  })
+
+  it('non dichiara completa un analisi con una pagina mancante', () => {
+    const safety = deriveDocumentSafety(2, [{
+      page: 1,
+      status: 'digital',
+      layerKind: 'digital',
+      existingTextLayerUsable: false,
+      reason: 'not-raster-page',
+      metrics,
+      imageMetrics: null
+    }])
+    expect(safety.allPagesAnalyzed).toBe(false)
   })
 })
 

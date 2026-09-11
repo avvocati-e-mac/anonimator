@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { existsSync } from 'fs'
 import { join } from 'path'
-import { analyzeOcrLayer } from '../src/main/services/ocrLayerCheck'
+import { analyzeOcrLayer, analyzePdfQuality } from '../src/main/services/ocrLayerCheck'
 import type {
   ImageQualityVerdict,
   OcrLayerVerdict,
@@ -130,4 +130,15 @@ describe('corpus OCR — Gate A', () => {
   verifica('qualità immagine', IMMAGINE)
   verifica('difetti di codifica', TESTO)
   verifica('limiti dichiarati', NON_COPERTI)
+
+  it('analizza tutte le pagine anche con un campione diagnostico di una pagina', async () => {
+    const path = join(CORPUS, 'geometrici/geo-18-pagina-sfasata.pdf')
+    const result = await analyzePdfQuality(path, { maxPages: 1 })
+    expect(result.safety.pageCount).toBe(3)
+    expect(result.safety.pages).toHaveLength(3)
+    expect(result.safety.allPagesAnalyzed).toBe(true)
+    expect(result.safety.diagnosticPageNumbers).toEqual([1])
+    expect(result.safety.routing).toBe('flattened-scan')
+    expect(result.safety.existingTextLayerUsable).toBe(false)
+  }, 60000)
 })
