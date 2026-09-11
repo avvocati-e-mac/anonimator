@@ -2,13 +2,6 @@ import { describe, it, expect } from 'vitest'
 import { LEGAL_STOP_WORDS } from '../src/main/services/legalStopWords'
 import type { DetectedEntity } from '../src/shared/types'
 
-// Helper che riproduce la logica del veto filter in nerService.ts
-function applyLegalStopWordsFilter(entities: DetectedEntity[]): DetectedEntity[] {
-  return entities.filter(e =>
-    !(e.type === 'PERSONA' && e.source === 'ner' && LEGAL_STOP_WORDS.has(e.text ?? e.originalText.toLowerCase()))
-  )
-}
-
 // Versione semplificata che usa originalText.toLowerCase()
 function applyFilter(entities: DetectedEntity[]): DetectedEntity[] {
   return entities.filter(e =>

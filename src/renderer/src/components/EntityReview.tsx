@@ -10,7 +10,9 @@ import { ENTITY_CONFIG } from '../utils/entityConfig'
 import { sanitizeDocxHtml, buildHighlightHtml, buildAnonymizedHtml } from '../utils/docxPreview'
 import type { PreviewMode } from '../utils/docxPreview'
 import AddEntityModal from './AddEntityModal'
+import OcrQualityBanner from './OcrQualityBanner'
 import type { DetectedEntity, EntityType } from '@shared/types'
+import { toEntityDecision } from '../utils/entityUtils'
 
 // ─── Componente header pannello anteprima con tab bar ────────────────────────
 
@@ -215,7 +217,7 @@ export default function EntityReview(): React.JSX.Element {
   const {
     entities, analysisResult, filePath, processingStartedAt,
     setScreen, setProgress, setSuccessInfo, setSessionStats, setError, reset,
-    addEntity, importEntitiesToSingle, setFilePathAndMerge,
+    addEntity, importEntitiesToSingle, setFilePathAndMerge, setAnalysisResult,
   } = useSessionStore()
 
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -223,8 +225,17 @@ export default function EntityReview(): React.JSX.Element {
   const [showAddModal, setShowAddModal] = useState(false)
   const [isAddingEntity, setIsAddingEntity] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
+  // Ricorda se su QUESTO documento il riconoscimento è già stato rifatto:
+  // serve al banner per non riproporre come rimedio l'operazione appena fatta.
+  const [ocrRedone, setOcrRedone] = useState(false)
   const [showPreview, setShowPreview] = useState(true)
   const [previewMode, setPreviewMode] = useState<PreviewMode>('original')
+
+  // Cambiando documento il "gia' rifatto" non vale piu': il nuovo file ha il
+  // suo layer di testo e merita di vedersi offrire il rimedio, se serve.
+  useEffect(() => {
+    setOcrRedone(false)
+  }, [filePath])
 
   const rawPreviewHtml = analysisResult?.previewHtml
   const sanitizedBase = useMemo(
@@ -283,7 +294,7 @@ export default function EntityReview(): React.JSX.Element {
       }
       const analysisResult = result as import('@shared/types').DocumentAnalysisResult
       // Merge entità rilevate con quelle già presenti e setta filePath
-      setFilePathAndMerge(resolvedPath, analysisResult.entities)
+      setFilePathAndMerge(resolvedPath, analysisResult)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Errore durante l'analisi.")
     } finally {
@@ -291,6 +302,37 @@ export default function EntityReview(): React.JSX.Element {
       setIsAnalyzing(false)
     }
   }, [setProgress, setError, setFilePathAndMerge])
+
+  // Rifà l'OCR con DPI più alto quando il banner di qualità lo suggerisce.
+  // A differenza di onDropDocument, qui il risultato SOSTITUISCE l'analisi
+  // corrente (nuovo layer di testo, nuove entità) invece di fondersi con essa.
+  const handleRedoOcr = useCallback(async (): Promise<void> => {
+    if (!filePath || !analysisResult?.ocrReport) return
+
+    setIsAnalyzing(true)
+    setProgress(0, 'Nuovo riconoscimento del testo in corso...')
+
+    const removeListener = window.electronAPI.onProgress(({ percent, message }) => {
+      setProgress(percent, message)
+    })
+    try {
+      const result = await window.electronAPI.processDocument(filePath, {
+        forceOcr: true,
+        ocrDpi: analysisResult.ocrReport.suggestedOcrDpi,
+      })
+      if ('error' in result && result.error) {
+        setError(String(result.error))
+        return
+      }
+      setAnalysisResult(result as import('@shared/types').DocumentAnalysisResult)
+      setOcrRedone(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Errore durante l'analisi.")
+    } finally {
+      removeListener()
+      setIsAnalyzing(false)
+    }
+  }, [filePath, analysisResult, setProgress, setError, setAnalysisResult])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: onDropDocument,
@@ -300,7 +342,7 @@ export default function EntityReview(): React.JSX.Element {
   })
 
   async function handleAnonymize(): Promise<void> {
-    if (!filePath) return
+    if (!filePath || !analysisResult?.analysisToken) return
     setIsSubmitting(true)
     setProgress(0, 'Avvio anonimizzazione...')
     setScreen('processing')
@@ -311,9 +353,8 @@ export default function EntityReview(): React.JSX.Element {
 
     try {
       const result = await window.electronAPI.anonymizeDocument({
-        filePath,
-        entities,
-        isScanned: analysisResult?.isScanned ?? false,
+        analysisToken: analysisResult.analysisToken,
+        entities: entities.map((entity) => toEntityDecision(entity)),
       })
 
       if ('error' in result && result.error) {
@@ -327,6 +368,12 @@ export default function EntityReview(): React.JSX.Element {
         outputPath: saved.outputPath,
         entitiesReplaced: saved.entitiesReplaced,
         fileName: filePath.split('/').pop() ?? '',
+        sizeRatio: saved.sizeRatio,
+        sizeWarning: saved.sizeWarning,
+        safetyStatus: saved.safetyStatus,
+        partialReasons: saved.partialReasons,
+        outcomes: saved.outcomes,
+        redactionMode: saved.redactionMode,
       })
       setSessionStats({
         totalFiles: 1,
@@ -472,6 +519,16 @@ export default function EntityReview(): React.JSX.Element {
                 />
               </div>
             )}
+
+            {/* Banner qualità OCR — sopra gli avvisi generali */}
+            <OcrQualityBanner
+              report={analysisResult?.ocrReport}
+              pageCount={analysisResult?.pageCount ?? 0}
+              onRedoOcr={() => void handleRedoOcr()}
+              isBusy={isAnalyzing || isSubmitting}
+              canRedo={!isRestoredSession}
+              ocrRedone={ocrRedone}
+            />
 
             {/* Warnings */}
             {warnings.length > 0 && (

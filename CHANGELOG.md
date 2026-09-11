@@ -5,6 +5,70 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [Unreleased]
+
+## [1.8.0] - 2026-09-11
+
+### Novità
+- **Recall NER/OCR misurabile**: corpus esclusivamente sintetico per atti legali e moduli amministrativi, con precision, recall e F1 aggregate e per tipo, controlli negativi e budget esplicito sui falsi positivi.
+- **Campi amministrativi e rumore OCR**: riconoscimento contestuale di Cognome/Nome, dipendente, datore di lavoro, nascita, indirizzi senza CAP e varianti OCR di codice fiscale e telefono.
+
+### Fix
+- **Pattern contestuali più precisi**: Partita IVA e targa richiedono ora una etichetta o un contesto coerente; il terzo ramo alternativo dei numeri documento restituisce il solo identificativo.
+- **Ledger delle entità manuali/importate**: la cardinalità intenzionalmente ignota resta `null`, evitando falsi `entity-count-mismatch` quando tutte le occorrenze vengono redatte.
+- **Avanzamento OCR più chiaro**: analisi e anonimizzazione sono ora distinte esplicitamente; nella seconda fase l'interfaccia chiarisce che riusa il testo OCR già in memoria mentre rimuove i dati e ricostruisce il documento.
+
+## [1.7.0-beta.1] - 2026-09-11
+
+### Novita
+- **PDF scansionati nuovamente ricercabili**: una singola passata OCR alimenta analisi, redazione e layer testuale pseudonimizzato. Il testo invisibile contiene gli pseudonimi, mai le entita originali confermate.
+- **Layer fail-closed**: il testo ricercabile viene aggiunto soltanto agli output completi; i documenti `_DA_VERIFICARE` restano raster-only.
+
+### Qualita e compatibilita
+- Gate obbligatorio Poppler/Tesseract italiano: confronto pixel del rendering, estrazione degli pseudonimi con `pdftotext`, assenza degli originali, degli attachment, dei metadata XMP e degli stream sorgente riutilizzati.
+- Corpus PDF ripetuto con distruzione esplicita degli oggetti MuPDF, svuotamento della cache globale e controllo RSS contro crescite monotone significative.
+
+## [1.6.0-beta.2] - 2026-09-11
+
+> Beta di sicurezza sostitutiva: gli output vanno comunque verificati prima di
+> usare documenti reali. Il ritiro remoto della beta.1 richiede il ripristino
+> dell'autenticazione GitHub ed è ancora pendente.
+
+### Sicurezza
+- **Capability di analisi Main-only**: il salvataggio usa un token casuale legato a finestra, file canonico, fingerprint SHA-256 e ledger delle entità. Il Renderer non decide più percorso o modalità di redazione.
+- **Classificazione per pagina e output fail-closed**: pagine raster, errori, match incompleti e rettangoli ambigui producono un esito verificabile; una scansione non può degradare silenziosamente a un overlay.
+- **Ricostruzione raster delle scansioni**: i PDF raster o misti vengono ricostruiti senza copiare stream, attachment, JavaScript, form o metadati del documento originale.
+
+### Qualità e rilascio
+- Nuovo gate Linux obbligatorio con typecheck separato di sorgenti/test, corpus OCR, roundtrip Tesseract italiano e prova di assenza dei pixel tramite Poppler.
+- Tutti i job di packaging dipendono dal gate `quality`; il workflow esegue inoltre una scansione anti-segreti della cronologia.
+- `electron-log` è disattivato globalmente sotto Vitest: la suite non scrive più in `~/Library/Logs`.
+
+## [1.6.0] - non rilasciata
+
+> Versione dedicata ai PDF scansionati: l'app ora capisce da sola se una scansione
+> ha un testo ricercabile affidabile, e rimuove davvero i dati dalle immagini invece
+> di limitarsi a coprirli.
+
+### Novità
+- **Controllo automatico del layer OCR nei PDF scansionati**: l'app riconosce se un PDF è una scansione con testo ricercabile sovrapposto e verifica che quel testo sia allineato all'immagine. Se non lo è, i riquadri di anonimizzazione finirebbero nel punto sbagliato lasciando i nomi leggibili. Il controllo è automatico, non richiede alcuna scelta all'utente e costa circa 35 millesimi di secondo per pagina.
+- **Avviso e nuovo riconoscimento del testo**: quando il controllo trova un problema compare un avviso nella schermata di revisione, con un pulsante per rifare il riconoscimento del testo con il motore interno. L'avviso spiega anche quanto tempo serve e che le entità già modificate a mano verranno ricalcolate.
+- **Valutazione della qualità della scansione**: risoluzione reale dell'immagine, leggibilità del testo, inclinazione e contrasto. Quando la scansione è troppo scadente perché un riconoscimento dia risultati affidabili, l'app lo dice chiaramente e **non** offre un rimedio che non funzionerebbe: invita a verificare a mano.
+- **Valutazione della qualità del testo riconosciuto**: individua i layer OCR illeggibili (mappa caratteri rotta, riconoscimento fatto in un'altra lingua), sia su quelli già presenti nel file sia su quelli prodotti dall'app.
+- **Riconoscimento del testo interno più accurato**: rendering a 300 DPI invece di 150 (a 150 DPI il testo di un atto normale è sotto la dimensione minima dichiarata da Tesseract), raddrizzamento automatico delle scansioni storte e binarizzazione adattiva quando l'illuminazione è disuniforme.
+- **Segnalazione dei file che crescono troppo**: rimuovere davvero i pixel comporta riscrivere l'immagine senza compressione, e un file può diventare molto più grande dell'originale. Quando supera tre volte l'originale o i 20 MB, la schermata finale lo dice — importante per i limiti di dimensione del deposito telematico.
+
+### Fix
+- **I dati anonimizzati nelle scansioni venivano solo coperti, non rimossi**: sui PDF scansionati l'app disegnava un riquadro grigio sopra il nome, ma i pixel originali restavano dentro il file ed erano recuperabili estraendo l'immagine. Ora vengono davvero azzerati. Nei casi in cui l'operazione non è sicura (immagini con trasparenza o spazi colore non standard) l'app ripiega sul riquadro sovrapposto e **lo segnala nella schermata finale** invece di lasciar credere che il dato sia stato rimosso.
+- **Le scansioni con testo ricercabile prendevano il percorso sbagliato**: venivano trattate come PDF digitali perché contengono molto testo, e finivano sul percorso di anonimizzazione che non tocca le immagini.
+- **Avviso di scansione perso**: il messaggio "Il PDF sembra una scansione" prodotto durante la lettura veniva scartato quando l'app passava al riconoscimento ottico.
+- **Rifare l'analisi sporcava il dizionario degli pseudonimi**: una passata scartata lasciava comunque le sue voci nel dizionario di sessione, e lo stesso nome finiva poi su uno pseudonimo diverso (`M. R. (2)` invece di `M. R.`), anche nei documenti successivi.
+- **Avvisi di avanzamento che sparivano**: il primo componente che smetteva di ascoltare gli aggiornamenti di avanzamento zittiva anche tutti gli altri per il resto della sessione.
+- **Conteggio delle entità sostituite errato sui PDF scansionati**: veniva sovrascritto dall'ultima pagina invece di essere sommato.
+- **Immagini PNG/JPG instradate al generatore sbagliato**, con errore invece dell'output.
+
+---
+
 ## [1.5.0] - 2026-03-30
 
 ### Novità

@@ -88,7 +88,7 @@ describe('analyzeText — page-mode LLM (automatico da presenza di pages)', () =
     await analyzeText('full text', config, undefined, pages)
 
     // Deve essere chiamato più volte (la pagina è stata spezzata)
-    expect(detectNamesWithLlm.mock.calls.length).toBeGreaterThan(1)
+    expect(vi.mocked(detectNamesWithLlm).mock.calls.length).toBeGreaterThan(1)
   })
 
   it('con pages fornite ma testo breve, usa chunking fisso se pages è assente', async () => {

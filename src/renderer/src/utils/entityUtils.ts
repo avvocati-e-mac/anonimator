@@ -1,4 +1,46 @@
-import type { DetectedEntity, DocumentAnalysisResult } from '@shared/types'
+import type {
+  BatchAnonymizeRequest, BatchFileItem, DetectedEntity, DocumentAnalysisResult, EntityDecision
+} from '@shared/types'
+
+export interface EntityReference {
+  analysisToken: string
+  entityId: string
+}
+
+export interface MergedEntity extends DetectedEntity {
+  fileCount: number
+  /** Riferimenti opachi alle entita' originali, distinti per documento. */
+  references: EntityReference[]
+  /** Manuali/importate vanno tentate su ogni documento del batch. */
+  applyToAll: boolean
+}
+
+export function toEntityDecision(entity: DetectedEntity, entityId = entity.id): EntityDecision {
+  return {
+    entityId,
+    type: entity.type,
+    originalText: entity.originalText,
+    pseudonym: entity.pseudonym,
+    confirmed: entity.confirmed
+  }
+}
+
+export function buildBatchAnonymizeRequests(
+  files: readonly BatchFileItem[],
+  entities: readonly MergedEntity[]
+): BatchAnonymizeRequest[] {
+  return files.flatMap((file) => {
+    const analysisToken = file.analysisResult?.analysisToken
+    if (!analysisToken) return []
+    const decisions = entities.flatMap((entity) => {
+      const reference = entity.references.find((ref) => ref.analysisToken === analysisToken)
+      if (reference) return [toEntityDecision(entity, reference.entityId)]
+      if (entity.applyToAll) return [toEntityDecision(entity)]
+      return []
+    })
+    return [{ analysisToken, entities: decisions }]
+  })
+}
 
 /**
  * Unisce le entità rilevate da più documenti in una lista deduplicata.
@@ -8,8 +50,8 @@ import type { DetectedEntity, DocumentAnalysisResult } from '@shared/types'
  * - Mantiene il primo pseudonym trovato (sessionManager garantisce coerenza)
  * - Ordina per occurrences desc
  */
-export function mergeEntities(results: DocumentAnalysisResult[]): DetectedEntity[] {
-  const map = new Map<string, DetectedEntity & { fileCount: number }>()
+export function mergeEntities(results: DocumentAnalysisResult[]): MergedEntity[] {
+  const map = new Map<string, MergedEntity>()
 
   for (const result of results) {
     for (const entity of result.entities) {
@@ -18,8 +60,14 @@ export function mergeEntities(results: DocumentAnalysisResult[]): DetectedEntity
       if (existing) {
         existing.occurrences += entity.occurrences
         existing.fileCount += 1
+        existing.references.push({ analysisToken: result.analysisToken, entityId: entity.id })
       } else {
-        map.set(key, { ...entity, fileCount: 1 })
+        map.set(key, {
+          ...entity,
+          fileCount: 1,
+          references: [{ analysisToken: result.analysisToken, entityId: entity.id }],
+          applyToAll: false
+        })
       }
     }
   }

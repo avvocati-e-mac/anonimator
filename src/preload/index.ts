@@ -1,13 +1,20 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import type { IpcRendererEvent } from 'electron'
 import { IPC_CHANNELS } from '@shared/types'
-import type { AnonymizeRequest, LlmConfig, BatchAnonymizeRequest, ModelDownloadProgress } from '@shared/types'
+import type {
+  AnonymizeRequest,
+  LlmConfig,
+  BatchAnonymizeRequest,
+  ModelDownloadProgress,
+  ProcessDocumentOptions
+} from '@shared/types'
 
 // Espone all'interfaccia grafica SOLO le funzioni strettamente necessarie.
 // Il renderer non può fare nient'altro — non vede Node.js, non vede il filesystem.
 contextBridge.exposeInMainWorld('electronAPI', {
-  // Invia un file al backend per l'analisi NER
-  processDocument: (filePath: string) =>
-    ipcRenderer.invoke(IPC_CHANNELS.DOC_PROCESS, { filePath }),
+  // Invia un file al backend per l'analisi NER (opzioni: forzare OCR, DPI di rendering)
+  processDocument: (filePath: string, options?: ProcessDocumentOptions) =>
+    ipcRenderer.invoke(IPC_CHANNELS.DOC_PROCESS, { filePath, ...options }),
 
   // Invia le entità confermate per l'anonimizzazione
   anonymizeDocument: (request: AnonymizeRequest) =>
@@ -17,14 +24,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   batchAnonymize: (requests: BatchAnonymizeRequest[]) =>
     ipcRenderer.invoke(IPC_CHANNELS.BATCH_ANONYMIZE, requests),
 
+  // Rilascia capability e artefatti quando si abbandona la revisione.
+  releaseAnalysis: (analysisToken: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.ANALYSIS_RELEASE, { analysisToken }),
+
   // Resetta il dizionario pseudonimi della sessione corrente
   resetSession: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_RESET),
 
   // Ascolta aggiornamenti di avanzamento (emessi dal Main durante il processing)
   onProgress: (callback: (progress: { stage: string; percent: number; message: string }) => void) => {
-    ipcRenderer.on(IPC_CHANNELS.DOC_PROGRESS, (_event, data) => callback(data))
+    // Handler nominato: removeListener rimuove SOLO questo, mai il listener globale
+    // registrato da App.tsx al mount (removeAllListeners li ucciderebbe entrambi).
+    const handler = (_event: IpcRendererEvent, data: { stage: string; percent: number; message: string }): void =>
+      callback(data)
+    ipcRenderer.on(IPC_CHANNELS.DOC_PROGRESS, handler)
     // Restituisce una funzione per rimuovere il listener (evita memory leak)
-    return () => ipcRenderer.removeAllListeners(IPC_CHANNELS.DOC_PROGRESS)
+    return () => { ipcRenderer.removeListener(IPC_CHANNELS.DOC_PROGRESS, handler) }
   },
 
   // Apre la cartella del file output nel Finder/Explorer (gestito dal main process)
@@ -101,7 +116,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Modello NER: ascolta progresso download
   onModelDownloadProgress: (cb: (data: ModelDownloadProgress) => void) => {
-    ipcRenderer.on(IPC_CHANNELS.MODEL_DOWNLOAD_PROGRESS, (_e, data) => cb(data as ModelDownloadProgress))
-    return () => ipcRenderer.removeAllListeners(IPC_CHANNELS.MODEL_DOWNLOAD_PROGRESS)
+    // Stesso fix di onProgress: handler nominato + removeListener specifico.
+    const handler = (_event: IpcRendererEvent, data: ModelDownloadProgress): void => cb(data)
+    ipcRenderer.on(IPC_CHANNELS.MODEL_DOWNLOAD_PROGRESS, handler)
+    return () => { ipcRenderer.removeListener(IPC_CHANNELS.MODEL_DOWNLOAD_PROGRESS, handler) }
   },
 })

@@ -2,7 +2,7 @@
 
 Documentazione tecnica per sviluppatori. Descrive architettura, flussi di dati, logica di anonimizzazione e componenti del software.
 
-**Versione documentata:** 1.5.0
+**Versione documentata:** 1.8.0
 **Stack:** Electron 40 + React 18 + TypeScript (strict mode)
 **Scopo:** Pseudonimizzazione locale di documenti legali italiani (PDF, DOCX, ODT, TXT, immagini). Nessuna connessione di rete durante l'elaborazione.
 
@@ -165,17 +165,18 @@ const ProcessDocumentSchema = z.object({
 });
 
 const AnonymizeRequestSchema = z.object({
-  filePath: z.string().min(1),
+  analysisToken: z.string().regex(/^[a-f0-9]{64}$/),
   entities: z.array(z.object({
-    id: z.string(),
-    type: z.string(),
+    entityId: z.string().min(1),
+    type: EntityTypeSchema,
     originalText: z.string(),
     pseudonym: z.string(),
-    occurrences: z.number(),
     confirmed: z.boolean(),
-  })),
-});
+  })).superRefine(rejectDuplicateEntityIds),
+}).strict();
 ```
+
+Il token è una capability casuale a 256 bit conservata nel Main e legata a `webContents.id`, path canonico, formato, dimensione, mtime, SHA-256, classificazione per pagina e ledger delle entità. Prima del salvataggio il fingerprint viene ricalcolato. Il Renderer non può dichiarare path, numero atteso di occorrenze, tipo di layer OCR o strategia di redazione.
 
 ---
 
@@ -419,9 +420,10 @@ interface TextToken {
 3. Raggruppa i token in righe logiche per coordinata Y (tolleranza: 3pt)
 4. Rileva heading: se la dimensione font è ≥ 1.6× la mediana → `# Heading`; se ≥ 1.3× → `## Subheading`
 5. Normalizza lettere spaziate (`L A C O R T E` → `LACORTE`) tramite `normalizeSpacedLetters()`
-6. **Rilevamento PDF scansionato:** se la media caratteri/pagina < 80, imposta `isScanned: true` e il flusso principale passa automaticamente al parser OCR
+6. Classifica **tutte** le pagine come `digital`, `scan-aligned`, `scan-untrusted` o `page-error`; il campionamento è soltanto diagnostico
+7. Se almeno una pagina è raster, l'intero PDF segue il percorso di ricostruzione raster
 
-I `TextToken` sono fondamentali per il generatore PDF (sezione 9.4): servono a localizzare le entità nel PDF e posizionare i rettangoli di copertura.
+I `TextToken` servono all'analisi e all'anteprima; il routing autorevole e il ledger restano nel registro Main associato al token.
 
 ### 6.5 Parser OCR (`parsers/ocrParser.ts`)
 
@@ -433,9 +435,9 @@ parsePdfWithOcr(filePath: string): Promise<ParseResult> // PDF scansionato
 ```
 
 **Per PDF scansionato:**
-1. Per ogni pagina, renderizza in PNG a 150 DPI usando **MuPDF** (`page.toPixmap()`)
-2. Esegue OCR sull'immagine PNG
-3. Aggrega il testo e la confidenza media
+1. Per ogni pagina, renderizza usando **MuPDF** con matrice e origine della pixmap registrate
+2. Esegue una sola `Tesseract.recognize` e conserva in RAM l'artefatto ridotto (parole, bbox, confidence, riga, pagina e matrice)
+3. Riusa lo stesso artefatto per testo NER, box di redazione e layer ricercabile
 4. Se la confidenza di una pagina è < 60%, aggiunge un warning
 5. Restituisce `{ ...result, isScanned: true }` — propagato fino al Renderer
 
@@ -445,7 +447,7 @@ parsePdfWithOcr(filePath: string): Promise<ParseResult> // PDF scansionato
 3. Il `workerPath` viene risolto con path assoluto: `app.asar.unpacked` in produzione, `createRequire.resolve()` in dev
 4. Riconosce il testo e restituisce `{text, confidence}`
 
-**Nota su `isScanned`:** il flag `isScanned: true` propagato da `parsers/index.ts` viene incluso nel `DocumentAnalysisResult` e passato con `AnonymizeRequest`. Il generatore di output lo usa per scegliere tra `generatePdf` (PDF nativo) e `generatePdfScanned` (PDF scansionato con bounding box OCR).
+**Cache OCR:** è esclusivamente RAM, legata all'analysis token e limitata globalmente a 128 MiB. Non ha TTL né eviction dei token attivi; viene rilasciata su reset, redo OCR, abbandono, chiusura o termine del workflow.
 
 ### 6.6 Parser Markdown (`parsers/markdownParser.ts`)
 
@@ -527,6 +529,7 @@ Eseguito sempre, indipendentemente dalla disponibilità del modello BERT. Tutte 
 - `CODICE_FISCALE_PATTERN_LENIENT` (default): accetta qualsiasi lettera in posizione mese. Usato su documenti OCR dove le lettere possono essere distorte (es. `B→8`, `O→0`).
 - `CODICE_FISCALE_PATTERN_STRICT`: valida la lettera di mese (`[ABCDEHLMPRST]`) e il range giorno (`01–71`). Riduce falsi positivi su documenti nativi.
 - Il flag `strictCF` (default `false`) seleziona la variante — configurabile via `setStrictCF()` nel Main. Non esposto nell'UI del Renderer.
+- `PARTITA_IVA_PATTERN` richiede l'etichetta `P.IVA` o `partita IVA`: una sequenza isolata di undici cifre può essere un protocollo e non viene proposta automaticamente.
 
 Questi pattern usano `\b` (word boundary) anziché `^`/`$` perché il matching avviene su testo estratto da paragrafi, non su righe isolate.
 
@@ -543,17 +546,23 @@ Rileva titoli (`Dott.`, `Avv.`, `Prof.`, `Ing.`), nomi (anche con apostrofi come
 
 #### Pattern per strutture legali (Step 0b)
 
-12 pattern in `STRUCTURED_LEGAL_PATTERNS`. Le entità contestuali prodotte da questi pattern hanno `source: 'regex'` e possono fungere da **booster** per entità BERT sotto soglia (vedi §7.2 score boosting).
+I pattern in `STRUCTURED_LEGAL_PATTERNS` sono vincolati da contesto legale o da etichette di campo. Le entità prodotte hanno `source: 'regex'`; i valori PERSONA a token singolo sono ammessi soltanto nei campi `Cognome:`/`Nome:`. Le organizzazioni contestuali restano opzionali (`confirmed: false`).
 
 | ID | Costante | Tipo rilevato | Esempio |
 |----|---------|---------------|---------|
 | A1 | `PROCESSO_PARTE_PATTERN` | PERSONA | `ricorrente: MARIO ROSSI` |
 | A2 | `DIFENSORE_PATTERN` | PERSONA | `difeso dall'avv. ANNA BIANCHI` |
 | A3 | `ALLCAPS_NAME_PATTERN` | PERSONA | `COLOMBO LUIGI` (su riga propria) |
+| A4 | `PERSONA_FIELD_PATTERN` | PERSONA | `Cognome: Neri` / `N0ME: LUCA` |
+| A5 | `DIPENDENTE_PATTERN` | PERSONA | `Dipendente: Sara Conti` |
+| A6 | `DATORE_LAVORO_PATTERN` | ORGANIZZAZIONE | `Datore di lavoro: Officina Gamma S.r.l.` |
 | B0 | `LUOGO_NASCITA_PATTERN` | LUOGO_NASCITA | `nato a Napoli il 23 luglio 1968` |
+| B0a | `LUOGO_NASCITA_FIELD_PATTERN` | LUOGO_NASCITA | `Luogo di nascita: Cittafinta` |
 | B1 | `DATA_NASCITA_PATTERN` | DATA_NASCITA | `nato a Roma il 15/03/1980` |
 | B2a | `INDIRIZZO_PATTERN_STANDARD` | INDIRIZZO | `residente in Via Roma 123, 00100` |
 | B2b | `INDIRIZZO_PATTERN_CORSO` | INDIRIZZO | `domiciliato in Corso Vittorio 12, 10100` (NON "corso di indagini") |
+| B2c | `INDIRIZZO_PATTERN_NO_CAP` | INDIRIZZO | `residente in Via delle Querce 8` |
+| B2d | `INDIRIZZO_FIELD_PATTERN` | INDIRIZZO | `Residenza:` seguito dall'indirizzo |
 | B3 | `NUMERO_DOCUMENTO_PATTERN` | NUMERO_DOCUMENTO | `carta d'identità n. CA 5528847` / `rilasciata con n. AB1234567` |
 | C1 | `POLIZZA_PARTE_PATTERN` | PERSONA | `Contraente: LUIGI ROSSI` |
 | C2 | `CONTRATTO_PARTE_PATTERN` | PERSONA | `tra MARIO ROSSI, nato a...` |
@@ -561,7 +570,9 @@ Rileva titoli (`Dott.`, `Avv.`, `Prof.`, `Ing.`), nomi (anche con apostrofi come
 | D1 | `AVV_LISTA_PATTERN` | PERSONA | `avvocati MARIO ROSSI, ANNA BIANCHI` |
 | D2 | `PKI_FIRMA_PATTERN` | PERSONA | `Firmato Da: COLOMBO LUIGI Emesso Da:` |
 | E1 | `TITOLO_NOME_PATTERN` | PERSONA | `Ing. Stefano Moretti Ricci` / `Dott.ssa Carla Russo` |
-| F1 | `TARGA_PATTERN` | TARGA | `FX 523 KL` / `AB123CD` |
+| F1 | `TARGA_PATTERN` | TARGA | `veicolo targato FX 523 KL` / `tg. AB123CD` |
+| G1 | `TELEFONO_OCR_FIELD_PATTERN` | TELEFONO | `Telefono: 333 I234567` |
+| G2 | `CODICE_FISCALE_OCR_FIELD_PATTERN` | CODICE_FISCALE | `Codice fiscale: VRDGLI8AC52Z4O4Q` |
 
 **Nota B2 — split `INDIRIZZO_PATTERN_CORSO`:** Il vecchio pattern unificato includeva "Corso" come prefisso indistintamente, generando falsi positivi su formule processuali penali ("nel corso delle indagini", "corso di istruzione"). Il pattern è ora separato: `INDIRIZZO_PATTERN_STANDARD` gestisce Via/Viale/Piazza/Largo/ecc.; `INDIRIZZO_PATTERN_CORSO` matcha "Corso" **solo se preceduto da contesto di residenza/domicilio** (es. "residente in Corso Roma 15, 00100").
 
@@ -639,7 +650,11 @@ Entità BERT con score nel range `[0.35, threshold)` — sotto soglia ma con seg
 
 **Organizzazioni opzionali (v1.5.0+):**
 
-Le entità `ORGANIZZAZIONE` rilevate da BERT ricevono `confirmed: false` — appaiono in grigio (opacity-40) nella lista entità dell'EntityReview. L'utente le seleziona manualmente se desidera anonimizzarle. Le organizzazioni rilevate dai pattern regex Step 0b (es. strutture contrattuali) mantengono `confirmed: true`.
+Le entità `ORGANIZZAZIONE` rilevate da BERT ricevono `confirmed: false` — appaiono in grigio (opacity-40) nella lista entità dell'EntityReview. L'utente le seleziona manualmente se desidera anonimizzarle. Anche il datore di lavoro rilevato dal nuovo pattern contestuale resta opzionale; nessuna organizzazione viene anonimizzata senza conferma dell'utente.
+
+### 7.3 Evaluation sintetica del recall
+
+`tests/fixtures/nerRecallCorpus.ts` contiene esclusivamente casi inventati per atti legali, moduli amministrativi e distorsioni OCR. `tests/nerRecallEvaluation.test.ts` attraversa `analyzeText()` senza modello o LLM e calcola TP/FP/FN, precision, recall e F1 per tipo, micro e macro con confronto exact-match occurrence-aware. Il report espone solo conteggi aggregati, mai i valori delle entità. I controlli negativi devono restare a zero falsi positivi.
 
 **Co-reference resolution:**
 
@@ -913,16 +928,11 @@ Molto simile a DOCX, ma con la struttura XML di OpenDocument. Il testo può esse
 - Per gli span: cerca il tag completo `<text:span...>TESTO</text:span>`
 - Per il testo diretto: cerca il testo tra i tag adiacenti
 
-### 9.4 Strategia PDF — due percorsi in base al tipo di PDF
+### 9.4 Strategia PDF — routing Main-only e fail-closed
 
-File: `outputGenerators/pdfGenerator.ts`
+File: `outputGenerators/pdfSafeGenerator.ts`
 
-La funzione `generatePdf()` riceve un flag `options.isScanned` e instrada verso due strategie distinte:
-
-```typescript
-generatePdf(filePath, entities, { isScanned: true })   // → generatePdfScanned()
-generatePdf(filePath, entities, { isScanned: false })  // → redazione MuPDF + overlay pdf-lib
-```
+Il Renderer invia soltanto il token di analisi e le decisioni sulle entità. Il Main recupera classificazione per pagina e ledger dal registro autenticato. Un PDF interamente digitale usa il percorso vettoriale; la presenza di una sola pagina raster rende l'intero documento `flattened-scan`.
 
 ---
 
@@ -954,8 +964,7 @@ Dopo la redazione, pdf-lib aggiunge i rettangoli colorati e il testo dello pseud
 
 ```
 Per ogni box di redazione registrato nella Fase 1:
-  1. Converti coordinate MuPDF (Y=0 in alto) → pdf-lib (Y=0 in basso):
-     pdfY = pageHeight - box.y1
+  1. Converti i box con `page.getTransform()` nello spazio utente PDF
 
   2. Disegna rettangolo grigio scuro:
      page.drawRectangle({ color: rgb(0.15, 0.15, 0.15) })
@@ -969,25 +978,20 @@ Per ogni box di redazione registrato nella Fase 1:
 
 ---
 
-#### 9.4b PDF scansionato — overlay OCR word-level (`generatePdfScanned`)
+#### 9.4b PDF raster o misto — ricostruzione D1
 
-Per PDF con solo immagini raster (nessun layer testuale). La strategia è:
+Il generatore crea un PDF nuovo, senza copiare catalogo, attachment, form, JavaScript, link, outline, metadata, `/Names`, `/EmbeddedFiles` o `/AF`:
 
 ```
 Per ogni pagina:
-  1. MuPDF renderizza la pagina in PNG a 150 DPI (matrix = scale(150/72))
-  2. Tesseract OCR con blocks=true → word-level bounding boxes (pixel)
-  3. Per ogni entità confermata:
-     a. Cerca le parole OCR consecutive che formano il testo dell'entità
-        (normalizzazione: rimuove punteggiatura esterna, uppercase, spazi)
-     b. Vincolo: le parole devono essere sulla stessa riga
-        (center Y distante ≤ 1.5× altezza parola)
-     c. Calcola bbox unione delle parole matched (pixel → punti PDF via scale)
-     d. Aggiunge padding di 1pt
-  4. pdf-lib disegna rettangolo grigio scuro + pseudonimo centrato
+  1. MuPDF renderizza sequenzialmente in DeviceRGB, senza alpha e con annotazioni/widget visibili inglobati.
+  2. Il DPI deriva dalla mediana pesata per area dei raster; le pagine digitali di un PDF misto usano 300 DPI. Oltre 50 milioni di pixel la generazione fallisce senza output.
+  3. I bbox dell'unica passata OCR vengono trasformati da pixel a spazio pagina mediante l'inversa della matrice registrata, quindi nella pixmap corrente.
+  4. Rettangoli e pseudonimi sono disegnati direttamente nei pixel; la pagina viene codificata JPEG colore qualità 85.
+  5. Il file temporaneo viene validato su ogni pagina e rinominato atomicamente. Non esiste fallback overlay.
 ```
 
-**Coordinate:** i pixel OCR vengono convertiti in punti PDF dividendo per `scale` (150/72 ≈ 2.08) e sommando `bounds[0]`/`bounds[1]` della pagina MuPDF. L'asse Y viene ribaltato per pdf-lib (`pdfY = pageHeight - y1Pt`).
+Un esito incompleto usa il suffisso `_DA_VERIFICARE.pdf` e resta raster-only. Errori di sorgente modificato, risorse, rendering, validazione o scrittura non producono alcun `SaveResult`.
 
 **Confronto visivo prima/dopo (entrambe le strategie):**
 
@@ -997,7 +1001,9 @@ DOPO:   "Il sig. [███M. R.███], residente in [████IND_001█
                   ▲ grigio scuro         ▲ grigio scuro
 ```
 
-Il font usato è Helvetica (Standard PDF, non richiede embedding di font aggiuntivi).
+#### 9.4c Layer ricercabile v1.7
+
+Solo se l'esito è `complete`, `searchableLayer.ts` incorpora Noto Sans tramite `@pdf-lib/fontkit` e scrive operatori di testo con `TextRenderingMode.Invisible` (`Tr 3`). Le parole non sensibili restano nei rispettivi box; ogni sequenza sensibile è sostituita dal solo pseudonimo. Il testo originale confermato non viene inserito nel content stream o nella mappa ToUnicode. I gate verificano identità visiva, presenza degli pseudonimi con `pdftotext` e assenza degli originali.
 
 ### 9.5 Riepilogo strategie per formato
 
@@ -1016,20 +1022,18 @@ Il font usato è Helvetica (Standard PDF, non richiede embedding di font aggiunt
 │ ODT      │ Come DOCX ma con namespace OpenDocument.                │
 │          │ Gestisce <text:span> e testo diretto.                   │
 │          │                                                         │
-│ PDF      │ Due strategie in base al flag isScanned:                 │
+│ PDF      │ Routing per pagina deciso dal registro Main-only:        │
 │ (nativo) │ 1) MuPDF: cerca il testo, crea annotazioni Redact,      │
 │          │    rimuove i glifi dal PDF (redazione irreversibile).    │
 │          │ 2) pdf-lib: sovrappone rettangoli grigi con lo          │
 │          │    pseudonimo centrato in Helvetica.                     │
 │          │                                                         │
-│ PDF      │ 1) MuPDF renderizza ogni pagina in PNG a 150 DPI.       │
-│ (scans.) │ 2) Tesseract OCR → word-level bounding boxes (pixel).   │
-│          │ 3) pdf-lib: rettangolo grigio + pseudonimo sulle parole  │
-│          │    che corrispondono alle entità (coordinate convertite  │
-│          │    da pixel OCR a punti PDF con padding 1pt).            │
+│ PDF      │ 1) Nuovo PDF raster, DeviceRGB/JPEG q85.                │
+│ (scans.) │ 2) Box dalla singola passata OCR, trasformati con       │
+│          │    matrice completa; anonimizzazione impressa nei pixel.│
+│          │ 3) Layer invisibile pseudonimizzato solo se completo.   │
 │          │                                                         │
-│ Immagini │ Come PDF scansionato (isScanned=true). Output PDF con   │
-│          │ le entità oscurate tramite bounding box OCR word-level.  │
+│ Immagini │ Come PDF scansionato: output ricostruito e fail-closed. │
 └──────────┴─────────────────────────────────────────────────────────┘
 ```
 
@@ -1116,6 +1120,8 @@ L'app React è strutturata come una macchina a stati con 7 schermate, gestite da
 #### `ProcessingScreen.tsx`
 
 - Barra di progresso animata (0-100%)
+- Titolo neutro "Elaborazione in corso", valido sia per l'analisi sia per la successiva generazione dell'output
+- Messaggi distinti per evitare l'impressione di un secondo OCR: il riconoscimento del testo è indicato durante l'analisi; durante l'anonimizzazione viene dichiarato il riuso del testo OCR già in memoria e la ricostruzione del documento
 - Mostra il nome del file in elaborazione
 - Pulsante "Annulla" → `reset()`
 
@@ -1319,7 +1325,13 @@ npm start              # Dev mode (electron-vite dev, hot reload)
 npm run ui:dev         # Solo renderer Vite (senza Electron)
 npm run ui:build       # Build del renderer
 npm run typecheck      # Verifica TypeScript
+npm run typecheck:tests # Verifica tipi di test e fixture TypeScript
+npm run typecheck:fixtures # Verifica la sintassi dei generatori fixture MJS
 npm test               # Vitest unit test
+npm run test:ner-recall # Evaluation sintetica precision/recall/F1 NER
+npm run test:corpus    # Corpus OCR
+npm run test:roundtrip # Roundtrip OCR reale (richiede ita.traineddata)
+npm run test:pixel-leak # Prova pixel con pdfimages/Poppler
 npm run build:electron # Pacchettizzazione completa
 ```
 
@@ -1338,8 +1350,13 @@ File: `.github/workflows/release.yml`
 Trigger: push di un tag `v*` (es. `git tag v1.1.5 && git push origin master --tags`)
 
 ```
-             git push tag v1.1.5
+             push / pull request / tag
                      │
+                     ▼
+              quality (Linux)
+          typecheck + unit + corpus
+          roundtrip + pixel-leak
+                     │ (solo tag v*)
         ┌────────────┼────────────┬──────────────┐
         ▼            ▼            ▼              ▼
    build-windows  build-mac    build-mac     build-linux
@@ -1359,7 +1376,11 @@ Trigger: push di un tag `v*` (es. `git tag v1.1.5 && git push origin master --ta
                      changelog da CHANGELOG.md)
 ```
 
-Ogni job di build:
+Il job Linux `quality` installa Poppler e i dati italiani di Tesseract, esegue
+la scansione anti-segreti, tutti i typecheck e i gate unit/corpus/roundtrip/pixel-leak.
+Un prerequisito esterno assente causa errore: i test di sicurezza non usano `skipIf`.
+
+Ogni job di build, avviato soltanto per un tag e dopo `quality` verde:
 1. `npm ci` — installazione pulita dipendenze
 2. `npx @electron/rebuild --force` — ricompila moduli nativi per l'ABI di Electron
 3. `npx electron-vite build` — build renderer + main + preload
@@ -1470,6 +1491,7 @@ File: `tests/` — Framework: Vitest
 ```bash
 npm test              # Esegue tutti i test
 npm run typecheck     # Verifica tipi (senza eseguire)
+npm run typecheck:all # Sorgenti, test e sintassi dei generatori fixture
 ```
 
 ---

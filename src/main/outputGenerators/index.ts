@@ -1,9 +1,36 @@
-import type { DocumentFormat, DetectedEntity, SaveResult } from '@shared/types'
+import type { DocumentFormat, DetectedEntity, PdfLayerKind, SaveResult } from '@shared/types'
+import log from 'electron-log'
 import { generateTxt } from './txtGenerator'
 import { generateDocx } from './docxGenerator'
 import { generateOdt } from './odtGenerator'
-import { generatePdf } from './pdfGenerator'
+import { generatePdf, generatePdfFromImage } from './pdfGenerator'
+import type { PdfGenerateOptions } from './pdfGenerator'
 import { generateMarkdown } from './markdownGenerator'
+
+/**
+ * Risultato di generateOutput.
+ *
+ * Estende `SaveResult` in modo puramente additivo: i campi diagnostici servono al
+ * Renderer per avvisare l'utente (dimensione esplosa o output parziale). `SaveResult`
+ * in @shared/types non viene modificato qui — i campi extra sono strutturalmente
+ * compatibili, quindi un chiamante tipizzato su SaveResult continua a compilare.
+ */
+export type GenerateOutputResult = SaveResult | {
+  outputPath: string
+  entitiesReplaced: number
+  sizeRatio?: number
+  sizeWarning?: boolean
+  /** I formati non-PDF non hanno un percorso di redazione PDF. */
+  redactionMode?: undefined
+}
+
+export interface GenerateOutputOptions {
+  isScanned?: boolean
+  layerKind?: PdfLayerKind
+  ocrAligned?: boolean
+  /** Capability Main-only; non fa parte del payload Renderer dopo la validazione IPC. */
+  analysisToken?: string
+}
 
 /**
  * Genera il file anonimizzato nel formato appropriato.
@@ -13,8 +40,8 @@ export async function generateOutput(
   filePath: string,
   format: DocumentFormat,
   entities: DetectedEntity[],
-  options: { isScanned?: boolean } = {}
-): Promise<SaveResult> {
+  options: GenerateOutputOptions = {}
+): Promise<GenerateOutputResult> {
   switch (format) {
     case 'txt':
       return generateTxt(filePath, entities)
@@ -26,8 +53,12 @@ export async function generateOutput(
       return generateOdt(filePath, entities)
 
     case 'pdf':
-    case 'image': // le immagini sono già state OCR-izzate → output come PDF
-      return generatePdf(filePath, entities, { isScanned: options.isScanned })
+      return generatePdf(filePath, entities, await resolvePdfOptions(filePath, options))
+
+    case 'image':
+      // Un PNG/JPG non è un PDF: prima veniva passato a generatePdf, che lo apriva come
+      // documento PDF e sollevava eccezione. Va incapsulato e redatto come scansione.
+      return generatePdfFromImage(filePath, entities, options)
 
     case 'markdown':
       return generateMarkdown(filePath, entities)
@@ -36,5 +67,39 @@ export async function generateOutput(
       const _exhaustive: never = format
       throw new Error(`Formato output non supportato: ${_exhaustive}`)
     }
+  }
+}
+
+/**
+ * Completa le opzioni di redazione quando il chiamante non porta `layerKind`.
+ *
+ * PERCHÉ SERVE: `BatchAnonymizeRequest` non trasporta `layerKind`, quindi le scansioni
+ * anonimizzate in batch prenderebbero il percorso sbagliato e continuerebbero a
+ * lasciare i dati personali nei pixel. Una correzione di privacy che funziona in uno
+ * solo dei due flussi è peggio che non spedirla: qui il dato mancante viene ricavato
+ * da sé. L'import è dinamico perché ocrLayerCheck carica MuPDF (CLAUDE.md, Livello 2).
+ */
+async function resolvePdfOptions(
+  filePath: string,
+  options: GenerateOutputOptions
+): Promise<PdfGenerateOptions> {
+  try {
+    const { analyzePdfQuality } = await import('../services/ocrLayerCheck')
+    const { report, safety } = await analyzePdfQuality(filePath)
+    return {
+      isScanned: options.isScanned,
+      layerKind: report.layerKind,
+      ocrAligned: safety.existingTextLayerUsable,
+      ocrDpi: report.suggestedOcrDpi,
+      routing: safety.routing,
+      pageSafety: safety.pages,
+      analysisToken: options.analysisToken,
+    }
+  } catch (err) {
+    // In dubbio si è prudenti: senza report si mantiene il comportamento del chiamante.
+    log.warn('generateOutput: analisi layer OCR non riuscita, opzioni invariate', {
+      code: err instanceof Error ? err.name : 'unknown'
+    })
+    return { ...options, routing: 'flattened-scan' }
   }
 }

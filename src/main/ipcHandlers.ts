@@ -12,7 +12,16 @@ import { sessionManager } from './services/sessionManager'
 import { settingsManager } from './services/settingsManager'
 import { testLlmConnection, listLlmModels, SYSTEM_PROMPT_IT, SYSTEM_PROMPT_EN } from './services/llmService'
 import { detectFormat, extractText } from './parsers/index'
+import { anonymizationProgressMessage, buildOcrProgressMessage, ocrProgressPercent } from './services/ocrProgressMessage'
 import { generateOutput } from './outputGenerators/index'
+import { analysisRegistry, AnalysisTokenError } from './services/analysisRegistry'
+import { ocrArtifactCache } from './services/ocrArtifactCache'
+import type {
+  EntityDecision,
+  EntityRedactionOutcome,
+  PartialReason,
+  SaveResult,
+} from '@shared/types'
 
 function getSessionDictPath(): string {
   return join(app.getPath('userData'), 'anonimator-session.json')
@@ -30,28 +39,43 @@ const ProcessDocumentSchema = z.object({
           p.toLowerCase().endsWith(ext)
         ),
       { message: 'Formato file non supportato' }
-    )
-})
-
-const AnonymizeRequestSchema = z.object({
-  filePath: z.string().min(1),
-  entities: z.array(
-    z.object({
-      id: z.string(),
-      type: z.string(),
-      originalText: z.string(),
-      pseudonym: z.string(),
-      occurrences: z.number().int().nonnegative(),
-      confirmed: z.boolean()
-    })
-  ),
-  isScanned: z.boolean().optional()
+    ),
+  // Forza l'OCR interno ignorando il layer di testo esistente (dopo banner di layer disallineato)
+  forceOcr: z.boolean().optional(),
+  // DPI di rendering per l'OCR forzato — clamp ragionevole per evitare rendering abnormi
+  ocrDpi: z.number().int().min(72).max(1200).optional()
 })
 
 const EntityTypeEnum = z.enum([
   'PERSONA', 'ORGANIZZAZIONE', 'LUOGO', 'CODICE_FISCALE',
-  'PARTITA_IVA', 'IBAN', 'EMAIL', 'TELEFONO', 'DATA_NASCITA', 'INDIRIZZO', 'NUMERO_DOCUMENTO'
+  'PARTITA_IVA', 'IBAN', 'EMAIL', 'TELEFONO', 'DATA_NASCITA',
+  'LUOGO_NASCITA', 'INDIRIZZO', 'NUMERO_DOCUMENTO', 'TARGA'
 ])
+
+const EntityDecisionSchema = z.object({
+  entityId: z.string().min(1).max(128),
+  type: EntityTypeEnum,
+  originalText: z.string().trim().min(1).max(500),
+  pseudonym: z.string().trim().min(1).max(200),
+  confirmed: z.boolean(),
+}).strict()
+
+export const AnonymizeRequestSchema = z.object({
+  analysisToken: z.string().regex(/^[a-f0-9]{64}$/),
+  entities: z.array(EntityDecisionSchema).max(10_000),
+}).strict().superRefine((request, context) => {
+  const seen = new Set<string>()
+  request.entities.forEach((entity, index) => {
+    if (seen.has(entity.entityId)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['entities', index, 'entityId'],
+        message: 'ID entità duplicato',
+      })
+    }
+    seen.add(entity.entityId)
+  })
+})
 
 const LlmConfigSchema = z.object({
   enabled: z.boolean(),
@@ -78,29 +102,134 @@ function sendProgress(stage: string, percent: number, message: string): void {
   }
 }
 
+function toGeneratorEntities(
+  decisions: EntityDecision[],
+  ledger: Map<string, { expectedOccurrences: number | null }>,
+): import('@shared/types').DetectedEntity[] {
+  return decisions.map((decision) => ({
+    id: decision.entityId,
+    type: decision.type,
+    originalText: decision.originalText,
+    pseudonym: decision.pseudonym,
+    confirmed: decision.confirmed,
+    occurrences: ledger.get(decision.entityId)?.expectedOccurrences ?? 1,
+    expectedOccurrences: ledger.get(decision.entityId)?.expectedOccurrences ?? null,
+  }))
+}
+
+function normalizeSaveResult(
+  generated: Awaited<ReturnType<typeof generateOutput>>,
+  decisions: EntityDecision[],
+  ledger: Map<string, { expectedOccurrences: number | null }>,
+  hasAnalysisPageError: boolean,
+  redactionMode: SaveResult['redactionMode'],
+): SaveResult {
+  const richer = generated as typeof generated & { outcomes?: EntityRedactionOutcome[]; partialReasons?: PartialReason[] }
+  const outcomes = richer.outcomes ?? decisions.filter((entity) => entity.confirmed).map((entity) => ({
+    entityId: entity.entityId,
+    expectedOccurrences: ledger.get(entity.entityId)?.expectedOccurrences ?? null,
+    // I generator legacy non espongono ancora un ledger per entità. Zero è il
+    // solo valore fail-closed: non si dichiara completa una sostituzione non provata.
+    matchedOccurrences: 0,
+    redactedOccurrences: 0,
+    ambiguousOccurrences: 0,
+    rejectedOccurrences: 0,
+  }))
+  const reasons = new Set<PartialReason>(richer.partialReasons ?? [])
+  if (hasAnalysisPageError) reasons.add('analysis-page-error')
+  for (const outcome of outcomes) {
+    const complete = outcome.expectedOccurrences === null
+      ? outcome.redactedOccurrences > 0
+      : outcome.redactedOccurrences === outcome.expectedOccurrences
+    if (!complete) reasons.add(outcome.redactedOccurrences === 0 ? 'entity-unmatched' : 'entity-count-mismatch')
+    if (outcome.ambiguousOccurrences > 0) reasons.add('ambiguous-overlap')
+    if (outcome.rejectedOccurrences > 0) reasons.add('rejected-rectangle')
+  }
+  return {
+    outputPath: generated.outputPath,
+    safetyStatus: reasons.size === 0 ? 'complete' : 'partial',
+    partialReasons: [...reasons],
+    outcomes,
+    entitiesReplaced: outcomes.filter((outcome) => outcome.redactedOccurrences > 0).length,
+    redactionMode,
+    sizeRatio: generated.sizeRatio,
+    sizeWarning: generated.sizeWarning,
+  }
+}
+
+function ipcError(error: unknown): { error: string; code?: string } {
+  if (error instanceof AnalysisTokenError) return { error: error.message, code: error.code }
+  const message = error instanceof Error ? error.message : String(error)
+  return { error: `Errore durante l'anonimizzazione: ${message}` }
+}
+
 // ─── Registrazione handler ────────────────────────────────────────────────────
 
 export function registerIpcHandlers(): void {
+  app.once('before-quit', () => analysisRegistry.clear())
 
   // Handler: avvia analisi documento
-  ipcMain.handle(IPC_CHANNELS.DOC_PROCESS, async (_event, payload: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.DOC_PROCESS, async (event, payload: unknown) => {
     const parsed = ProcessDocumentSchema.safeParse(payload)
     if (!parsed.success) {
       log.warn('IPC doc:process — payload non valido', parsed.error.flatten())
       return { error: 'Formato file non supportato o percorso non valido.' }
     }
 
-    const { filePath } = parsed.data
+    const { filePath, forceOcr, ocrDpi } = parsed.data
     const llmConfig = settingsManager.getLlmConfig()
 
+    let pendingOcrArtifactHandle: string | undefined
     try {
+      if (forceOcr) await analysisRegistry.invalidateForPath(event.sender.id, filePath)
       // Fase 1: rilevamento formato e parsing
       sendProgress('parsing', 10, 'Lettura documento...')
       const format = detectFormat(filePath)
       log.info('Inizio elaborazione documento', { format })
 
-      sendProgress('parsing', 30, 'Estrazione testo...')
-      const { text, pageCount, warnings: parseWarnings, isScanned: docIsScanned, previewHtml } = await extractText(filePath, format)
+      // Se si sta rifacendo l'OCR (forceOcr), la passata precedente potrebbe aver già
+      // arricchito e registrato pseudonimi nel dizionario di sessione (enrichEntities
+      // gira anche solo per l'anteprima, prima che l'utente confermi alcunché). Uno
+      // snapshot/restore evita che quella passata scartata lasci voci spurie permanenti.
+      const sessionSnapshot = forceOcr ? sessionManager.snapshot() : null
+
+      sendProgress('parsing', 30, 'Lettura del testo...')
+
+      // L'OCR di un documento lungo occupa minuti. Senza un segnale per pagina la
+      // barra resta ferma dall'inizio alla fine e l'unica informazione che arriva
+      // e' un messaggio generico: chi guarda non puo' distinguere "sta lavorando"
+      // da "si e' piantato". Qui l'avanzamento reale occupa la banda 30-48%.
+      const ocrStartedAt = Date.now()
+      let ocrPagesDone = 0
+      const onOcrProgress = (page: number, totalPages: number): void => {
+        sendProgress(
+          'ocr',
+          ocrProgressPercent(page, totalPages),
+          buildOcrProgressMessage(page, totalPages, ocrStartedAt, ocrPagesDone)
+        )
+        // Il conteggio si incrementa DOPO: la stima deve basarsi sulle pagine
+        // davvero concluse, non su quella appena iniziata.
+        ocrPagesDone = page
+      }
+
+      const parseResult = await extractText(filePath, format, { forceOcr, ocrDpi }, onOcrProgress)
+      pendingOcrArtifactHandle = parseResult.ocrArtifactHandle
+      const { text, pageCount, warnings: parseWarnings, isScanned: docIsScanned, previewHtml, ocrReport, pdfSafety } =
+        parseResult
+
+      if (sessionSnapshot) {
+        sessionManager.restore(sessionSnapshot)
+      }
+
+      if (ocrReport) {
+        // Solo metadati numerici/etichette — mai contenuto documentale (CLAUDE.md §6)
+        log.info('Layer OCR verificato', {
+          layerKind: ocrReport.layerKind,
+          verdict: ocrReport.verdict,
+          imageQuality: ocrReport.imageQuality,
+          pagesSampled: ocrReport.pagesSampled
+        })
+      }
 
       // Fase 2: analisi NER (BERT + regex, opzionalmente LLM)
       sendProgress('ner', 50, 'Riconoscimento entità...')
@@ -119,7 +248,22 @@ export function registerIpcHandlers(): void {
 
       // Assegna pseudonimi dalla sessione corrente
       sendProgress('ner', 85, 'Assegnazione pseudonimi...')
-      const enrichedEntities = sessionManager.enrichEntities(rawEntities)
+      const enrichedEntities = sessionManager.previewEntities(rawEntities)
+
+      const analysis = await analysisRegistry.register({
+        ownerWebContentsId: event.sender.id,
+        filePath,
+        format,
+        pageCount,
+        entities: enrichedEntities,
+        isScanned: docIsScanned ?? false,
+        ocrReport,
+        pageSafety: pdfSafety?.pages.map((page) => ({ page: page.page, kind: page.status })),
+        ocrArtifactHandle: pendingOcrArtifactHandle,
+      })
+      pendingOcrArtifactHandle = undefined
+      const ownerWebContentsId = event.sender.id
+      event.sender.once('destroyed', () => analysisRegistry.releaseOwner(ownerWebContentsId))
 
       sendProgress('done', 100, 'Analisi completata.')
       log.info('Documento analizzato', {
@@ -131,6 +275,7 @@ export function registerIpcHandlers(): void {
       })
 
       return {
+        analysisToken: analysis.token,
         fileName: filePath.split('/').pop() ?? filePath,
         format,
         pageCount,
@@ -139,8 +284,11 @@ export function registerIpcHandlers(): void {
         isScanned: docIsScanned ?? false,
         // previewHtml presente solo per DOCX — mai loggarne il contenuto
         ...(previewHtml ? { previewHtml } : {}),
+        // ocrReport presente solo per PDF — solo metriche numeriche/etichette, mai testo
+        ...(ocrReport ? { ocrReport } : {}),
       }
     } catch (err) {
+      ocrArtifactCache.discard(pendingOcrArtifactHandle)
       const message = err instanceof Error ? err.message : String(err)
       log.error('Errore elaborazione documento', { error: message })
       return { error: `Errore durante l'elaborazione: ${message}` }
@@ -148,46 +296,62 @@ export function registerIpcHandlers(): void {
   })
 
   // Handler: avvia anonimizzazione dopo conferma utente
-  ipcMain.handle(IPC_CHANNELS.DOC_ANONYMIZE, async (_event, payload: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.DOC_ANONYMIZE, async (event, payload: unknown) => {
     const parsed = AnonymizeRequestSchema.safeParse(payload)
     if (!parsed.success) {
       log.warn('IPC doc:anonymize — payload non valido', parsed.error.flatten())
       return { error: 'Dati non validi.' }
     }
 
-    const { filePath, entities, isScanned } = parsed.data
-    const confirmed = entities.filter((e) => e.confirmed)
-    const format = detectFormat(filePath)
-
     try {
-      sendProgress('parsing', 20, 'Preparazione anonimizzazione...')
-      log.info('Anonimizzazione richiesta', { format, entitiesConfirmed: confirmed.length, isScanned })
+      const { analysisToken, entities } = parsed.data
+      const record = await analysisRegistry.resolveForSave(analysisToken, event.sender.id)
+      analysisRegistry.validateDecisions(record, entities)
+      const confirmed = entities.filter((entity) => entity.confirmed)
+      const typedEntities = toGeneratorEntities(entities, record.entityLedger)
+      sendProgress('parsing', 20, anonymizationProgressMessage('prepare'))
+      log.info('Anonimizzazione richiesta', { format: record.format, entitiesConfirmed: confirmed.length })
 
-      sendProgress('parsing', 50, 'Sostituzione entità...')
-      const typedEntities = entities as import('@shared/types').DetectedEntity[]
-      const { outputPath, entitiesReplaced } = await generateOutput(filePath, format, typedEntities, { isScanned })
-
-      // Aggiorna il sessionManager con i pseudonimi confermati
-      for (const entity of typedEntities.filter((e) => e.confirmed)) {
-        sessionManager.getOrCreatePseudonym(entity.originalText, entity.type)
-      }
+      sendProgress('parsing', 50, anonymizationProgressMessage('redact'))
+      const generated = await generateOutput(record.canonicalPath, record.format, typedEntities, {
+        analysisToken,
+        isScanned: record.isScanned,
+        layerKind: record.ocrReport?.layerKind,
+        ocrAligned: record.ocrReport?.verdict === 'aligned',
+      })
+      const mode: SaveResult['redactionMode'] = record.format === 'pdf' &&
+        record.pages.some((page) => page.kind !== 'digital') ? 'flattened-scan' : 'digital'
+      const result = normalizeSaveResult(
+        generated,
+        entities,
+        record.entityLedger,
+        record.pages.some((page) => page.kind === 'page-error'),
+        mode,
+      )
+      sessionManager.commitDecisions(entities)
+      analysisRegistry.release(analysisToken, event.sender.id)
 
       sendProgress('done', 100, 'Anonimizzazione completata.')
-      log.info('Documento anonimizzato', { outputPath, entitiesReplaced })
+      log.info('Documento anonimizzato', {
+        outputPath: result.outputPath,
+        entitiesReplaced: result.entitiesReplaced,
+        redactionMode: result.redactionMode,
+        safetyStatus: result.safetyStatus,
+      })
 
       // Auto-save sessione su disco
       try { sessionManager.saveToDisk(getSessionDictPath()) } catch { /* ignorato */ }
 
-      return { outputPath, entitiesReplaced }
+      return result
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      log.error('Errore anonimizzazione', { error: message })
-      return { error: `Errore durante l'anonimizzazione: ${message}` }
+      const failure = ipcError(err)
+      log.error('Errore anonimizzazione', { code: failure.code ?? 'generation-error' })
+      return failure
     }
   })
 
   // Handler: anonimizzazione batch (N file in sequenza)
-  ipcMain.handle(IPC_CHANNELS.BATCH_ANONYMIZE, async (_event, payload: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.BATCH_ANONYMIZE, async (event, payload: unknown) => {
     const RequestSchema = z.array(AnonymizeRequestSchema)
     const parsed = RequestSchema.safeParse(payload)
     if (!parsed.success) {
@@ -198,25 +362,39 @@ export function registerIpcHandlers(): void {
     const results: import('@shared/types').BatchResultItem[] = []
 
     for (const req of parsed.data) {
-      const { filePath, entities, isScanned } = req
-      const format = detectFormat(filePath)
-      const fileName = filePath.split('/').pop() ?? filePath
-
       try {
+        const record = await analysisRegistry.resolveForSave(req.analysisToken, event.sender.id)
+        analysisRegistry.validateDecisions(record, req.entities)
+        const fileName = record.canonicalPath.split('/').pop() ?? record.canonicalPath
         sendProgress('parsing', 0, `Anonimizzazione: ${fileName}...`)
-        const typedEntities = entities as import('@shared/types').DetectedEntity[]
-        const { outputPath, entitiesReplaced } = await generateOutput(filePath, format, typedEntities, { isScanned })
-
-        for (const entity of typedEntities.filter((e) => e.confirmed)) {
-          sessionManager.getOrCreatePseudonym(entity.originalText, entity.type)
-        }
-
-        log.info('Batch: documento anonimizzato', { fileName, outputPath, entitiesReplaced })
-        results.push({ filePath, fileName, outputPath, entitiesReplaced })
+        const typedEntities = toGeneratorEntities(req.entities, record.entityLedger)
+        const generated = await generateOutput(record.canonicalPath, record.format, typedEntities, {
+          analysisToken: req.analysisToken,
+          isScanned: record.isScanned,
+          layerKind: record.ocrReport?.layerKind,
+          ocrAligned: record.ocrReport?.verdict === 'aligned',
+        })
+        const mode: SaveResult['redactionMode'] = record.format === 'pdf' &&
+          record.pages.some((page) => page.kind !== 'digital') ? 'flattened-scan' : 'digital'
+        const save = normalizeSaveResult(
+          generated, req.entities, record.entityLedger,
+          record.pages.some((page) => page.kind === 'page-error'), mode,
+        )
+        sessionManager.commitDecisions(req.entities)
+        analysisRegistry.release(req.analysisToken, event.sender.id)
+        log.info('Batch: documento anonimizzato', {
+          fileName, outputPath: save.outputPath, entitiesReplaced: save.entitiesReplaced,
+        })
+        results.push({
+          filePath: record.canonicalPath,
+          fileName,
+          outputPath: save.outputPath,
+          entitiesReplaced: save.entitiesReplaced,
+        })
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        log.error('Batch: errore anonimizzazione', { fileName, error: message })
-        results.push({ filePath, fileName, error: message })
+        const failure = ipcError(err)
+        log.error('Batch: errore anonimizzazione', { code: failure.code ?? 'generation-error' })
+        results.push({ filePath: '', fileName: '', error: failure.error })
       }
     }
 
@@ -231,9 +409,16 @@ export function registerIpcHandlers(): void {
   // Handler: reset sessione
   ipcMain.handle(IPC_CHANNELS.SESSION_RESET, async () => {
     sessionManager.reset()
+    analysisRegistry.clear()
     clearNerChunkCache()
     log.info('Sessione resettata', sessionManager.getDictionaryStats())
     return { status: 'ok' }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.ANALYSIS_RELEASE, (event, payload: unknown) => {
+    const parsed = z.object({ analysisToken: z.string().regex(/^[a-f0-9]{64}$/) }).strict().safeParse(payload)
+    if (!parsed.success) return { status: 'invalid' }
+    return { status: analysisRegistry.release(parsed.data.analysisToken, event.sender.id) ? 'released' : 'unknown' }
   })
 
   // Handler: ottieni configurazione LLM

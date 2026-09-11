@@ -174,9 +174,11 @@ File dropped
       ├─ Transformers.js NER (Italian_NER_XXL_v2 ONNX model)
       └─ LLM locale (optional, Ollama/LM Studio)
   → sessionManager.ts (enriches with previously assigned roles)
-  → IPC: doc:complete
+  → analysisRegistry: token casuale Main-only + fingerprint + ledger entità
+  → IPC: doc:complete (analysisToken, mai path o routing autorevoli)
   → Renderer: EntityReview.tsx (user reviews/confirms)
-  → IPC: doc:anonymize
+  → IPC: doc:anonymize ({ analysisToken, entities })
+  → Main: verifica owner/fingerprint e determina il routing per pagina
   → outputGenerators/ (format-specific anonymization)
   → Save: [original]_anonimizzato.[ext]
   → Update sessionManager
@@ -187,14 +189,16 @@ File dropped
 **Documents:**
 - `pdfjs-dist` - extract text + coordinates from native PDFs
 - `mupdf` - PDF redaction (removes text glyphs from PDF)
-- `pdf-lib` - PDF manipulation (overlay grey rectangles + pseudonyms)
+- `pdf-lib` + `@pdf-lib/fontkit` - pseudonimi e layer OCR Unicode con rendering PDF invisibile reale (`Tr 3`)
 - `mammoth` - DOCX text extraction and HTML preview generation (BSD-2-Clause). Used only in `docxParser.ts` for `extractRawText` + `convertToHtml`. Handles run-split, tables, content controls, hyperlinks natively.
 - `adm-zip` - rebuild DOCX/ODT for output generation (ZIP + XML). Still used in `docxGenerator.ts` and `odtGenerator.ts` for writing anonymized output.
 - `fast-xml-parser` - parse XML content inside ODT archives (used in `odtParser.ts`)
-- `tesseract.js` - offline OCR (tessdata downloaded at first run)
+- `tesseract.js` - offline OCR (tessdata downloaded at first run); una sola passata per pagina, artefatto ridotto in RAM legato all'analysis token (limite globale 128 MiB)
+
+For raster or mixed PDFs, `pdfSafeGenerator.ts` creates a new flattened PDF and never copies the source catalog, attachments, forms, metadata, JavaScript, or image streams. Redactions are painted into each DeviceRGB raster before JPEG encoding. A searchable invisible layer is added only to complete outputs; partial outputs remain raster-only.
 
 **NER (Named Entity Recognition):**
-- Regex for structured Italian data (Codice Fiscale, Partita IVA, IBAN, Email, Phone) and 11 legal structure patterns
+- Regex for structured Italian data and context-bound legal/administrative fields, including OCR label variants
 - `@huggingface/transformers` (Transformers.js) - local NER with **`DeepMount00/Italian_NER_XXL_v2`** ONNX model
 - 52 Italian legal entity categories (AVV_NOTAIO, TRIBUNALE, N_SENTENZA, LEGGE, PERSONA, LUOGO, ORGANIZZAZIONE, etc.)
 - Optional LLM level (Ollama / LM Studio) for additional entity extraction
@@ -350,6 +354,15 @@ collectDiagnostics(): Promise<string>
 
 ## IPC Testing Pattern
 
+La suite carica `tests/setup.ts`, che sostituisce globalmente `electron-log` con
+un mock in memoria. Non rimuovere il setup: i test non devono mai scrivere sotto
+`~/Library/Logs`. I gate di release sono `npm run typecheck:all`,
+`npm run test:unit`, `npm run test:ner-recall`, `npm run test:corpus`,
+`npm run test:roundtrip`, `npm run test:pixel-leak`,
+`npm run test:searchable-pdf` e `npm run test:pdf-rss`; i gate OCR/PDF richiedono
+Tesseract italiano e Poppler e devono fallire, non essere saltati, quando i
+prerequisiti mancano.
+
 Non testare gli handler IPC direttamente. Isola la logica nei service e testala in modo puro.
 
 ```typescript
@@ -380,10 +393,14 @@ vi.stubGlobal('electronAPI', {
 Located in `src/main/services/nerService.ts`. Uses `\b` word boundaries (NOT `^`/`$`) because matching happens on extracted paragraph text:
 
 - **CODICE_FISCALE:** `/\b[A-Z]{6}[0-9]{2}[A-Z][0-9]{2}[A-Z][0-9]{3}[A-Z]\b/gi`
-- **PARTITA_IVA:** `/\b(?:P\.?\s?IVA\s*:?\s*)?([0-9]{11})\b/gi`
+- **PARTITA_IVA:** richiede il contesto `P.IVA` o `partita IVA` prima delle 11 cifre
 - **IBAN:** `/\bIT[0-9]{2}[A-Z][0-9]{22}\b/gi`
 - **EMAIL:** `/\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/gi`
 - **TELEFONO:** `/\b(?:\+39[\s\-]?)?(?:0[0-9]{1,3}[\s\-]?[0-9]{5,8}|3[0-9]{2}[\s\-]?[0-9]{6,7})\b/g`
+
+I pattern v1.8 per campi anagrafici, nascita, indirizzi senza CAP e varianti OCR
+sono sempre vincolati a etichette o contesti forti e hanno controlli negativi nel
+corpus sintetico `tests/fixtures/nerRecallCorpus.ts`.
 
 ## Error Handling
 

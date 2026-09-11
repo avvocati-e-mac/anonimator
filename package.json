@@ -1,6 +1,6 @@
 {
   "name": "anonimator",
-  "version": "1.5.0",
+  "version": "1.8.0",
   "description": "App desktop per la pseudoanonimizzazione offline di documenti legali italiani (GDPR compliant)",
   "main": "out/main/index.js",
   "scripts": {
@@ -16,7 +16,17 @@
     "dist:linux": "npx electron-vite build && npx electron-builder --linux --config electron-builder.config.js",
     "dist:win": "npx electron-vite build && npx electron-builder --win --config electron-builder.config.js",
     "test": "vitest run",
+    "test:unit": "vitest run --exclude tests/ocrCorpus.test.ts --exclude tests/pixelLeak.test.ts",
+    "test:ner-recall": "vitest run tests/nerRecallEvaluation.test.ts",
+    "test:corpus": "vitest run tests/ocrCorpus.test.ts",
+    "test:roundtrip": "node tests/corpus-ocr/generate.mjs --roundtrip --require-roundtrip && node tests/corpus-ocr/verify.mjs roundtrip",
+    "test:pixel-leak": "vitest run tests/pixelLeak.test.ts",
+    "test:searchable-pdf": "vitest run tests/searchablePdfGate.test.ts",
+    "test:pdf-rss": "node --expose-gc scripts/check-pdf-rss.mjs",
     "typecheck": "tsc --noEmit",
+    "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json",
+    "typecheck:fixtures": "node --check tests/fixtures/createFixtures.mjs && node --check tests/corpus-ocr/generate.mjs && node --check tests/corpus-ocr/verify.mjs && node --check scripts/verify-searchable-pdf.mjs && node --check scripts/check-pdf-rss.mjs",
+    "typecheck:all": "npm run typecheck && npm run typecheck:tests && npm run typecheck:fixtures",
     "postinstall": "patch-package"
   },
   "keywords": [
@@ -30,13 +40,14 @@
   "license": "MIT",
   "dependencies": {
     "@huggingface/transformers": "^3.3.3",
+    "@pdf-lib/fontkit": "1.1.1",
     "adm-zip": "^0.5.16",
     "electron-log": "^5.2.4",
     "electron-updater": "^6.3.9",
     "fast-xml-parser": "^4.5.1",
     "lucide-react": "^0.475.0",
     "mammoth": "^1.12.0",
-    "mupdf": "^1.27.0",
+    "mupdf": "1.27.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^4.10.38",
     "react": "^18.3.1",

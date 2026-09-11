@@ -133,6 +133,7 @@ export default function DropZone({ onOpenSettings, isDark, onToggleDark }: DropZ
       const result = await window.electronAPI.loadSession()
       if (!result) return
       setAnalysisResult({
+        analysisToken: '',
         fileName: 'Sessione precedente',
         format: 'txt',
         pageCount: 0,
@@ -159,6 +160,7 @@ export default function DropZone({ onOpenSettings, isDark, onToggleDark }: DropZ
         confirmed: true,
       }))
       setAnalysisResult({
+        analysisToken: '',
         fileName: 'Entità importate',
         format: 'txt',
         pageCount: 0,

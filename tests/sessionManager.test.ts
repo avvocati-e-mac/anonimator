@@ -59,4 +59,22 @@ describe('SessionManager', () => {
     // byType conta solo le entità con fallback numerico (no initials); qui tutte usano iniziali
     expect(stats.byType['IBAN']).toBeUndefined()
   })
+
+  it('previewEntities non registra valori prima del salvataggio', () => {
+    const preview = sm.previewEntities([{
+      id: '1', type: 'IBAN', originalText: 'IT60X0542811101000000123456',
+      pseudonym: '', occurrences: 1, confirmed: true,
+    }])
+    expect(preview[0].pseudonym).toBe('IBAN_001')
+    expect(sm.getDictionaryStats().totalEntries).toBe(0)
+  })
+
+  it('commitDecisions registra solo decisioni confermate dopo la persistenza', () => {
+    sm.commitDecisions([
+      { entityId: '1', type: 'PERSONA', originalText: 'Mario Rossi', pseudonym: 'Mario', confirmed: true },
+      { entityId: '2', type: 'PERSONA', originalText: 'Lucia Bianchi', pseudonym: 'Lucia', confirmed: false },
+    ])
+    expect(sm.getDictionaryStats().totalEntries).toBe(1)
+    expect(sm.getOrCreatePseudonym('Mario Rossi', 'PERSONA')).toBe('Mario')
+  })
 })

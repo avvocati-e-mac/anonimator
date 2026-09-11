@@ -23,7 +23,7 @@ export default function ProcessingScreen(): React.JSX.Element {
 
         <div>
           <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100 mb-1">
-            Analisi in corso
+            Elaborazione in corso
           </h2>
           {fileName && (
             <p className="text-sm text-slate-500 dark:text-slate-400 truncate max-w-xs mx-auto" title={fileName}>

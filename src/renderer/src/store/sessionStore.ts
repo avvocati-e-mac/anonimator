@@ -1,9 +1,18 @@
 import { create } from 'zustand'
-import type { DetectedEntity, DocumentAnalysisResult, BatchFileItem, BatchResultItem, EntityType } from '@shared/types'
+import type {
+  DetectedEntity, DocumentAnalysisResult, BatchFileItem, BatchResultItem, EntityType,
+  EntityRedactionOutcome, PartialReason, RedactionMode
+} from '@shared/types'
+import type { MergedEntity as ReferencedMergedEntity } from '../utils/entityUtils'
 
 // Entità con campo aggiuntivo per il batch (quanti file la contengono)
-export interface MergedEntity extends DetectedEntity {
-  fileCount?: number
+export type MergedEntity = ReferencedMergedEntity
+
+export type BatchUiResult = BatchResultItem & {
+  safetyStatus?: 'complete' | 'partial'
+  partialReasons?: PartialReason[]
+  outcomes?: EntityRedactionOutcome[]
+  redactionMode?: RedactionMode
 }
 
 // Le schermate dell'app (singolo + batch)
@@ -20,6 +29,13 @@ export interface SuccessInfo {
   outputPath: string
   entitiesReplaced: number
   fileName: string
+  /** Quanto è cresciuto il file rispetto all'originale. */
+  sizeRatio?: number
+  sizeWarning?: boolean
+  safetyStatus: 'complete' | 'partial'
+  partialReasons: PartialReason[]
+  outcomes: EntityRedactionOutcome[]
+  redactionMode: RedactionMode
 }
 
 export interface SessionStats {
@@ -44,7 +60,7 @@ interface SessionState {
   batchFiles: BatchFileItem[]
   batchCurrentFileIndex: number
   mergedEntities: MergedEntity[]
-  batchResults: BatchResultItem[]
+  batchResults: BatchUiResult[]
 
   // Statistiche di sessione (visibili nelle schermate di successo)
   processingStartedAt: number | null
@@ -74,7 +90,7 @@ interface SessionState {
   updateMergedEntityPseudonym: (id: string, pseudonym: string) => void
   updateMergedEntityType: (id: string, type: EntityType) => void
   updateMergedEntityOriginalText: (id: string, originalText: string) => void
-  setBatchResults: (results: BatchResultItem[]) => void
+  setBatchResults: (results: BatchUiResult[]) => void
 
   setProcessingStartedAt: (ts: number) => void
   setSessionStats: (stats: SessionStats) => void
@@ -83,7 +99,7 @@ interface SessionState {
   addMergedEntity: (entity: MergedEntity) => void
   importEntitiesToSingle: (imported: DetectedEntity[]) => void
   importEntitiesToBatch: (imported: MergedEntity[]) => void
-  setFilePathAndMerge: (filePath: string, newEntities: DetectedEntity[]) => void
+  setFilePathAndMerge: (filePath: string, result: DocumentAnalysisResult) => void
 
   // ── Reset ─────────────────────────────────────────────────────────────────
   reset: () => void
@@ -105,6 +121,15 @@ const initialState = {
   processingStartedAt: null,
   sessionStats: null,
   error: null,
+}
+
+function releaseActiveTokens(state: Pick<SessionState, 'analysisResult' | 'batchFiles'>): void {
+  const tokens = new Set<string>()
+  if (state.analysisResult?.analysisToken) tokens.add(state.analysisResult.analysisToken)
+  for (const file of state.batchFiles) {
+    if (file.analysisResult?.analysisToken) tokens.add(file.analysisResult.analysisToken)
+  }
+  for (const token of tokens) void window.electronAPI.releaseAnalysis(token)
 }
 
 export const useSessionStore = create<SessionState>((set) => ({
@@ -217,30 +242,36 @@ export const useSessionStore = create<SessionState>((set) => ({
       for (const imp of imported) {
         const key = imp.originalText.toLowerCase()
         if (map.has(key)) {
-          map.set(key, { ...map.get(key)!, pseudonym: imp.pseudonym })
+          map.set(key, { ...map.get(key)!, pseudonym: imp.pseudonym, applyToAll: true })
         } else {
-          map.set(key, imp)
+          map.set(key, { ...imp, references: [], applyToAll: true })
         }
       }
       return { mergedEntities: Array.from(map.values()) }
     }),
 
-  setFilePathAndMerge: (filePath, newEntities) =>
+  setFilePathAndMerge: (filePath, result) =>
     set((state) => {
       const map = new Map(state.entities.map((e) => [e.originalText.toLowerCase(), e]))
-      for (const e of newEntities) {
+      for (const e of result.entities) {
         const key = e.originalText.toLowerCase()
         if (!map.has(key)) map.set(key, e)
       }
-      return { filePath, entities: Array.from(map.values()) }
+      const entities = Array.from(map.values())
+      return { filePath, entities, analysisResult: { ...result, entities } }
     }),
 
   // ── Reset ─────────────────────────────────────────────────────────────────
-  reset: () => set(initialState),
+  reset: () => set((state) => {
+    releaseActiveTokens(state)
+    return initialState
+  }),
 
   // Torna alla dropzone mantenendo la sessione NER (pseudonimi già assegnati)
   resetBatchOnly: () =>
-    set({
+    set((state) => {
+      releaseActiveTokens(state)
+      return {
       screen: 'dropzone',
       batchFiles: [],
       batchCurrentFileIndex: 0,
@@ -249,5 +280,6 @@ export const useSessionStore = create<SessionState>((set) => ({
       progressPercent: 0,
       progressMessage: '',
       error: null,
+      }
     }),
 }))
