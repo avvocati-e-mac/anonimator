@@ -95,7 +95,7 @@ export async function generateImagePdfSafe(filePath: string, entities: DetectedE
 function outcomesFor(entities: readonly DetectedEntity[]): Map<string, EntityRedactionOutcome> {
   return new Map(entities.filter((entity) => entity.confirmed).map((entity) => [entity.id, {
     entityId: entity.id,
-    expectedOccurrences: entity.expectedOccurrences ?? (
+    expectedOccurrences: entity.expectedOccurrences !== undefined ? entity.expectedOccurrences : (
       Number.isSafeInteger(entity.occurrences) && entity.occurrences >= 0 ? entity.occurrences : null
     ),
     matchedOccurrences: 0, redactedOccurrences: 0, ambiguousOccurrences: 0, rejectedOccurrences: 0,

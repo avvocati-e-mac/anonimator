@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { copyFile, mkdtemp, readFile, rm } from 'fs/promises'
+import { copyFile, mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
+import { PDFDocument, StandardFonts } from 'pdf-lib'
 import type { DetectedEntity } from '../src/shared/types'
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => process.cwd(), getPath: () => tmpdir() } }))
@@ -19,6 +20,37 @@ const CORPUS = join(__dirname, 'corpus-ocr', 'immagine')
 
 function entity(): DetectedEntity {
   return { id: 'person-1', type: 'PERSONA', originalText: 'Mario Rossi', pseudonym: 'PERSONA_1', occurrences: 2, confirmed: true }
+}
+
+function manualEntity(): DetectedEntity {
+  return {
+    id: 'manual-1',
+    type: 'PERSONA',
+    originalText: 'Persona Sintetica',
+    pseudonym: 'PERSONA_999',
+    occurrences: 1,
+    expectedOccurrences: null,
+    confirmed: true,
+  }
+}
+
+async function writePdfWithOccurrences(filePath: string, occurrences: number): Promise<void> {
+  const document = await PDFDocument.create()
+  const font = await document.embedFont(StandardFonts.Helvetica)
+  const page = document.addPage([595, 842])
+  page.drawText('Documento amministrativo sintetico', { x: 72, y: 770, size: 12, font })
+  for (let index = 0; index < occurrences; index++) {
+    page.drawText('Persona Sintetica', { x: 72, y: 700 - index * 40, size: 12, font })
+  }
+  if (occurrences === 2) {
+    for (let index = 0; index < 12; index++) {
+      page.drawText(
+        `Riga amministrativa sintetica ${index + 1}: contenuto privo di dati identificativi.`,
+        { x: 72, y: 600 - index * 28, size: 11, font },
+      )
+    }
+  }
+  await writeFile(filePath, await document.save())
 }
 
 describe('primitive D1 fail-closed', () => {
@@ -67,4 +99,32 @@ describe('ricostruzione raster D1', () => {
       } finally { source.destroy(); output.destroy() }
     } finally { await rm(dir, { recursive: true, force: true }) }
   }, 60_000)
+})
+
+describe('ledger entità manuali con cardinalità ignota', () => {
+  it.each([
+    { occurrences: 0, expectedStatus: 'partial' as const, expectedReason: 'entity-unmatched' as const },
+    { occurrences: 1, expectedStatus: 'complete' as const, expectedReason: null },
+    { occurrences: 2, expectedStatus: 'complete' as const, expectedReason: null },
+  ])('con $occurrences occorrenze produce $expectedStatus', async ({ occurrences, expectedStatus, expectedReason }) => {
+    const dir = await mkdtemp(join(tmpdir(), 'anonimator-manual-ledger-'))
+    const input = join(dir, 'manuale.pdf')
+    await writePdfWithOccurrences(input, occurrences)
+    try {
+      const result = await generatePdfSafe(input, [manualEntity()], { routing: 'digital' })
+      expect(result.outcomes[0]).toMatchObject({
+        expectedOccurrences: null,
+        matchedOccurrences: occurrences,
+        redactedOccurrences: occurrences,
+      })
+      expect(result.safetyStatus).toBe(expectedStatus)
+      if (expectedReason === null) {
+        expect(result.partialReasons).not.toContain('entity-count-mismatch')
+      } else {
+        expect(result.partialReasons).toContain(expectedReason)
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
 })

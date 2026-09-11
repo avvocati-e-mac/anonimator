@@ -86,6 +86,18 @@ describe('AnalysisRegistry', () => {
     }])).toThrowError(AnalysisTokenError)
   })
 
+  it('accetta un ID manuale o importato non presente nel ledger', async () => {
+    const registry = new AnalysisRegistry()
+    const record = await registry.register(registration(await source()))
+    expect(() => registry.validateDecisions(record, [{
+      entityId: 'manual-imported-1',
+      type: 'PERSONA',
+      originalText: 'Giulia Bianchi',
+      pseudonym: 'G. B.',
+      confirmed: true,
+    }])).not.toThrow()
+  })
+
   it('lega e rilascia l artefatto OCR insieme al token', async () => {
     const registry = new AnalysisRegistry()
     const handle = ocrArtifactCache.stage({ pages: [] })
