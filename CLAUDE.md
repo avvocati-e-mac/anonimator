@@ -174,9 +174,11 @@ File dropped
       ├─ Transformers.js NER (Italian_NER_XXL_v2 ONNX model)
       └─ LLM locale (optional, Ollama/LM Studio)
   → sessionManager.ts (enriches with previously assigned roles)
-  → IPC: doc:complete
+  → analysisRegistry: token casuale Main-only + fingerprint + ledger entità
+  → IPC: doc:complete (analysisToken, mai path o routing autorevoli)
   → Renderer: EntityReview.tsx (user reviews/confirms)
-  → IPC: doc:anonymize
+  → IPC: doc:anonymize ({ analysisToken, entities })
+  → Main: verifica owner/fingerprint e determina il routing per pagina
   → outputGenerators/ (format-specific anonymization)
   → Save: [original]_anonimizzato.[ext]
   → Update sessionManager
@@ -187,11 +189,13 @@ File dropped
 **Documents:**
 - `pdfjs-dist` - extract text + coordinates from native PDFs
 - `mupdf` - PDF redaction (removes text glyphs from PDF)
-- `pdf-lib` - PDF manipulation (overlay grey rectangles + pseudonyms)
+- `pdf-lib` + `@pdf-lib/fontkit` - pseudonimi e layer OCR Unicode con rendering PDF invisibile reale (`Tr 3`)
 - `mammoth` - DOCX text extraction and HTML preview generation (BSD-2-Clause). Used only in `docxParser.ts` for `extractRawText` + `convertToHtml`. Handles run-split, tables, content controls, hyperlinks natively.
 - `adm-zip` - rebuild DOCX/ODT for output generation (ZIP + XML). Still used in `docxGenerator.ts` and `odtGenerator.ts` for writing anonymized output.
 - `fast-xml-parser` - parse XML content inside ODT archives (used in `odtParser.ts`)
-- `tesseract.js` - offline OCR (tessdata downloaded at first run)
+- `tesseract.js` - offline OCR (tessdata downloaded at first run); una sola passata per pagina, artefatto ridotto in RAM legato all'analysis token (limite globale 128 MiB)
+
+For raster or mixed PDFs, `pdfSafeGenerator.ts` creates a new flattened PDF and never copies the source catalog, attachments, forms, metadata, JavaScript, or image streams. Redactions are painted into each DeviceRGB raster before JPEG encoding. A searchable invisible layer is added only to complete outputs; partial outputs remain raster-only.
 
 **NER (Named Entity Recognition):**
 - Regex for structured Italian data (Codice Fiscale, Partita IVA, IBAN, Email, Phone) and 11 legal structure patterns

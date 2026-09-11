@@ -22,7 +22,11 @@ import { generateImagePdfSafe, generatePdfSafe } from './pdfSafeGenerator'
  * i pixel coperti e lo ri-codifica. Non esiste un "annulla". Ogni scelta qui sotto è
  * pensata per degradare in modo controllato invece che distruggere in silenzio.
  *
- * TRE MODI DI REDAZIONE (vedi selectRedactionMode)
+ * I tipi e gli helper dei vecchi modi di redazione restano temporaneamente esportati
+ * per i test di regressione. Gli entry point pubblici delegano esclusivamente a
+ * pdfSafeGenerator: nessun percorso di produzione può usare il fallback overlay.
+ *
+ * MODI STORICI (vedi selectRedactionMode)
  *  - 'digital'                → PDF nativo: applyRedactions(false, REDACT_IMAGE_NONE).
  *                               INVARIATO rispetto alle versioni precedenti.
  *  - 'pixels-from-text-layer' → scansione con layer OCR certificato allineato: i quad
@@ -30,9 +34,7 @@ import { generateImagePdfSafe, generatePdfSafe } from './pdfSafeGenerator'
  *                               percorso veloce) e i pixel vengono davvero azzerati.
  *  - 'pixels-from-ocr'        → ogni altra scansione: box parola da Tesseract e pixel
  *                               azzerati.
- *  - 'overlay'                → rete di sicurezza: solo rettangoli sopra l'immagine,
- *                               come nelle versioni precedenti. I pixel restano nel
- *                               file, quindi è un ripiego, non una scelta.
+ *  - 'overlay'                → valore legacy, non raggiungibile dagli entry point.
  *
  * PRIVACY (CLAUDE.md §6): in questo file non viene mai loggato testo del documento.
  * Gli pseudonimi sono ammessi (convenzione già in uso nel progetto), il testo
@@ -65,6 +67,7 @@ export interface PdfGenerateOptions {
   ocrDpi?: number
   routing?: SaveResult['redactionMode']
   pageSafety?: PdfPageQualityOutcome[]
+  analysisToken?: string
 }
 
 /**
@@ -243,8 +246,8 @@ export interface ImageSafety {
  *  - spazi colore non basici (Indexed, Separation, DeviceN, ICCBased, Lab, Cal*):
  *    bug 709269, corretto solo in 1.28.1.
  *
- * In entrambi i casi, e in qualunque caso di ispezione fallita, si ripiega
- * sull'overlay: peggio per la privacy, ma non distruttivo.
+ * Queste informazioni restano disponibili per il corpus storico. Il generatore D1
+ * corrente ricostruisce comunque l'intera pagina; un errore fallisce senza output.
  */
 export function evaluatePageImageSafety(page: MupdfPage): ImageSafety {
   try {
@@ -353,9 +356,10 @@ export async function generatePdf(
  */
 export async function generatePdfFromImage(
   filePath: string,
-  entities: DetectedEntity[]
+  entities: DetectedEntity[],
+  options: Pick<PdfGenerateOptions, 'analysisToken'> = {},
 ): Promise<PdfSaveResult> {
-  return generateImagePdfSafe(filePath, entities)
+  return generateImagePdfSafe(filePath, entities, options.analysisToken)
 }
 
 function buildOutputPath(filePath: string): string {
@@ -365,7 +369,8 @@ function buildOutputPath(filePath: string): string {
 }
 
 // ============================================================================
-// Percorso 'digital' — INVARIATO. Non modificare senza una ragione esplicita.
+// Implementazione pre-v1.6 mantenuta soltanto come fixture di regressione interna.
+// Non è chiamata dagli entry point pubblici e deve fallire chiuso se riattivata.
 // ============================================================================
 
 interface RedactionBox {
@@ -794,9 +799,12 @@ async function collectBoxesFromOcr(
       await fs.writeFile(tempPath, pngBuffer)
       tempFiles.push(tempPath)
 
-      const result = await worker.recognize(tempPath, {}, {
-        blocks: true, text: false, hocr: false, tsv: false,
-      })
+      // La seconda passata OCR è stata rimossa in v1.7. Questo helper storico non è
+      // raggiungibile dagli entry point; se venisse riattivato per errore deve fallire
+      // chiuso invece di riconoscere nuovamente il documento.
+      const result = (() => {
+        throw new Error('Seconda passata OCR disabilitata: usare l’artefatto token-bound.')
+      })()
 
       const words = flattenOcrWords(result)
 

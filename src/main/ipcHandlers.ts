@@ -314,6 +314,7 @@ export function registerIpcHandlers(): void {
 
       sendProgress('parsing', 50, 'Sostituzione entità...')
       const generated = await generateOutput(record.canonicalPath, record.format, typedEntities, {
+        analysisToken,
         isScanned: record.isScanned,
         layerKind: record.ocrReport?.layerKind,
         ocrAligned: record.ocrReport?.verdict === 'aligned',
@@ -368,6 +369,7 @@ export function registerIpcHandlers(): void {
         sendProgress('parsing', 0, `Anonimizzazione: ${fileName}...`)
         const typedEntities = toGeneratorEntities(req.entities, record.entityLedger)
         const generated = await generateOutput(record.canonicalPath, record.format, typedEntities, {
+          analysisToken: req.analysisToken,
           isScanned: record.isScanned,
           layerKind: record.ocrReport?.layerKind,
           ocrAligned: record.ocrReport?.verdict === 'aligned',

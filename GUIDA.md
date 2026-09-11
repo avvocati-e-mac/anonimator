@@ -165,17 +165,18 @@ const ProcessDocumentSchema = z.object({
 });
 
 const AnonymizeRequestSchema = z.object({
-  filePath: z.string().min(1),
+  analysisToken: z.string().regex(/^[a-f0-9]{64}$/),
   entities: z.array(z.object({
-    id: z.string(),
-    type: z.string(),
+    entityId: z.string().min(1),
+    type: EntityTypeSchema,
     originalText: z.string(),
     pseudonym: z.string(),
-    occurrences: z.number(),
     confirmed: z.boolean(),
-  })),
-});
+  })).superRefine(rejectDuplicateEntityIds),
+}).strict();
 ```
+
+Il token è una capability casuale a 256 bit conservata nel Main e legata a `webContents.id`, path canonico, formato, dimensione, mtime, SHA-256, classificazione per pagina e ledger delle entità. Prima del salvataggio il fingerprint viene ricalcolato. Il Renderer non può dichiarare path, numero atteso di occorrenze, tipo di layer OCR o strategia di redazione.
 
 ---
 
@@ -419,9 +420,10 @@ interface TextToken {
 3. Raggruppa i token in righe logiche per coordinata Y (tolleranza: 3pt)
 4. Rileva heading: se la dimensione font è ≥ 1.6× la mediana → `# Heading`; se ≥ 1.3× → `## Subheading`
 5. Normalizza lettere spaziate (`L A C O R T E` → `LACORTE`) tramite `normalizeSpacedLetters()`
-6. **Rilevamento PDF scansionato:** se la media caratteri/pagina < 80, imposta `isScanned: true` e il flusso principale passa automaticamente al parser OCR
+6. Classifica **tutte** le pagine come `digital`, `scan-aligned`, `scan-untrusted` o `page-error`; il campionamento è soltanto diagnostico
+7. Se almeno una pagina è raster, l'intero PDF segue il percorso di ricostruzione raster
 
-I `TextToken` sono fondamentali per il generatore PDF (sezione 9.4): servono a localizzare le entità nel PDF e posizionare i rettangoli di copertura.
+I `TextToken` servono all'analisi e all'anteprima; il routing autorevole e il ledger restano nel registro Main associato al token.
 
 ### 6.5 Parser OCR (`parsers/ocrParser.ts`)
 
@@ -433,9 +435,9 @@ parsePdfWithOcr(filePath: string): Promise<ParseResult> // PDF scansionato
 ```
 
 **Per PDF scansionato:**
-1. Per ogni pagina, renderizza in PNG a 150 DPI usando **MuPDF** (`page.toPixmap()`)
-2. Esegue OCR sull'immagine PNG
-3. Aggrega il testo e la confidenza media
+1. Per ogni pagina, renderizza usando **MuPDF** con matrice e origine della pixmap registrate
+2. Esegue una sola `Tesseract.recognize` e conserva in RAM l'artefatto ridotto (parole, bbox, confidence, riga, pagina e matrice)
+3. Riusa lo stesso artefatto per testo NER, box di redazione e layer ricercabile
 4. Se la confidenza di una pagina è < 60%, aggiunge un warning
 5. Restituisce `{ ...result, isScanned: true }` — propagato fino al Renderer
 
@@ -445,7 +447,7 @@ parsePdfWithOcr(filePath: string): Promise<ParseResult> // PDF scansionato
 3. Il `workerPath` viene risolto con path assoluto: `app.asar.unpacked` in produzione, `createRequire.resolve()` in dev
 4. Riconosce il testo e restituisce `{text, confidence}`
 
-**Nota su `isScanned`:** il flag `isScanned: true` propagato da `parsers/index.ts` viene incluso nel `DocumentAnalysisResult` e passato con `AnonymizeRequest`. Il generatore di output lo usa per scegliere tra `generatePdf` (PDF nativo) e `generatePdfScanned` (PDF scansionato con bounding box OCR).
+**Cache OCR:** è esclusivamente RAM, legata all'analysis token e limitata globalmente a 128 MiB. Non ha TTL né eviction dei token attivi; viene rilasciata su reset, redo OCR, abbandono, chiusura o termine del workflow.
 
 ### 6.6 Parser Markdown (`parsers/markdownParser.ts`)
 
@@ -913,16 +915,11 @@ Molto simile a DOCX, ma con la struttura XML di OpenDocument. Il testo può esse
 - Per gli span: cerca il tag completo `<text:span...>TESTO</text:span>`
 - Per il testo diretto: cerca il testo tra i tag adiacenti
 
-### 9.4 Strategia PDF — due percorsi in base al tipo di PDF
+### 9.4 Strategia PDF — routing Main-only e fail-closed
 
-File: `outputGenerators/pdfGenerator.ts`
+File: `outputGenerators/pdfSafeGenerator.ts`
 
-La funzione `generatePdf()` riceve un flag `options.isScanned` e instrada verso due strategie distinte:
-
-```typescript
-generatePdf(filePath, entities, { isScanned: true })   // → generatePdfScanned()
-generatePdf(filePath, entities, { isScanned: false })  // → redazione MuPDF + overlay pdf-lib
-```
+Il Renderer invia soltanto il token di analisi e le decisioni sulle entità. Il Main recupera classificazione per pagina e ledger dal registro autenticato. Un PDF interamente digitale usa il percorso vettoriale; la presenza di una sola pagina raster rende l'intero documento `flattened-scan`.
 
 ---
 
@@ -954,8 +951,7 @@ Dopo la redazione, pdf-lib aggiunge i rettangoli colorati e il testo dello pseud
 
 ```
 Per ogni box di redazione registrato nella Fase 1:
-  1. Converti coordinate MuPDF (Y=0 in alto) → pdf-lib (Y=0 in basso):
-     pdfY = pageHeight - box.y1
+  1. Converti i box con `page.getTransform()` nello spazio utente PDF
 
   2. Disegna rettangolo grigio scuro:
      page.drawRectangle({ color: rgb(0.15, 0.15, 0.15) })
@@ -969,25 +965,20 @@ Per ogni box di redazione registrato nella Fase 1:
 
 ---
 
-#### 9.4b PDF scansionato — overlay OCR word-level (`generatePdfScanned`)
+#### 9.4b PDF raster o misto — ricostruzione D1
 
-Per PDF con solo immagini raster (nessun layer testuale). La strategia è:
+Il generatore crea un PDF nuovo, senza copiare catalogo, attachment, form, JavaScript, link, outline, metadata, `/Names`, `/EmbeddedFiles` o `/AF`:
 
 ```
 Per ogni pagina:
-  1. MuPDF renderizza la pagina in PNG a 150 DPI (matrix = scale(150/72))
-  2. Tesseract OCR con blocks=true → word-level bounding boxes (pixel)
-  3. Per ogni entità confermata:
-     a. Cerca le parole OCR consecutive che formano il testo dell'entità
-        (normalizzazione: rimuove punteggiatura esterna, uppercase, spazi)
-     b. Vincolo: le parole devono essere sulla stessa riga
-        (center Y distante ≤ 1.5× altezza parola)
-     c. Calcola bbox unione delle parole matched (pixel → punti PDF via scale)
-     d. Aggiunge padding di 1pt
-  4. pdf-lib disegna rettangolo grigio scuro + pseudonimo centrato
+  1. MuPDF renderizza sequenzialmente in DeviceRGB, senza alpha e con annotazioni/widget visibili inglobati.
+  2. Il DPI deriva dalla mediana pesata per area dei raster; le pagine digitali di un PDF misto usano 300 DPI. Oltre 50 milioni di pixel la generazione fallisce senza output.
+  3. I bbox dell'unica passata OCR vengono trasformati da pixel a spazio pagina mediante l'inversa della matrice registrata, quindi nella pixmap corrente.
+  4. Rettangoli e pseudonimi sono disegnati direttamente nei pixel; la pagina viene codificata JPEG colore qualità 85.
+  5. Il file temporaneo viene validato su ogni pagina e rinominato atomicamente. Non esiste fallback overlay.
 ```
 
-**Coordinate:** i pixel OCR vengono convertiti in punti PDF dividendo per `scale` (150/72 ≈ 2.08) e sommando `bounds[0]`/`bounds[1]` della pagina MuPDF. L'asse Y viene ribaltato per pdf-lib (`pdfY = pageHeight - y1Pt`).
+Un esito incompleto usa il suffisso `_DA_VERIFICARE.pdf` e resta raster-only. Errori di sorgente modificato, risorse, rendering, validazione o scrittura non producono alcun `SaveResult`.
 
 **Confronto visivo prima/dopo (entrambe le strategie):**
 
@@ -997,7 +988,9 @@ DOPO:   "Il sig. [███M. R.███], residente in [████IND_001█
                   ▲ grigio scuro         ▲ grigio scuro
 ```
 
-Il font usato è Helvetica (Standard PDF, non richiede embedding di font aggiuntivi).
+#### 9.4c Layer ricercabile v1.7
+
+Solo se l'esito è `complete`, `searchableLayer.ts` incorpora Noto Sans tramite `@pdf-lib/fontkit` e scrive operatori di testo con `TextRenderingMode.Invisible` (`Tr 3`). Le parole non sensibili restano nei rispettivi box; ogni sequenza sensibile è sostituita dal solo pseudonimo. Il testo originale confermato non viene inserito nel content stream o nella mappa ToUnicode. I gate verificano identità visiva, presenza degli pseudonimi con `pdftotext` e assenza degli originali.
 
 ### 9.5 Riepilogo strategie per formato
 
@@ -1016,20 +1009,18 @@ Il font usato è Helvetica (Standard PDF, non richiede embedding di font aggiunt
 │ ODT      │ Come DOCX ma con namespace OpenDocument.                │
 │          │ Gestisce <text:span> e testo diretto.                   │
 │          │                                                         │
-│ PDF      │ Due strategie in base al flag isScanned:                 │
+│ PDF      │ Routing per pagina deciso dal registro Main-only:        │
 │ (nativo) │ 1) MuPDF: cerca il testo, crea annotazioni Redact,      │
 │          │    rimuove i glifi dal PDF (redazione irreversibile).    │
 │          │ 2) pdf-lib: sovrappone rettangoli grigi con lo          │
 │          │    pseudonimo centrato in Helvetica.                     │
 │          │                                                         │
-│ PDF      │ 1) MuPDF renderizza ogni pagina in PNG a 150 DPI.       │
-│ (scans.) │ 2) Tesseract OCR → word-level bounding boxes (pixel).   │
-│          │ 3) pdf-lib: rettangolo grigio + pseudonimo sulle parole  │
-│          │    che corrispondono alle entità (coordinate convertite  │
-│          │    da pixel OCR a punti PDF con padding 1pt).            │
+│ PDF      │ 1) Nuovo PDF raster, DeviceRGB/JPEG q85.                │
+│ (scans.) │ 2) Box dalla singola passata OCR, trasformati con       │
+│          │    matrice completa; anonimizzazione impressa nei pixel.│
+│          │ 3) Layer invisibile pseudonimizzato solo se completo.   │
 │          │                                                         │
-│ Immagini │ Come PDF scansionato (isScanned=true). Output PDF con   │
-│          │ le entità oscurate tramite bounding box OCR word-level.  │
+│ Immagini │ Come PDF scansionato: output ricostruito e fail-closed. │
 └──────────┴─────────────────────────────────────────────────────────┘
 ```
 

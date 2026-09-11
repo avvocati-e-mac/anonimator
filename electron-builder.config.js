@@ -36,6 +36,15 @@ module.exports = {
     '!**/{.DS_Store,.git,.hg,.svn,CVS,Thumbs.db}'
   ],
 
+  // Font Unicode del layer OCR invisibile v1.7 (licenza OFL inclusa).
+  extraResources: [
+    {
+      from: 'build-resources/fonts/NotoSans-v2.015',
+      to: 'fonts/NotoSans-v2.015',
+      filter: ['NotoSans-Regular.ttf', 'OFL.txt', 'README.md']
+    }
+  ],
+
   // I modelli NER e tessdata NON sono bundlati nell'app.
   // Vengono scaricati al primo avvio in app.getPath('userData')
   // (es. ~/.config/anonimator/models/, ~/Library/Application Support/anonimator/models/).

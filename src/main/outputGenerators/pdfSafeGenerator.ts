@@ -1,18 +1,20 @@
 import fs from 'fs/promises'
 import path from 'path'
 import { randomBytes } from 'crypto'
-import { createRequire } from 'module'
 import { join } from 'path'
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import sharp from 'sharp'
 import { app } from 'electron'
-import log from 'electron-log'
 import type { DetectedEntity, EntityRedactionOutcome, PartialReason, SaveResult } from '@shared/types'
 import type { PdfPageQualityOutcome } from '../services/ocrLayerCheck'
-import { getTessdataPath } from '../services/nerService'
 import { PDF_POINTS_PER_INCH } from '../services/ocrRenderConfig'
 import { matchEntitiesOnPage, type MatchWord } from '../services/entityMatcher'
 import { mupdfRectToPdfUserSpace, renderedPixelRectToMupdf, transformRect, type AffineMatrix, type Rect } from '../services/geometry'
+import { getOcrArtifact } from '../services/ocrArtifactCache'
+import {
+  applySearchableLayer,
+  type SensitiveWordSequence,
+} from '../services/searchableLayer'
 
 export const MAX_PAGE_PIXELS = 50_000_000
 export const RASTER_JPEG_QUALITY = 85
@@ -20,12 +22,10 @@ export const MIXED_DIGITAL_DPI = 300
 const MAX_RECT_RATIO = 0.25
 
 type Mupdf = Awaited<ReturnType<typeof loadMupdf>>
-type Worker = Awaited<ReturnType<typeof createOcrWorker>>
-
 async function loadMupdf() { return (await import('mupdf')).default }
 
 export class PdfGenerationError extends Error {
-  constructor(readonly code: 'resource-limit' | 'unreadable-pdf' | 'render-failed' | 'validation-failed' | 'write-failed', message: string) {
+  constructor(readonly code: 'resource-limit' | 'unreadable-pdf' | 'render-failed' | 'validation-failed' | 'write-failed' | 'ocr-artifact-missing', message: string) {
     super(message); this.name = 'PdfGenerationError'
   }
 }
@@ -36,6 +36,8 @@ export interface SafePdfOptions {
   ocrAligned?: boolean
   ocrDpi?: number
   pageSafety?: PdfPageQualityOutcome[]
+  /** Capability Main-only usata per recuperare l'artefatto OCR in RAM. */
+  analysisToken?: string
 }
 
 interface Box {
@@ -46,6 +48,8 @@ interface Box {
   pixel?: Rect
   pdf?: Rect
   status: 'matched' | 'ambiguous' | 'rejected'
+  wordStart?: number
+  wordEnd?: number
 }
 
 export function weightedMedian(samples: readonly { value: number; weight: number }[]): number | null {
@@ -70,7 +74,7 @@ export async function generatePdfSafe(filePath: string, entities: DetectedEntity
     : flattened(filePath, source, entities, options)
 }
 
-export async function generateImagePdfSafe(filePath: string, entities: DetectedEntity[]): Promise<SaveResult> {
+export async function generateImagePdfSafe(filePath: string, entities: DetectedEntity[], analysisToken?: string): Promise<SaveResult> {
   const source = Uint8Array.from(await fs.readFile(filePath))
   const metadata = await sharp(source).metadata()
   if (!metadata.width || !metadata.height) throw new PdfGenerationError('unreadable-pdf', 'Immagine non leggibile.')
@@ -81,7 +85,11 @@ export async function generateImagePdfSafe(filePath: string, entities: DetectedE
   const page = wrapper.addPage([metadata.width, metadata.height])
   page.drawImage(image, { x: 0, y: 0, width: metadata.width, height: metadata.height })
   const bytes = await wrapper.save()
-  return flattened(filePath, bytes, entities, { routing: 'flattened-scan', layerKind: 'scan-no-text' })
+  return flattened(filePath, bytes, entities, {
+    routing: 'flattened-scan',
+    layerKind: 'scan-no-text',
+    analysisToken,
+  })
 }
 
 function outcomesFor(entities: readonly DetectedEntity[]): Map<string, EntityRedactionOutcome> {
@@ -145,10 +153,16 @@ async function flattened(filePath: string, source: Uint8Array, entities: Detecte
   let doc: import('mupdf').PDFDocument
   try { doc = new mupdf.PDFDocument(source) } catch { throw new PdfGenerationError('unreadable-pdf', 'PDF non leggibile.') }
   if (!doc.countPages()) { doc.destroy(); throw new PdfGenerationError('unreadable-pdf', 'PDF senza pagine.') }
-  const output = await PDFDocument.create(); const outcomes = outcomesFor(entities); const reasons = new Set<PartialReason>(); let worker: Worker | null = null
+  const output = await PDFDocument.create()
+  const outcomes = outcomesFor(entities)
+  const reasons = new Set<PartialReason>()
+  const cachedArtifact = options.analysisToken ? getOcrArtifact(options.analysisToken) : undefined
+  const pageBounds: Array<readonly [number, number, number, number]> = []
+  const sensitiveSequences: SensitiveWordSequence[] = []
   try {
     for (let index = 0; index < doc.countPages(); index++) {
       const page = doc.loadPage(index); const bounds = page.getBounds(); const pageWidth = bounds[2] - bounds[0]; const pageHeight = bounds[3] - bounds[1]
+      pageBounds.push([bounds[0], bounds[1], bounds[2], bounds[3]])
       const kind = qualityKind(options, index)
       const dpi = kind === 'digital' ? MIXED_DIGITAL_DPI : rasterDpi(page)
       if (!dpi || !Number.isFinite(dpi)) throw new PdfGenerationError('resource-limit', 'DPI della scansione non determinabile in modo affidabile.')
@@ -163,22 +177,59 @@ async function flattened(filePath: string, source: Uint8Array, entities: Detecte
         }
         else {
           if (kind === 'page-error') reasons.add('analysis-page-error')
-          try {
-            worker ??= await createOcrWorker()
-            const recognized = await worker.recognize(Buffer.from(pixmap.asPNG()), {}, { blocks: true, text: false, hocr: false, tsv: false })
-            const words = ocrWords(recognized)
-            const matches = matchEntitiesOnPage(words, entities.filter((entity) => entity.confirmed).map((entity) => ({ entityId: entity.id, type: entity.type, originalText: entity.originalText })), { page: index, acceptRect: (rect) => acceptable(rect, width, height) })
-            for (const match of matches) {
-              if (match.status === 'unmatched') continue
-              const outcome = outcomes.get(match.entityId)!; outcome.matchedOccurrences += 1
-              if (match.status === 'ambiguous') { outcome.ambiguousOccurrences += 1; continue }
-              if (match.status === 'rejected' || !match.box) { outcome.rejectedOccurrences += 1; continue }
-              const entity = entities.find((item) => item.id === match.entityId)!
-              boxes.push({ page: index, entityId: entity.id, pseudo: entity.pseudonym, pixel: match.box, mupdf: renderedPixelRectToMupdf(match.box, matrix as AffineMatrix, { x: pixmap.getX(), y: pixmap.getY() }), status: 'matched' })
+          const cachedPage = cachedArtifact?.pages.find((candidate) => candidate.page === index + 1)
+          if (!cachedPage) {
+            throw new PdfGenerationError(
+              'ocr-artifact-missing',
+              'Artefatto OCR non disponibile: ripetere l’analisi prima di salvare.',
+            )
+          }
+          const words: MatchWord[] = cachedPage.words.map((word) => ({
+            text: word.text,
+            bbox: word.bbox,
+            line: word.line,
+          }))
+          const matches = matchEntitiesOnPage(
+            words,
+            entities.filter((entity) => entity.confirmed).map((entity) => ({
+              entityId: entity.id,
+              type: entity.type,
+              originalText: entity.originalText,
+            })),
+            { page: index },
+          )
+          for (const match of matches) {
+            if (match.status === 'unmatched') continue
+            const outcome = outcomes.get(match.entityId)!
+            outcome.matchedOccurrences += 1
+            if (match.status === 'ambiguous') { outcome.ambiguousOccurrences += 1; continue }
+            if (match.status === 'rejected' || !match.box) { outcome.rejectedOccurrences += 1; continue }
+            const entity = entities.find((item) => item.id === match.entityId)!
+            const mupdfBox = renderedPixelRectToMupdf(
+              match.box,
+              cachedPage.renderMatrix as AffineMatrix,
+              cachedPage.pixmapOrigin,
+            )
+            if (!acceptable(mupdfBox, pageWidth, pageHeight)) {
+              outcome.rejectedOccurrences += 1
+              continue
             }
-          } catch (error) {
-            if (error instanceof PdfGenerationError) throw error
-            reasons.add('ocr-page-error'); log.warn('pdfGenerator: OCR pagina fallito', { page: index + 1, code: error instanceof Error ? error.name : 'unknown' })
+            const deviceBox = transformRect(mupdfBox, matrix as AffineMatrix)
+            boxes.push({
+              page: index,
+              entityId: entity.id,
+              pseudo: entity.pseudonym,
+              pixel: {
+                x0: deviceBox.x0 - pixmap.getX(),
+                y0: deviceBox.y0 - pixmap.getY(),
+                x1: deviceBox.x1 - pixmap.getX(),
+                y1: deviceBox.y1 - pixmap.getY(),
+              },
+              mupdf: mupdfBox,
+              status: 'matched',
+              wordStart: match.wordStart ?? undefined,
+              wordEnd: match.wordEnd ?? undefined,
+            })
           }
         }
         ambiguate(boxes, outcomes)
@@ -187,13 +238,54 @@ async function flattened(filePath: string, source: Uint8Array, entities: Detecte
         if (pixels.length < width * height * 3) throw new PdfGenerationError('render-failed', 'Buffer raster incompleto.')
         const jpeg = await rasterLabels(pixels, width, height, active)
         const embedded = await output.embedJpg(jpeg); const target = output.addPage([pageWidth, pageHeight]); target.drawImage(embedded, { x: 0, y: 0, width: pageWidth, height: pageHeight })
-        for (const box of active) outcomes.get(box.entityId)!.redactedOccurrences += 1
+        for (const box of active) {
+          outcomes.get(box.entityId)!.redactedOccurrences += 1
+          if (box.wordStart !== undefined && box.wordEnd !== undefined) {
+            sensitiveSequences.push({
+              entityId: box.entityId,
+              page: index,
+              wordStart: box.wordStart,
+              wordEnd: box.wordEnd,
+              pseudonym: box.pseudo,
+            })
+          }
+        }
       } finally { pixmap.destroy() }
     }
-    const bytes = await output.save({ useObjectStreams: true }); const draft = resultFor('', 'flattened-scan', outcomes, reasons, source.length, bytes.length)
-    const outputPath = await atomicValidatedWrite(filePath, bytes, draft.safetyStatus === 'partial', source, mupdf)
-    return { ...draft, outputPath }
-  } finally { if (worker) await worker.terminate(); doc.destroy() }
+    const rasterBytes = await output.save({ useObjectStreams: true })
+    const preliminary = resultFor('', 'flattened-scan', outcomes, reasons, source.length, rasterBytes.length)
+    let finalBytes = rasterBytes
+    if (preliminary.safetyStatus === 'complete' && cachedArtifact) {
+      if (cachedArtifact.pages.length !== doc.countPages()) {
+        throw new PdfGenerationError('validation-failed', 'Artefatto OCR incompleto.')
+      }
+      try {
+        finalBytes = await applySearchableLayer({
+          rasterPdfBytes: rasterBytes,
+          safetyStatus: preliminary.safetyStatus,
+          artifact: {
+            pages: cachedArtifact.pages.map((page, index) => ({
+              page: index,
+              pageBounds: pageBounds[index],
+              renderMatrix: page.renderMatrix as AffineMatrix,
+              pixmapOrigin: page.pixmapOrigin,
+              words: page.words,
+            })),
+            sensitiveSequences,
+          },
+          notoSansBytes: await loadNotoSans(),
+        })
+      } catch (error) {
+        throw new PdfGenerationError(
+          'validation-failed',
+          error instanceof Error ? error.message : 'Creazione layer OCR fallita.',
+        )
+      }
+    }
+    const result = resultFor('', 'flattened-scan', outcomes, reasons, source.length, finalBytes.length)
+    const outputPath = await atomicValidatedWrite(filePath, finalBytes, result.safetyStatus === 'partial', source, mupdf)
+    return { ...result, outputPath }
+  } finally { doc.destroy() }
 }
 
 function qualityKind(options: SafePdfOptions, index: number): PdfPageQualityOutcome['status'] {
@@ -259,15 +351,24 @@ async function digitalLabels(source: Uint8Array, boxes: readonly Box[]): Promise
   return doc.save()
 }
 
-async function createOcrWorker() {
-  const { createWorker } = await import('tesseract.js'); const data = await fs.readFile(join(getTessdataPath(), 'ita.traineddata')); const lang: import('tesseract.js').Lang = { code: 'ita', data: data as unknown }
-  const require = createRequire(import.meta.url); const workerPath = app.isPackaged ? join(process.resourcesPath, 'app.asar.unpacked/node_modules/tesseract.js/src/worker-script/node/index.js') : require.resolve('tesseract.js/src/worker-script/node/index.js')
-  return createWorker([lang], 1, { workerPath, cacheMethod: 'none', gzip: false })
-}
-
-function ocrWords(result: Awaited<ReturnType<import('tesseract.js').Worker['recognize']>>): MatchWord[] { const words: MatchWord[] = []; let line = 0; for (const block of result.data.blocks ?? []) for (const para of block.paragraphs ?? []) for (const row of para.lines ?? []) { for (const word of row.words ?? []) if (word.text.trim()) words.push({ text: word.text, bbox: word.bbox, line }); line++ } return words }
 function bbox(quads: number[][]): Rect { let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity; for (const q of quads) for (let i = 0; i < 8; i += 2) { x0 = Math.min(x0, q[i]); y0 = Math.min(y0, q[i + 1]); x1 = Math.max(x1, q[i]); y1 = Math.max(y1, q[i + 1]) } return { x0, y0, x1, y1 } }
 function group(boxes: readonly Box[]): Map<number, Box[]> { const result = new Map<number, Box[]>(); for (const box of boxes) result.set(box.page, [...(result.get(box.page) ?? []), box]); return result }
+
+async function loadNotoSans(): Promise<Uint8Array> {
+  const relative = join('fonts', 'NotoSans-v2.015', 'NotoSans-Regular.ttf')
+  const filePath = app.isPackaged
+    ? join(process.resourcesPath, relative)
+    : join(
+        typeof app.getAppPath === 'function' ? app.getAppPath() : process.cwd(),
+        'build-resources',
+        relative,
+      )
+  try {
+    return Uint8Array.from(await fs.readFile(filePath))
+  } catch {
+    throw new PdfGenerationError('validation-failed', 'Font Noto Sans non disponibile.')
+  }
+}
 
 async function atomicValidatedWrite(sourcePath: string, bytes: Uint8Array, partial: boolean, source: Uint8Array, mupdf: Mupdf): Promise<string> {
   const dir = path.dirname(sourcePath); const stem = `${path.basename(sourcePath, path.extname(sourcePath))}_anonimizzato${partial ? '_DA_VERIFICARE' : ''}`; const temp = path.join(dir, `.${stem}.${randomBytes(12).toString('hex')}.tmp`)

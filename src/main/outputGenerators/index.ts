@@ -11,7 +11,7 @@ import { generateMarkdown } from './markdownGenerator'
  * Risultato di generateOutput.
  *
  * Estende `SaveResult` in modo puramente additivo: i campi diagnostici servono al
- * Renderer per avvisare l'utente (dimensione esplosa, ripiego su overlay). `SaveResult`
+ * Renderer per avvisare l'utente (dimensione esplosa o output parziale). `SaveResult`
  * in @shared/types non viene modificato qui — i campi extra sono strutturalmente
  * compatibili, quindi un chiamante tipizzato su SaveResult continua a compilare.
  */
@@ -28,6 +28,8 @@ export interface GenerateOutputOptions {
   isScanned?: boolean
   layerKind?: PdfLayerKind
   ocrAligned?: boolean
+  /** Capability Main-only; non fa parte del payload Renderer dopo la validazione IPC. */
+  analysisToken?: string
 }
 
 /**
@@ -56,7 +58,7 @@ export async function generateOutput(
     case 'image':
       // Un PNG/JPG non è un PDF: prima veniva passato a generatePdf, che lo apriva come
       // documento PDF e sollevava eccezione. Va incapsulato e redatto come scansione.
-      return generatePdfFromImage(filePath, entities)
+      return generatePdfFromImage(filePath, entities, options)
 
     case 'markdown':
       return generateMarkdown(filePath, entities)
@@ -91,6 +93,7 @@ async function resolvePdfOptions(
       ocrDpi: report.suggestedOcrDpi,
       routing: safety.routing,
       pageSafety: safety.pages,
+      analysisToken: options.analysisToken,
     }
   } catch (err) {
     // In dubbio si è prudenti: senza report si mantiene il comportamento del chiamante.

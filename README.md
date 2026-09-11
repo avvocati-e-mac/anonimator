@@ -149,7 +149,7 @@ npm start
 - **Electron** (Main process): parsing documenti, NER engine, generazione output
 - **React 18 + TypeScript**: interfaccia utente (sandboxed renderer)
 - **Transformers.js + ONNX**: modello NER italiano locale (`DeepMount00/Italian_NER_XXL_v2`)
-- **MuPDF + pdf-lib**: redaction e ricostruzione PDF
+- **MuPDF + pdf-lib + fontkit**: redaction, ricostruzione raster e layer OCR invisibile pseudonimizzato
 - **Tesseract.js**: OCR offline per PDF scansionati
 
 **Pipeline NER (3 livelli):**
@@ -181,7 +181,7 @@ tests/          # Test unitari
 
 ### Bug da correggere
 
-- [x] **PDF scansionati: output vuoto/corrotto** — risolto in v1.3.2. Il generatore ora usa OCR word-level (MuPDF + Tesseract) per localizzare le entità e sovrappone rettangoli grigi direttamente sull'immagine raster del PDF.
+- [x] **PDF scansionati: rimozione irreversibile** — dalla v1.6 il documento viene ricostruito pagina per pagina: rettangoli e pseudonimi sono impressi nel raster prima della codifica JPEG, senza conservare i pixel o gli stream originali. Dalla v1.7 un'unica passata OCR alimenta anche un layer ricercabile invisibile contenente soltanto testo non sensibile e pseudonimi.
 - [x] **NER non disponibile su Windows 10 / ARM64** — risolto l'errore tecnico `Cannot read properties of undefined (reading 'create')` tramite pre-caricamento del modulo nativo e disabilitazione del proxy worker.
 - [x] **DOCX: parser riscritto con mammoth** — estrattore testo sostituito con mammoth; run-split, tabelle, content controls e tracked changes gestiti nativamente
 - [x] **DOCX: multi-entità nello stesso paragrafo** — fix docxGenerator: algoritmo token-based garantisce la sostituzione corretta di N entità nello stesso `<w:t>` senza perdita di testo
