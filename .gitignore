@@ -14,3 +14,7 @@ resources/models/*
 resources/tessdata/*
 !resources/models/.gitkeep
 !resources/tessdata/.gitkeep
+
+# Artefatti locali e rilievi di sicurezza: non pubblicare.
+/logs/
+/sessioni/locale/
