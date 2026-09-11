@@ -819,8 +819,15 @@ Qui avviene la sostituzione effettiva del testo nei documenti. Ogni formato ha u
 Entry point: `outputGenerators/index.ts`
 
 ```typescript
-generateOutput(filePath: string, format: DocumentFormat, entities: DetectedEntity[]): Promise<SaveResult>
-// SaveResult = { outputPath: string, entitiesReplaced: number }
+generateOutput(
+  filePath: string,
+  format: DocumentFormat,
+  entities: DetectedEntity[],
+  options?: GenerateOutputOptions,
+): Promise<GenerateOutputResult>
+
+// Per i PDF, SaveResult include anche:
+// safetyStatus, partialReasons, outcomes, sizeRatio, sizeWarning e redactionMode.
 ```
 
 Il file di output viene salvato nella stessa cartella dell'originale con suffisso `_anonimizzato`.
@@ -930,7 +937,12 @@ Molto simile a DOCX, ma con la struttura XML di OpenDocument. Il testo può esse
 
 ### 9.4 Strategia PDF — routing Main-only e fail-closed
 
-File: `outputGenerators/pdfSafeGenerator.ts`
+File: façade `outputGenerators/pdfGenerator.ts`; implementazione unica
+`outputGenerators/pdfSafeGenerator.ts`.
+
+Il façade richiede sempre un routing Main-only esplicito (`digital` oppure
+`flattened-scan`) e non contiene implementazioni alternative. In particolare non
+esiste più il codice pre-v1.6 che poteva degradare a un overlay del sorgente.
 
 Il Renderer invia soltanto il token di analisi e le decisioni sulle entità. Il Main recupera classificazione per pagina e ledger dal registro autenticato. Un PDF interamente digitale usa il percorso vettoriale; la presenza di una sola pagina raster rende l'intero documento `flattened-scan`.
 
@@ -958,7 +970,7 @@ Per ogni pagina del PDF:
 
 La redazione di MuPDF **rimuove fisicamente** i glifi dal PDF — il testo originale non è più presente nel file, nemmeno come layer nascosto.
 
-**Fase 2 — Overlay con pdf-lib:**
+**Fase 2 — Composizione sicura con pdf-lib:**
 
 Dopo la redazione, pdf-lib aggiunge i rettangoli colorati e il testo dello pseudonimo.
 

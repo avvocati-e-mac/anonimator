@@ -3,12 +3,10 @@
  *
  * PERCHÉ ESISTE QUESTO MODULO
  * Il DPI con cui una pagina viene renderizzata per l'OCR e il DPI usato per
- * riconvertire i box parola di Tesseract in punti PDF **devono essere lo
- * stesso numero**. Prima erano due costanti scritte a mano in due file
- * diversi (`ocrParser.ts` e `pdfGenerator.ts`, entrambe 150/72): finché il
- * valore era fisso funzionava per caso, ma rendendolo variabile una delle due
- * sarebbe rimasta indietro e **le redazioni sarebbero finite fuori posto senza
- * alcun errore**, su un output che l'app dichiara riuscito.
+ * registrare la matrice dell'artefatto OCR **devono essere lo stesso numero**.
+ * Prima erano due costanti scritte a mano in parser e generatore: finché il
+ * valore era fisso funzionava per caso, ma rendendolo variabile la geometria
+ * delle redazioni avrebbe potuto divergere senza alcun errore visibile.
  *
  * Regola: il DPI si PASSA, non si ricalcola.
  */
@@ -45,8 +43,8 @@ export function resolveOcrDpi(nativeDpi: number | null | undefined): number {
   return Math.min(OCR_RENDER_DPI_MAX, Math.max(OCR_RENDER_DPI_MIN, Math.round(nativeDpi)))
 }
 
-/** Fattore di scala punti→pixel per un dato DPI. Da usare in ENTRAMBE le
- *  direzioni della conversione, così non possono divergere. */
+/** Fattore di scala punti→pixel per un dato DPI, usato per costruire la
+ * matrice registrata insieme all'artefatto OCR token-bound. */
 export function dpiToScale(dpi: number): number {
   return dpi / PDF_POINTS_PER_INCH
 }

@@ -127,6 +127,7 @@ describe('prova della fuga di pixel (pdfimages)', () => {
         // Il layer di testo di questa fixture è allineato: è il caso in cui il
         // codice sceglie page.search() sul layer e azzera davvero i pixel.
         const res = await generatePdf(input, [entita('Mario Rossi', 'M. R.')], {
+          routing: 'flattened-scan',
           isScanned: true,
           layerKind: 'scan-with-text',
           ocrAligned: true
@@ -175,7 +176,7 @@ describe('prova della fuga di pixel (pdfimages)', () => {
   )
 })
 
-describe('nessun fallback overlay su raster complessi', () => {
+describe('ricostruzione raster su immagini complesse', () => {
   it(
     'un\'immagine con /SMask viene ricostruita e la regione sensibile cambia',
     async () => {
@@ -191,6 +192,7 @@ describe('nessun fallback overlay su raster complessi', () => {
         await copyFile(FIXTURE_SMASK, input)
 
         const res = await generatePdf(input, [entita('Mario Rossi', 'M. R.')], {
+          routing: 'flattened-scan',
           isScanned: true,
           layerKind: 'scan-with-text',
           ocrAligned: true

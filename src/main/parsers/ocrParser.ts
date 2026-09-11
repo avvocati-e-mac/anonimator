@@ -101,9 +101,9 @@ export interface OcrParseOptions {
   /**
    * DPI desiderato dal chiamante (es. DPI nativo del raster incorporato nel
    * PDF, se noto). Risolto SEMPRE tramite resolveOcrDpi/ocrRenderConfig — MAI
-   * una costante locale — così il valore resta in accordo con
-   * pdfGenerator.ts, che deve usare lo stesso DPI per riposizionare le
-   * redazioni sopra il testo OCR. Se non specificato: 300 DPI (vedi
+   * una costante locale — così il valore resta incorporato nella matrice
+   * dell'artefatto OCR riusata da `pdfSafeGenerator.ts` per la geometria delle
+   * redazioni. Se non specificato: 300 DPI (vedi
    * OCR_RENDER_DPI_DEFAULT in ocrRenderConfig.ts e il perché nel suo commento).
    */
   dpi?: number
@@ -140,9 +140,8 @@ export interface OcrParseOptions {
 /**
  * DPI effettivo da usare per il rendering, dato un eventuale override del
  * chiamante. Wrapper esplicito su resolveOcrDpi (ocrRenderConfig.ts) — MAI
- * una costante locale qui — così questo file non può divergere in silenzio
- * da pdfGenerator.ts, che usa lo stesso contratto per riposizionare le
- * redazioni sul testo OCR.
+ * una costante locale qui — così il DPI e la matrice conservata
+ * nell'artefatto OCR non possono divergere in silenzio.
  */
 export function resolveRenderDpi(dpiOverride?: number): number {
   return resolveOcrDpi(dpiOverride)
