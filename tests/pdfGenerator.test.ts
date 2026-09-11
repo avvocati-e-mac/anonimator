@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { join } from 'path'
 import { tmpdir } from 'os'
-import { mkdtemp, copyFile, readFile, rm, writeFile } from 'fs/promises'
+import { mkdtemp, copyFile, readFile, readdir, rm, writeFile } from 'fs/promises'
 import { randomUUID } from 'crypto'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import type { DetectedEntity } from '../src/shared/types'
@@ -387,6 +387,25 @@ describe('percorso digital (non regressione)', () => {
       await rm(dir, { recursive: true, force: true })
     }
   }, 30000)
+})
+
+describe('confine fail-closed dell’entry point pubblico', () => {
+  it('senza artefatto OCR token-bound non scrive alcun output per una scansione non attendibile', async () => {
+    const { input, dir } = await inCartellaTemporanea(
+      join(CORPUS_IMG, 'img-13-xobject-condiviso.pdf')
+    )
+
+    try {
+      await expect(generatePdf(input, [entita('Mario Rossi', 'PERSONA_1')], {
+        layerKind: 'scan-no-text',
+        ocrAligned: false,
+      })).rejects.toMatchObject({ code: 'ocr-artifact-missing' })
+
+      expect((await readdir(dir)).filter((name) => name.includes('_anonimizzato'))).toEqual([])
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
 })
 
 // ─── 8-9. Percorso a pixel su scansione con layer di testo allineato ──────────
