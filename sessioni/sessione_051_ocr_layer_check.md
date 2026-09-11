@@ -442,45 +442,82 @@ Costa ~150-300 ms su un percorso che poi spende minuti in OCR, e **richiede di
 rieseguire la taratura del Gate A** sulle 56 fixture, perché cambia il verdetto di
 qualità immagine atteso per tutte le scansioni senza layer.
 
-## HANDOFF — stato al 2026-09-11
+## HANDOFF — stato al 2026-09-11 (fine sessione)
 
-- **Blocco corrente:** 2 · **Ultima onda completata:** Onda 2 (E5-E8 integrati) ·
-  **Ultimo gate superato:** Gate A
-- **Ultimo commit buono:** `dda8e22` — fix(ocr): niente verdetto sulla qualita' immagine senza misura
-- **typecheck:** OK · **test:** 548/548
-- **Fatto:** contratto dei tipi, motore di rilevamento, qualità linguistica, corpus da
-  56 fixture, taratura (Gate A), pipeline e IPC, redazione reale dei pixel con guardie,
-  banner utente, OCR interno a 300 DPI con deskew e Sauvola, e le tre giunzioni fra
-  esecutori. **La funzione è ora visibile all'utente e l'app è provabile con `npm start`.**
-- **Prossimo passo — decisione dell'utente, in sospeso:** chiudere il Blocco 3
-  (documentazione + tag v1.6.0) **oppure** sistemare prima il difetto aperto sulla
-  misura del raster (vedi sezione dedicata: richiede di rieseguire la taratura del
-  Gate A). Gate B automatico superato, prova della fuga di pixel inclusa; la prova
-  manuale sul corpus è stata fatta su un documento reale, non ancora sulle fixture
-  `geo-*` che mostrano il banner.
-- **Poi Blocco 3 (Onda 3, E9):** `GUIDA.md`, `CLAUDE.md` (compresi gli errori
-  preesistenti: `ProgressPayload`/`AnonymizeResult` non esistono, i nomi veri sono
-  `ProcessingProgress`/`SaveResult`; `winston` è elencato ma il logger reale è
-  `electron-log`), `CHANGELOG.md`, `README.md`. Poi merge su `master` e tag `v1.6.0`.
-- **Decisioni aperte:** vedi "Onda 2 — stato e questioni aperte" (ICCBased escluso dalla
-  redazione pixel, guardie SMask/ImageMask prudenziali, `pixels-from-ocr` e
-  `generatePdfFromImage` non testati per mancanza di `resources/tessdata/ita.traineddata`,
-  percorso `digital` senza scrub dei metadati).
-- **Non fatto, dichiarato:** le fixture `roundtrip/` sono **vuote** — è il gruppo che
-  spezza la circolarità del corpus (rendering → Tesseract vero → ricostruzione con
-  offset noto). Finché mancano, il rilevatore è tarato solo su difetti che abbiamo
-  costruito noi.
-- **Trappole da rispettare (confermate sul campo):**
-  - `getPixels()` è una vista viva sulla heap WASM: si stacca in silenzio.
-  - `showExtras` vale `true` di default: passare `false`.
-  - Omettere `onChar` salta l'intero ciclo dei caratteri.
-  - Una sola `toStructuredText()` per pagina; `asJSON()` restituisce **il testo del
-    documento**: mai nei log né nel report.
-  - **R9 chiuso:** il DPI passa da `ocrRenderConfig.ts` sia in `ocrParser.ts` sia in
-    `pdfGenerator.ts`. Non reintrodurre costanti locali: le redazioni finirebbero fuori
-    posto **in silenzio**.
-- **Per riprendere:**
-  ```bash
-  git checkout feat/ocr-layer-quality-check
-  npm ci && npm run typecheck && npm test   # se i test Electron falliscono, vedi sopra
-  ```
+- **Blocco corrente:** 2 concluso · **Gate A** e **Gate B automatico** superati
+- **Ultimo commit buono:** `3e723a7` — chore(release): tag di prerelease 1.6.0-beta.1
+- **typecheck:** OK · **test:** 548/548 · **albero pulito** · versione `1.6.0-beta.1`
+- **Branch:** `feat/ocr-layer-quality-check` (non fuso; `master` resta sulla 1.5.0)
+
+### Fatto
+Contratto dei tipi, motore di rilevamento, qualità linguistica, corpus da 56 fixture,
+taratura, pipeline e IPC, redazione reale dei pixel con guardie, banner utente, OCR
+interno a 300 DPI con deskew e Sauvola, avanzamento per pagina, prova automatica
+della fuga di pixel. **Provato sul campo su una scansione reale di 23 pagine.**
+
+### Prossimo passo — due cose, in quest'ordine
+
+**1. Misurare il raster anche senza layer di testo** (il difetto aperto, documentato
+sopra in due sezioni). Non è solo un'ottimizzazione: il valore non misurato pilotava
+Sauvola e costava il 16% delle entità. Ora l'astensione impedisce il danno, ma i campi
+`separability` e `blurScore` restano zeri privi di significato.
+
+Cosa serve, in concreto:
+- estrarre da `analyzePage` il blocco "render + istogramma" (oggi righe ~1251-1285 di
+  `ocrLayerCheck.ts`) in un helper, e chiamarlo anche sul ramo `lineCount === 0`,
+  restituendo `xHeightPx: null` ma `nativeDpi`, `separability`, `skewDeg`, `blurScore`
+  misurati;
+- **aggiungere le fixture che mancano.** Nel corpus non c'è *nessuna* scansione
+  `scan-no-text`: zero su 56. È il motivo per cui il difetto ha attraversato il Gate A
+  indenne — non c'era niente che potesse coglierlo. Servono almeno
+  `sno-01-senza-layer-300dpi`, `sno-02-senza-layer-150dpi`, `sno-03-senza-layer-100dpi`,
+  con `imageQuality` atteso `good` / `marginal` / `poor`;
+- rieseguire `tests/ocrCorpus.test.ts`. Nessuna aspettativa esistente dovrebbe cambiare
+  (nessuna fixture attuale è `scan-no-text`), quindi il rischio di regressione è basso.
+
+**2. Blocco 3 — documentazione e rilascio** (E9 del piano). `GUIDA.md` §3, §6.4/6.5, §9,
+§10, §14, §15 e header a 1.6.0; `CLAUDE.md` per le sezioni da tenere sincronizzate (§5d).
+**Correggere anche gli errori preesistenti di `CLAUDE.md`:** `ProgressPayload` e
+`AnonymizeResult` non esistono (i nomi veri sono `ProcessingProgress` e `SaveResult`);
+`winston` è elencato fra le librerie ma il logger reale è `electron-log`; e la Fase 6
+è dichiarata "Auto-update DONE" mentre **`electron-updater` non è importato da nessuna
+parte in `src/`** — l'auto-update non è collegato. Poi `CHANGELOG.md`, `README.md`,
+merge su `master` e tag `v1.6.0`.
+
+### Questioni aperte, in ordine di peso
+1. **Nessuna fixture `scan-no-text` nel corpus** (vedi sopra) — il buco che ha lasciato
+   passare il difetto peggiore della giornata.
+2. **`roundtrip/` è vuoto.** È il gruppo che spezza la circolarità del corpus: oggi il
+   rilevatore è tarato solo su difetti costruiti da noi, con box puliti e nessun jitter.
+3. **`ICCBased` escluso dalla redazione dei pixel** in via prudenziale, ma è lo spazio
+   colore più comune nelle scansioni a colori reali; il bug 709269 riguarda Indexed,
+   Separation e DeviceN. Verificare se l'esclusione sia davvero necessaria: toglierla
+   allargherebbe la protezione ai file più diffusi.
+4. **`/SMask` ricade su overlay e i pixel restano estraibili** — scelta consapevole
+   (R19), coperta da test in `tests/pixelLeak.test.ts`, segnalata all'utente in
+   `SuccessScreen`. Da rivedere se si passa a MuPDF 1.28.x.
+5. **Il percorso `digital` non fa lo scrub dei metadati** (`/Thumb` può conservare la
+   pagina pre-redazione).
+6. **`scoreTextQuality` si astiene sotto i 40 token** e **esclude i token numerici**:
+   un OCR che sbaglia soprattutto le cifre gli passa sotto il naso. Osservato sul campo
+   (telefoni inventati tipo `0000050` non hanno fatto scattare nulla).
+
+### Trappole confermate sul campo
+- `getPixels()` è una vista viva sulla heap WASM: si stacca in silenzio.
+- `showExtras` vale `true` di default: passare `false`.
+- Omettere `onChar` salta l'intero ciclo dei caratteri.
+- Una sola `toStructuredText()` per pagina; `asJSON()` restituisce **il testo del
+  documento**: mai nei log né nel report.
+- **`electron/path.txt` va scritto con `printf`, mai con `echo`** (l'a capo finisce
+  dentro il percorso e `npm start` muore con ENOENT).
+- **Zero di "non misurato" e zero di "misurato male" non devono mai essere lo stesso
+  valore.** È costato il 16% delle entità su un documento reale.
+
+### Per riprendere
+```bash
+git checkout feat/ocr-layer-quality-check
+npm ci && npm run typecheck && npm test    # se i test Electron falliscono, vedi
+                                           # "Problemi ambientali"
+```
+Poi leggere: questo blocco → la sezione "Prova sul campo" → il piano in
+`~/.claude/plans/esamina-il-repository-vorrei-partitioned-honey.md`.
