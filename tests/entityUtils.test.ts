@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { mergeEntities } from '../src/renderer/src/utils/entityUtils'
-import type { DocumentAnalysisResult, DetectedEntity } from '../src/shared/types'
+import { buildBatchAnonymizeRequests, mergeEntities } from '../src/renderer/src/utils/entityUtils'
+import type { BatchFileItem, DocumentAnalysisResult, DetectedEntity } from '../src/shared/types'
 
 function makeEntity(overrides: Partial<DetectedEntity>): DetectedEntity {
   return {
@@ -14,11 +14,8 @@ function makeEntity(overrides: Partial<DetectedEntity>): DetectedEntity {
   }
 }
 
-function makeResult(entities: DetectedEntity[]): DocumentAnalysisResult {
-  return {
-    analysisToken: '0'.repeat(64),
-    fileName: 'test.pdf', format: 'pdf', pageCount: 1, entities, warnings: [],
-  }
+function makeResult(entities: DetectedEntity[], analysisToken = 'token-1'): DocumentAnalysisResult {
+  return { analysisToken, fileName: 'test.pdf', format: 'pdf', pageCount: 1, entities, warnings: [] }
 }
 
 describe('mergeEntities', () => {
@@ -37,12 +34,16 @@ describe('mergeEntities', () => {
   it('deduplicates same entity across two files and sums occurrences', () => {
     const e1 = makeEntity({ id: 'e1', originalText: 'Mario Rossi', occurrences: 2 })
     const e2 = makeEntity({ id: 'e2', originalText: 'mario rossi', occurrences: 5 })
-    const merged = mergeEntities([makeResult([e1]), makeResult([e2])])
+    const merged = mergeEntities([makeResult([e1], 'token-1'), makeResult([e2], 'token-2')])
     expect(merged).toHaveLength(1)
     expect(merged[0].occurrences).toBe(7)
     expect(merged[0].fileCount).toBe(2)
     // Mantiene lo pseudonimo del primo
     expect(merged[0].pseudonym).toBe('M. R.')
+    expect(merged[0].references).toEqual([
+      { analysisToken: 'token-1', entityId: 'e1' },
+      { analysisToken: 'token-2', entityId: 'e2' }
+    ])
   })
 
   it('keeps distinct entities separate', () => {
@@ -66,5 +67,37 @@ describe('mergeEntities', () => {
     const e2 = makeEntity({ id: 'e2', originalText: 'Solo Due', occurrences: 1 })
     const merged = mergeEntities([makeResult([e1]), makeResult([e2])])
     merged.forEach((e) => expect(e.fileCount).toBe(1))
+  })
+})
+
+describe('buildBatchAnonymizeRequests', () => {
+  const files: BatchFileItem[] = [
+    { filePath: '/a.pdf', fileName: 'a.pdf', status: 'done', analysisResult: makeResult([], 'token-a') },
+    { filePath: '/b.pdf', fileName: 'b.pdf', status: 'done', analysisResult: makeResult([], 'token-b') }
+  ]
+
+  it('usa l ID specifico di ogni documento e propaga la modifica aggregata', () => {
+    const [merged] = mergeEntities([
+      makeResult([makeEntity({ id: 'id-a' })], 'token-a'),
+      makeResult([makeEntity({ id: 'id-b' })], 'token-b')
+    ])
+    merged.pseudonym = 'Persona 7'
+    const requests = buildBatchAnonymizeRequests(files, [merged])
+    expect(requests.map((request) => request.analysisToken)).toEqual(['token-a', 'token-b'])
+    expect(requests.map((request) => request.entities[0].entityId)).toEqual(['id-a', 'id-b'])
+    expect(requests.map((request) => request.entities[0].pseudonym)).toEqual(['Persona 7', 'Persona 7'])
+  })
+
+  it('applica manuali/importate a tutti e omette le rilevate assenti', () => {
+    const [detected] = mergeEntities([makeResult([makeEntity({ id: 'only-a' })], 'token-a')])
+    const manual = {
+      ...makeEntity({ id: 'manual-1', originalText: 'Persona Mancante' }),
+      fileCount: 0,
+      references: [],
+      applyToAll: true
+    }
+    const requests = buildBatchAnonymizeRequests(files, [detected, manual])
+    expect(requests[0].entities.map((entity) => entity.entityId)).toEqual(['only-a', 'manual-1'])
+    expect(requests[1].entities.map((entity) => entity.entityId)).toEqual(['manual-1'])
   })
 })

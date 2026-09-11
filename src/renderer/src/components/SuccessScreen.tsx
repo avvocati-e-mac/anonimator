@@ -8,7 +8,11 @@ export default function SuccessScreen(): React.JSX.Element {
 
   if (!successInfo) return <></>
 
-  const { outputPath, entitiesReplaced, fileName, sizeRatio, sizeWarning, fellBackToOverlay } = successInfo
+  const {
+    outputPath, entitiesReplaced, fileName, sizeRatio, sizeWarning,
+    safetyStatus, partialReasons, outcomes
+  } = successInfo
+  const isPartial = safetyStatus === 'partial'
   const outputName = outputPath.split('/').pop() ?? outputPath
 
   async function openOutputFolder(): Promise<void> {
@@ -25,14 +29,16 @@ export default function SuccessScreen(): React.JSX.Element {
 
         {/* Icona successo */}
         <div className="flex justify-center">
-          <div className="w-20 h-20 bg-green-100 dark:bg-green-900/40 rounded-full flex items-center justify-center">
-            <CheckCircle2 size={44} className="text-green-600 dark:text-green-400" />
+          <div className={`w-20 h-20 rounded-full flex items-center justify-center ${isPartial ? 'bg-amber-100 dark:bg-amber-900/40' : 'bg-green-100 dark:bg-green-900/40'}`}>
+            {isPartial
+              ? <AlertTriangle size={44} className="text-amber-600 dark:text-amber-400" />
+              : <CheckCircle2 size={44} className="text-green-600 dark:text-green-400" />}
           </div>
         </div>
 
         <div>
           <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100 mb-2">
-            Documento anonimizzato
+            {isPartial ? 'Documento da verificare' : 'Documento anonimizzato'}
           </h2>
           <p className="text-slate-500 dark:text-slate-400">
             {entitiesReplaced} entit{entitiesReplaced === 1 ? 'à sostituita' : 'à sostituite'} in
@@ -56,13 +62,18 @@ export default function SuccessScreen(): React.JSX.Element {
           </div>
         )}
 
-        {fellBackToOverlay && (
+        {isPartial && (
           <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3 text-left flex gap-2">
             <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
             <p className="text-sm text-amber-800 dark:text-amber-300">
-              Su questo documento non è stato possibile rimuovere i pixel dall'immagine: i dati sono
-              coperti da un rettangolo, ma restano presenti nel file. Non condividere il documento
-              se richiede la cancellazione definitiva dei dati.
+              L'output è stato salvato come <strong>_DA_VERIFICARE</strong>: alcune entità o pagine
+              non hanno superato tutti i controlli. Verifica il documento prima di condividerlo.
+              {partialReasons.length > 0 && (
+                <span className="block mt-1">Controlli: {partialReasons.join(', ')}.</span>
+              )}
+              {outcomes.some((outcome) => outcome.ambiguousOccurrences > 0 || outcome.rejectedOccurrences > 0) && (
+                <span className="block mt-1">Sono presenti corrispondenze ambigue o rettangoli rifiutati.</span>
+              )}
             </p>
           </div>
         )}

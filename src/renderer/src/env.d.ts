@@ -7,6 +7,7 @@ interface ElectronAPI {
   processDocument: (filePath: string, options?: ProcessDocumentOptions) => Promise<{ error?: unknown } | DocumentAnalysisResult>
   anonymizeDocument: (request: AnonymizeRequest) => Promise<{ error?: unknown } | SaveResult>
   batchAnonymize: (requests: BatchAnonymizeRequest[]) => Promise<BatchResultItem[]>
+  releaseAnalysis: (analysisToken: string) => Promise<{ released: boolean } | { error: string }>
   resetSession: () => Promise<{ status: string }>
   onProgress: (
     callback: (progress: { stage: string; percent: number; message: string }) => void

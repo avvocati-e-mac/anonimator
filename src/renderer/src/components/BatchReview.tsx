@@ -9,6 +9,7 @@ import { ENTITY_CONFIG } from '../utils/entityConfig'
 import AddEntityModal from './AddEntityModal'
 import type { EntityType } from '@shared/types'
 import type { MergedEntity } from '../store/sessionStore'
+import { buildBatchAnonymizeRequests } from '../utils/entityUtils'
 
 function EntityRow({ entity }: { entity: MergedEntity }): React.JSX.Element {
   const { toggleMergedEntityConfirmed, updateMergedEntityPseudonym, updateMergedEntityType, updateMergedEntityOriginalText } = useSessionStore()
@@ -194,14 +195,7 @@ export default function BatchReview(): React.JSX.Element {
     setProgress(0, 'Avvio anonimizzazione batch...')
     setScreen('batch-processing')
 
-    const requests = doneFiles.map((file) => ({
-      filePath: file.filePath,
-      entities: mergedEntities.filter((e) =>
-        file.analysisResult!.entities.some(
-          (fe) => fe.originalText.toLowerCase() === e.originalText.toLowerCase()
-        )
-      ),
-    }))
+    const requests = buildBatchAnonymizeRequests(doneFiles, mergedEntities)
 
     try {
       const results = await window.electronAPI.batchAnonymize(requests)
@@ -236,6 +230,8 @@ export default function BatchReview(): React.JSX.Element {
         occurrences: 1,
         confirmed: true,
         fileCount: 1,
+        references: [],
+        applyToAll: true,
       }
       addMergedEntity(newEntity)
       setShowAddModal(false)
@@ -261,6 +257,8 @@ export default function BatchReview(): React.JSX.Element {
       occurrences: 1,
       confirmed: true,
       fileCount: 1,
+      references: [],
+      applyToAll: true,
     }))
     importEntitiesToBatch(imported)
   }

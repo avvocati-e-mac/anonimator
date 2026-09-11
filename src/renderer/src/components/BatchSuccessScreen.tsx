@@ -1,5 +1,5 @@
 import React from 'react'
-import { CheckCircle2, XCircle, FolderOpen, RotateCcw, RefreshCw, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, XCircle, FolderOpen, RotateCcw, RefreshCw, ShieldCheck } from 'lucide-react'
 import { useSessionStore } from '../store/sessionStore'
 import SessionStatsBanner from './SessionStatsBanner'
 
@@ -7,6 +7,9 @@ export default function BatchSuccessScreen(): React.JSX.Element {
   const { batchResults, sessionStats, reset, resetBatchOnly, setError } = useSessionStore()
 
   const succeeded = batchResults.filter((r) => !r.error)
+  const partial = succeeded.filter((r) =>
+    r.safetyStatus === 'partial' || r.outputPath?.includes('_DA_VERIFICARE')
+  )
   const totalReplaced = succeeded.reduce((sum, r) => sum + (r.entitiesReplaced ?? 0), 0)
 
   const firstSuccess = succeeded[0]
@@ -38,7 +41,12 @@ export default function BatchSuccessScreen(): React.JSX.Element {
           </div>
           <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Anonimizzazione completata</h2>
           <p className="text-slate-500 dark:text-slate-400">
-            {succeeded.length} file anonimizzati, {totalReplaced} entità sostituite in totale
+            {succeeded.length} file prodotti, {totalReplaced} entità sostituite in totale
+            {partial.length > 0 && (
+              <span className="block text-amber-600 dark:text-amber-400 mt-1">
+                {partial.length} {partial.length === 1 ? 'file richiede' : 'file richiedono'} verifica
+              </span>
+            )}
           </p>
         </div>
 
@@ -49,6 +57,8 @@ export default function BatchSuccessScreen(): React.JSX.Element {
               <li key={result.filePath} className="flex items-start gap-3 px-4 py-3">
                 {result.error ? (
                   <XCircle size={16} className="text-red-400 flex-shrink-0 mt-0.5" />
+                ) : result.safetyStatus === 'partial' || result.outputPath?.includes('_DA_VERIFICARE') ? (
+                  <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
                 ) : (
                   <CheckCircle2 size={16} className="text-green-500 flex-shrink-0 mt-0.5" />
                 )}
@@ -63,6 +73,11 @@ export default function BatchSuccessScreen(): React.JSX.Element {
                       → {result.outputPath?.split('/').pop()}
                       {result.entitiesReplaced !== undefined && (
                         <span className="ml-1">({result.entitiesReplaced} sostituzioni)</span>
+                      )}
+                      {(result.safetyStatus === 'partial' || result.outputPath?.includes('_DA_VERIFICARE')) && (
+                        <span className="block text-amber-600 dark:text-amber-400">
+                          Da verificare{result.partialReasons?.length ? `: ${result.partialReasons.join(', ')}` : ''}
+                        </span>
                       )}
                     </p>
                   )}

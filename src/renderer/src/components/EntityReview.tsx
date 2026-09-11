@@ -12,6 +12,7 @@ import type { PreviewMode } from '../utils/docxPreview'
 import AddEntityModal from './AddEntityModal'
 import OcrQualityBanner from './OcrQualityBanner'
 import type { DetectedEntity, EntityType } from '@shared/types'
+import { toEntityDecision } from '../utils/entityUtils'
 
 // ─── Componente header pannello anteprima con tab bar ────────────────────────
 
@@ -293,7 +294,7 @@ export default function EntityReview(): React.JSX.Element {
       }
       const analysisResult = result as import('@shared/types').DocumentAnalysisResult
       // Merge entità rilevate con quelle già presenti e setta filePath
-      setFilePathAndMerge(resolvedPath, analysisResult.entities)
+      setFilePathAndMerge(resolvedPath, analysisResult)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Errore durante l'analisi.")
     } finally {
@@ -341,7 +342,7 @@ export default function EntityReview(): React.JSX.Element {
   })
 
   async function handleAnonymize(): Promise<void> {
-    if (!filePath) return
+    if (!filePath || !analysisResult?.analysisToken) return
     setIsSubmitting(true)
     setProgress(0, 'Avvio anonimizzazione...')
     setScreen('processing')
@@ -352,9 +353,8 @@ export default function EntityReview(): React.JSX.Element {
 
     try {
       const result = await window.electronAPI.anonymizeDocument({
-        filePath,
-        entities,
-        isScanned: analysisResult?.isScanned ?? false,
+        analysisToken: analysisResult.analysisToken,
+        entities: entities.map((entity) => toEntityDecision(entity)),
       })
 
       if ('error' in result && result.error) {
@@ -370,7 +370,10 @@ export default function EntityReview(): React.JSX.Element {
         fileName: filePath.split('/').pop() ?? '',
         sizeRatio: saved.sizeRatio,
         sizeWarning: saved.sizeWarning,
-        fellBackToOverlay: saved.fellBackToOverlay,
+        safetyStatus: saved.safetyStatus,
+        partialReasons: saved.partialReasons,
+        outcomes: saved.outcomes,
+        redactionMode: saved.redactionMode,
       })
       setSessionStats({
         totalFiles: 1,
