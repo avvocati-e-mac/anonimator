@@ -158,9 +158,18 @@ Test: `tests/ocrCorpus.test.ts`, 56 casi, 2,2 s. Totale suite **437/437**, typec
    rm -rf node_modules/electron/dist && mkdir -p node_modules/electron/dist
    unzip -qq -o ~/Library/Caches/electron/<hash>/electron-v40.8.0-darwin-arm64.zip \
      -d node_modules/electron/dist
-   echo "Electron.app/Contents/MacOS/Electron" > node_modules/electron/path.txt
+   printf 'Electron.app/Contents/MacOS/Electron' > node_modules/electron/path.txt
    ```
    Senza questo, 4 file di test falliscono con "Electron failed to install correctly".
+3. **`printf`, non `echo`, per `path.txt`.** L'`index.js` di Electron legge quel file e
+   usa il contenuto **così com'è**, senza ripulirlo: l'a capo aggiunto da `echo` finisce
+   dentro il percorso e `npm start` muore con
+   `ENOENT ... /MacOS/Electron\n` — l'a capo si vede solo guardando bene la fine del
+   messaggio. La suite non se ne accorge perché i test mockano `electron`: il difetto
+   compare soltanto al primo avvio vero dell'app. Verifica rapida:
+   ```bash
+   od -c node_modules/electron/path.txt | tail -2   # non deve finire con \n
+   ```
 
 ## TODO prossima sessione
 
