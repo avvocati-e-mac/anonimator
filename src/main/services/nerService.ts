@@ -412,6 +412,31 @@ export interface NerAnalysisResult {
   warnings: string[]
 }
 
+/**
+ * Avviso da mostrare quando il modello linguistico locale non risponde.
+ *
+ * Distingue i due casi, che per chi legge sono molto diversi: qualche sezione
+ * andata storta (risultato parziale) e nessuna sezione analizzata (il livello
+ * LLM non ha contribuito nulla). Il messaggio precedente li trattava allo
+ * stesso modo e parlava di "errore del server" senza dire di quale server si
+ * trattasse ne' cosa farci — chi lo leggeva non sapeva se preoccuparsi.
+ */
+export function buildLlmChunkErrorWarning(failedChunks: number, totalChunks: number): string {
+  if (totalChunks > 0 && failedChunks >= totalChunks) {
+    return (
+      'Il modello linguistico locale non ha risposto: nessuna delle ' +
+      `${totalChunks} sezioni e' stata analizzata. Le entita' qui elencate vengono solo da ` +
+      'regex e BERT. Controlla che il server locale (es. Ollama) sia avviato, oppure ' +
+      'disattiva il modello linguistico nelle Impostazioni per non vedere piu\' questo avviso.'
+    )
+  }
+  const sez = failedChunks === 1 ? 'sezione' : 'sezioni'
+  return (
+    `Il modello linguistico locale non ha risposto su ${failedChunks} ${sez} ` +
+    `di ${totalChunks}: in quella parte del documento potrebbe aver saltato qualche entita'.`
+  )
+}
+
 export async function analyzeText(
   text: string,
   llmConfig?: LlmConfig,
@@ -647,9 +672,7 @@ export async function analyzeText(
         }
       }
       if (llmChunkErrors > 0) {
-        const sez = llmChunkErrors === 1 ? 'sezione' : 'sezioni'
-        const analizzata = llmChunkErrors === 1 ? 'analizzata' : 'analizzate'
-        warnings.push(`LLM: ${llmChunkErrors} ${sez} non ${analizzata} per errore del server. I risultati potrebbero essere incompleti.`)
+        warnings.push(buildLlmChunkErrorWarning(llmChunkErrors, chunks.length))
       }
       if (chunks.length - llmChunkErrors > 0) {
         llmUsed = true
