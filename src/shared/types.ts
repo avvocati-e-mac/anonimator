@@ -11,6 +11,7 @@ export const IPC_CHANNELS = {
   DOC_ERROR: 'doc:error',
   DOC_PROGRESS: 'doc:progress',
   BATCH_ANONYMIZE: 'batch:anonymize',
+  ANALYSIS_RELEASE: 'analysis:release',
   SESSION_RESET: 'session:reset',
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
@@ -185,6 +186,8 @@ export interface ProcessDocumentOptions {
 
 // Risultato dell'analisi del documento (Main → Renderer)
 export interface DocumentAnalysisResult {
+  /** Capability opaca, emessa dal Main e legata alla finestra e al file analizzato. */
+  analysisToken: string
   fileName: string
   format: DocumentFormat
   pageCount: number
@@ -196,19 +199,44 @@ export interface DocumentAnalysisResult {
 }
 
 // Richiesta di anonimizzazione (Renderer → Main)
+export interface EntityDecision {
+  entityId: string
+  type: EntityType
+  originalText: string
+  pseudonym: string
+  confirmed: boolean
+}
+
 export interface AnonymizeRequest {
-  filePath: string
-  entities: DetectedEntity[] // con confirmed aggiornato dall'utente
-  isScanned?: boolean        // true per PDF scansionati (output via rettangoli su immagine)
-  layerKind?: PdfLayerKind   // natura del PDF: sceglie il modo di redazione in pdfGenerator
-  ocrAligned?: boolean       // true solo se il layer di testo è stato certificato allineato
+  analysisToken: string
+  entities: EntityDecision[]
 }
 
 // Risposta dopo il salvataggio (Main → Renderer)
-export type RedactionMode = 'digital' | 'pixels-from-text-layer' | 'pixels-from-ocr' | 'overlay'
+export type RedactionMode = 'digital' | 'flattened-scan'
+
+export type PartialReason =
+  | 'analysis-page-error'
+  | 'ocr-page-error'
+  | 'entity-unmatched'
+  | 'entity-count-mismatch'
+  | 'ambiguous-overlap'
+  | 'rejected-rectangle'
+
+export interface EntityRedactionOutcome {
+  entityId: string
+  expectedOccurrences: number | null
+  matchedOccurrences: number
+  redactedOccurrences: number
+  ambiguousOccurrences: number
+  rejectedOccurrences: number
+}
 
 export interface SaveResult {
   outputPath: string
+  safetyStatus: 'complete' | 'partial'
+  partialReasons: PartialReason[]
+  outcomes: EntityRedactionOutcome[]
   entitiesReplaced: number
   /** Rapporto fra dimensione dell'output e dell'originale.
    *  La redazione reale dei pixel ri-codifica l'immagine NON compressa: una
@@ -217,10 +245,7 @@ export interface SaveResult {
   sizeRatio?: number
   /** true quando la crescita supera le soglie: va detto all'utente. */
   sizeWarning?: boolean
-  redactionMode?: RedactionMode
-  /** true quando le guardie hanno impedito la rimozione reale dei pixel e si è
-   *  ripiegato sul rettangolo sovrapposto: i pixel originali restano nel file. */
-  fellBackToOverlay?: boolean
+  redactionMode: RedactionMode
 }
 
 // ─── Batch processing ────────────────────────────────────────────────────────
@@ -236,8 +261,8 @@ export interface BatchFileItem {
 }
 
 export interface BatchAnonymizeRequest {
-  filePath: string
-  entities: DetectedEntity[]
+  analysisToken: string
+  entities: EntityDecision[]
 }
 
 export interface BatchResultItem {

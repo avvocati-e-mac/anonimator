@@ -1,4 +1,4 @@
-import type { EntityType, DetectedEntity, EntityDictionaryFile } from '@shared/types'
+import type { EntityType, DetectedEntity, EntityDecision, EntityDictionaryFile } from '@shared/types'
 import log from 'electron-log'
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs'
 import crypto from 'crypto'
@@ -150,6 +150,29 @@ export class SessionManager {
       ...entity,
       pseudonym: entity.pseudonym || this.getOrCreatePseudonym(entity.originalText, entity.type)
     }))
+  }
+
+  /**
+   * Produce i pseudonimi per una schermata di revisione senza modificare la
+   * sessione effettiva. Ogni analisi lavora su una copia indipendente, quindi
+   * anche due IPC concorrenti non possono osservare stato provvisorio altrui.
+   */
+  previewEntities(entities: DetectedEntity[]): DetectedEntity[] {
+    const draft = new SessionManager()
+    draft.restore(this.snapshot())
+    return draft.enrichEntities(entities)
+  }
+
+  /** Registra soltanto le decisioni già persistite con successo. */
+  commitDecisions(decisions: EntityDecision[]): void {
+    for (const decision of decisions) {
+      if (!decision.confirmed) continue
+      const key = decision.originalText.trim().toLowerCase()
+      this.dictionary.set(key, { pseudonym: decision.pseudonym, type: decision.type })
+    }
+    log.debug('SessionManager: decisioni persistite registrate', {
+      count: decisions.filter((decision) => decision.confirmed).length,
+    })
   }
 
   getDictionaryStats(): { totalEntries: number; byType: Record<string, number> } {

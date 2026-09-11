@@ -24,6 +24,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   batchAnonymize: (requests: BatchAnonymizeRequest[]) =>
     ipcRenderer.invoke(IPC_CHANNELS.BATCH_ANONYMIZE, requests),
 
+  // Rilascia capability e artefatti quando si abbandona la revisione.
+  releaseAnalysis: (analysisToken: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.ANALYSIS_RELEASE, { analysisToken }),
+
   // Resetta il dizionario pseudonimi della sessione corrente
   resetSession: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_RESET),
 
