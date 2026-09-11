@@ -596,9 +596,12 @@ fix('noti-non-coperti', 'nc-02-layer-incompleto.pdf', () =>
 
 function findTessdata() {
   const candidati = [
+    process.env.ANONIMATOR_TESSDATA,
     join(homedir(), 'Library', 'Application Support', 'anonimator', 'tessdata', 'ita.traineddata'),
-    join(ROOT, '..', '..', 'resources', 'tessdata', 'ita.traineddata')
-  ]
+    join(ROOT, '..', '..', 'resources', 'tessdata', 'ita.traineddata'),
+    '/usr/share/tesseract-ocr/5/tessdata/ita.traineddata',
+    '/usr/share/tesseract-ocr/4.00/tessdata/ita.traineddata'
+  ].filter(Boolean)
   for (const p of candidati) {
     try {
       if (existsSync(p) && statSync(p).size > 1_000_000) return p
@@ -643,9 +646,10 @@ function wordsToLines(data, scale) {
 
 const ROUNDTRIP_DPI = 200
 
-async function buildRoundtrip(outDir, log) {
+async function buildRoundtrip(outDir, log, required = false) {
   const tessdata = findTessdata()
   if (!tessdata) {
+    if (required) throw new Error('ita.traineddata non trovato: roundtrip obbligatorio')
     log('  ita.traineddata non trovato: gruppo roundtrip/ SALTATO (vedi roundtrip/README.md)')
     return []
   }
@@ -710,6 +714,7 @@ async function main() {
   const onlyIdx = args.indexOf('--only')
   const only = onlyIdx >= 0 ? args[onlyIdx + 1] : null
   const wantRoundtrip = args.includes('--roundtrip')
+  const requireRoundtrip = args.includes('--require-roundtrip')
   const log = (s) => process.stdout.write(s + '\n')
 
   const dirs = ['negativi', 'geometrici', 'testo', 'immagine', 'roundtrip', 'noti-non-coperti']
@@ -730,7 +735,8 @@ async function main() {
 
   if (wantRoundtrip) {
     log('\nroundtrip/  (OCR reale, richiede ita.traineddata)')
-    const written = await buildRoundtrip(join(ROOT, 'roundtrip'), log)
+    const written = await buildRoundtrip(join(ROOT, 'roundtrip'), log, requireRoundtrip)
+    if (requireRoundtrip && written.length === 0) throw new Error('nessuna fixture roundtrip generata')
     for (const [n, s] of written) {
       log(`  ${n.padEnd(34)} ${String(s).padStart(8)} byte`)
       total += s

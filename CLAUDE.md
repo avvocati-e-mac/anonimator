@@ -350,6 +350,13 @@ collectDiagnostics(): Promise<string>
 
 ## IPC Testing Pattern
 
+La suite carica `tests/setup.ts`, che sostituisce globalmente `electron-log` con
+un mock in memoria. Non rimuovere il setup: i test non devono mai scrivere sotto
+`~/Library/Logs`. I gate di release sono `npm run typecheck:all`,
+`npm run test:unit`, `npm run test:corpus`, `npm run test:roundtrip` e
+`npm run test:pixel-leak`; gli ultimi due richiedono Tesseract italiano e Poppler
+e devono fallire, non essere saltati, quando i prerequisiti mancano.
+
 Non testare gli handler IPC direttamente. Isola la logica nei service e testala in modo puro.
 
 ```typescript

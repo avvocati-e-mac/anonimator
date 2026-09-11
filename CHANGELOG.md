@@ -5,6 +5,21 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.6.0-beta.2] - 2026-09-11
+
+> Beta di sicurezza sostitutiva: gli output vanno comunque verificati prima di
+> usare documenti reali. I binari della beta.1 sono stati ritirati.
+
+### Sicurezza
+- **Capability di analisi Main-only**: il salvataggio usa un token casuale legato a finestra, file canonico, fingerprint SHA-256 e ledger delle entità. Il Renderer non decide più percorso o modalità di redazione.
+- **Classificazione per pagina e output fail-closed**: pagine raster, errori, match incompleti e rettangoli ambigui producono un esito verificabile; una scansione non può degradare silenziosamente a un overlay.
+- **Ricostruzione raster delle scansioni**: i PDF raster o misti vengono ricostruiti senza copiare stream, attachment, JavaScript, form o metadati del documento originale.
+
+### Qualità e rilascio
+- Nuovo gate Linux obbligatorio con typecheck separato di sorgenti/test, corpus OCR, roundtrip Tesseract italiano e prova di assenza dei pixel tramite Poppler.
+- Tutti i job di packaging dipendono dal gate `quality`; il workflow esegue inoltre una scansione anti-segreti della cronologia.
+- `electron-log` è disattivato globalmente sotto Vitest: la suite non scrive più in `~/Library/Logs`.
+
 ## [1.6.0] - non rilasciata
 
 > Versione dedicata ai PDF scansionati: l'app ora capisce da sola se una scansione

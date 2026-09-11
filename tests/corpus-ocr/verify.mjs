@@ -119,6 +119,7 @@ async function main() {
     }
   }
   process.stdout.write(problemi ? `\n${problemi} segnalazioni da guardare.\n` : '\nNessuna anomalia.\n')
+  if (problemi) process.exitCode = 1
 }
 
 main().catch((e) => { console.error(e); process.exit(1) })

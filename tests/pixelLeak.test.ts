@@ -14,8 +14,8 @@
  * l'area redatta risulti **bianca nell'immagine estratta**, non nella pagina
  * renderizzata.
  *
- * Il test si salta da sé se `pdfimages` (poppler) non è installato: è uno
- * strumento esterno e non una dipendenza del progetto.
+ * `pdfimages` (Poppler) è un prerequisito obbligatorio del gate quality.
+ * Se manca, la suite deve fallire: un controllo di sicurezza saltato non è verde.
  */
 import { describe, it, expect, vi } from 'vitest'
 import { join } from 'path'
@@ -37,15 +37,6 @@ import { generatePdf } from '../src/main/outputGenerators/pdfGenerator'
 
 const FIXTURE = join(__dirname, 'corpus-ocr', 'negativi', 'neg-02-allineato-flate.pdf')
 const FIXTURE_SMASK = join(__dirname, 'corpus-ocr', 'immagine', 'img-11-smask.pdf')
-
-function hasPdfimages(): boolean {
-  try {
-    execFileSync('pdfimages', ['-v'], { stdio: 'ignore' })
-    return true
-  } catch {
-    return false
-  }
-}
 
 interface GrayImage {
   width: number
@@ -118,7 +109,6 @@ function entita(originalText: string, pseudonym: string): DetectedEntity {
     type: 'PERSONA',
     originalText,
     pseudonym,
-    confidence: 1,
     source: 'regex',
     confirmed: true,
     occurrences: 1
@@ -126,7 +116,7 @@ function entita(originalText: string, pseudonym: string): DetectedEntity {
 }
 
 describe('prova della fuga di pixel (pdfimages)', () => {
-  it.skipIf(!hasPdfimages())(
+  it(
     'i pixel del nome spariscono dall\'immagine estratta, non solo dalla pagina',
     async () => {
       const dir = await mkdtemp(join(tmpdir(), 'anonimator-pixelleak-'))
@@ -185,7 +175,7 @@ describe('prova della fuga di pixel (pdfimages)', () => {
 })
 
 describe('limite dichiarato: il percorso overlay non rimuove i pixel', () => {
-  it.skipIf(!hasPdfimages())(
+  it(
     'un\'immagine con /SMask ricade sull\'overlay e i pixel restano estraibili',
     async () => {
       // Non è un difetto da correggere di nascosto: MuPDF 1.27 gestisce male

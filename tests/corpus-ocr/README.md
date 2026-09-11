@@ -150,7 +150,9 @@ segnalato, per via della geometria.
 
 ### `roundtrip/` — OCR reale nel giro
 
-Attualmente **vuoto**: da generare con `--roundtrip`.
+Le fixture vengono rigenerate nel gate CI con
+`--roundtrip --require-roundtrip`: il secondo flag rende bloccante l'assenza dei
+dati italiani di Tesseract.
 
 Serve a spezzare la circolarità del resto del corpus. Tutte le altre fixture
 hanno difetti costruiti da noi, e tarare il rilevatore finché li trova dimostra
@@ -162,9 +164,11 @@ pagina → raster a 200 DPI con JPEG e rumore → OCR con il tesseract.js del pr
        → ricostruzione del PDF con quel layer traslato di un offset noto
 ```
 
-I file vanno generati **una volta e versionati**, non rigenerati a ogni test:
-Tesseract non è deterministico fra versioni. Richiede
-`~/Library/Application Support/anonimator/tessdata/ita.traineddata`.
+Il job registra la versione delle dipendenze tramite lockfile e rigenera i file
+in una workspace effimera, senza commetterli. In locale usa
+`~/Library/Application Support/anonimator/tessdata/ita.traineddata`; su Linux
+riconosce anche i percorsi di sistema di `tesseract-ocr-ita` oppure la variabile
+`ANONIMATOR_TESSDATA`.
 
 ### `noti-non-coperti/` — limiti dichiarati, NON regressioni
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { join } from 'path'
-import { writeFileSync, mkdirSync, readFileSync } from 'fs'
+import { writeFileSync, mkdirSync } from 'fs'
 import { tmpdir } from 'os'
 import { app } from 'electron'
 import { settingsManager } from '../src/main/services/settingsManager'

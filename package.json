@@ -16,7 +16,14 @@
     "dist:linux": "npx electron-vite build && npx electron-builder --linux --config electron-builder.config.js",
     "dist:win": "npx electron-vite build && npx electron-builder --win --config electron-builder.config.js",
     "test": "vitest run",
+    "test:unit": "vitest run --exclude tests/ocrCorpus.test.ts --exclude tests/pixelLeak.test.ts",
+    "test:corpus": "vitest run tests/ocrCorpus.test.ts",
+    "test:roundtrip": "node tests/corpus-ocr/generate.mjs --roundtrip --require-roundtrip && node tests/corpus-ocr/verify.mjs roundtrip",
+    "test:pixel-leak": "vitest run tests/pixelLeak.test.ts",
     "typecheck": "tsc --noEmit",
+    "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json",
+    "typecheck:fixtures": "node --check tests/fixtures/createFixtures.mjs && node --check tests/corpus-ocr/generate.mjs && node --check tests/corpus-ocr/verify.mjs",
+    "typecheck:all": "npm run typecheck && npm run typecheck:tests && npm run typecheck:fixtures",
     "postinstall": "patch-package"
   },
   "keywords": [

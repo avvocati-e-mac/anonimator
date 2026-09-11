@@ -2,7 +2,7 @@
 
 Documentazione tecnica per sviluppatori. Descrive architettura, flussi di dati, logica di anonimizzazione e componenti del software.
 
-**Versione documentata:** 1.5.0
+**Versione documentata:** 1.6.0-beta.2
 **Stack:** Electron 40 + React 18 + TypeScript (strict mode)
 **Scopo:** Pseudonimizzazione locale di documenti legali italiani (PDF, DOCX, ODT, TXT, immagini). Nessuna connessione di rete durante l'elaborazione.
 
@@ -1319,7 +1319,12 @@ npm start              # Dev mode (electron-vite dev, hot reload)
 npm run ui:dev         # Solo renderer Vite (senza Electron)
 npm run ui:build       # Build del renderer
 npm run typecheck      # Verifica TypeScript
+npm run typecheck:tests # Verifica tipi di test e fixture TypeScript
+npm run typecheck:fixtures # Verifica la sintassi dei generatori fixture MJS
 npm test               # Vitest unit test
+npm run test:corpus    # Corpus OCR
+npm run test:roundtrip # Roundtrip OCR reale (richiede ita.traineddata)
+npm run test:pixel-leak # Prova pixel con pdfimages/Poppler
 npm run build:electron # Pacchettizzazione completa
 ```
 
@@ -1338,8 +1343,13 @@ File: `.github/workflows/release.yml`
 Trigger: push di un tag `v*` (es. `git tag v1.1.5 && git push origin master --tags`)
 
 ```
-             git push tag v1.1.5
+             push / pull request / tag
                      │
+                     ▼
+              quality (Linux)
+          typecheck + unit + corpus
+          roundtrip + pixel-leak
+                     │ (solo tag v*)
         ┌────────────┼────────────┬──────────────┐
         ▼            ▼            ▼              ▼
    build-windows  build-mac    build-mac     build-linux
@@ -1359,7 +1369,11 @@ Trigger: push di un tag `v*` (es. `git tag v1.1.5 && git push origin master --ta
                      changelog da CHANGELOG.md)
 ```
 
-Ogni job di build:
+Il job Linux `quality` installa Poppler e i dati italiani di Tesseract, esegue
+la scansione anti-segreti, tutti i typecheck e i gate unit/corpus/roundtrip/pixel-leak.
+Un prerequisito esterno assente causa errore: i test di sicurezza non usano `skipIf`.
+
+Ogni job di build, avviato soltanto per un tag e dopo `quality` verde:
 1. `npm ci` — installazione pulita dipendenze
 2. `npx @electron/rebuild --force` — ricompila moduli nativi per l'ABI di Electron
 3. `npx electron-vite build` — build renderer + main + preload
@@ -1470,6 +1484,7 @@ File: `tests/` — Framework: Vitest
 ```bash
 npm test              # Esegue tutti i test
 npm run typecheck     # Verifica tipi (senza eseguire)
+npm run typecheck:all # Sorgenti, test e sintassi dei generatori fixture
 ```
 
 ---

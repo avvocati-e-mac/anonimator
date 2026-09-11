@@ -2,11 +2,64 @@ name: Release
 
 on:
   push:
+    branches:
+      - '**'
     tags:
       - 'v*'
+  pull_request:
 
 jobs:
+  quality:
+    name: Quality and privacy gates
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Scan repository history for secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install Poppler and Italian Tesseract data
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes poppler-utils tesseract-ocr tesseract-ocr-ita
+          command -v pdfimages
+          command -v pdftotext
+          test -s /usr/share/tesseract-ocr/5/tessdata/ita.traineddata
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck application, tests and fixture scripts
+        run: npm run typecheck:all
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: OCR quality corpus
+        run: npm run test:corpus
+
+      - name: Real Tesseract roundtrip
+        run: npm run test:roundtrip
+        env:
+          ANONIMATOR_TESSDATA: /usr/share/tesseract-ocr/5/tessdata/ita.traineddata
+
+      - name: Pixel leak tests with Poppler
+        run: npm run test:pixel-leak
+
   build-windows:
+    needs: quality
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -38,6 +91,8 @@ jobs:
           retention-days: 1
 
   build-mac-arm64:
+    needs: quality
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
@@ -67,6 +122,8 @@ jobs:
           retention-days: 1
 
   build-mac-x64:
+    needs: quality
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: macos-latest    # ARM runner, cross-compila x64 (macos-13 ritirato dic 2025)
     steps:
       - uses: actions/checkout@v5
@@ -99,6 +156,8 @@ jobs:
           retention-days: 1
 
   build-linux:
+    needs: quality
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -127,6 +186,7 @@ jobs:
 
   release:
     needs: [build-windows, build-mac-arm64, build-mac-x64, build-linux]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write

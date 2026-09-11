@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { join } from 'path'
 import { tmpdir } from 'os'
-import { writeFileSync, unlinkSync, readFileSync } from 'fs'
+import { unlinkSync, readFileSync } from 'fs'
 import { randomUUID } from 'crypto'
 import AdmZip from 'adm-zip'
 import { generateDocx } from '../src/main/outputGenerators/docxGenerator'

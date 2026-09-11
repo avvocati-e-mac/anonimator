@@ -15,7 +15,10 @@ function makeEntity(overrides: Partial<DetectedEntity>): DetectedEntity {
 }
 
 function makeResult(entities: DetectedEntity[]): DocumentAnalysisResult {
-  return { fileName: 'test.pdf', format: 'pdf', pageCount: 1, entities, warnings: [] }
+  return {
+    analysisToken: '0'.repeat(64),
+    fileName: 'test.pdf', format: 'pdf', pageCount: 1, entities, warnings: [],
+  }
 }
 
 describe('mergeEntities', () => {
