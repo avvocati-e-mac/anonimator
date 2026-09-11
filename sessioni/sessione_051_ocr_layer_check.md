@@ -85,6 +85,63 @@ un accesso a `.text` su `DetectedEntity` che non esiste — bug latente vero —
 da sostituire con `vi.mocked`). Non corretto adesso per non cambiare il significato di
 `npm run typecheck` mentre gli esecutori sono in corso. Aperta come attività a sé.
 
+### Onda 1 — E1 (motore di rilevamento) — COMPLETATO
+- `src/main/services/ocrLayerCheck.ts` (~1500 righe) — `analyzeOcrLayer()` più 20 funzioni pure.
+- `tests/ocrLayerCheck.test.ts` (67 test su griglie sintetiche).
+
+E1 ha trovato **tre difetti per misura**, non per ipotesi — vale la pena ricordarli
+perché sono il tipo di errore che i test su dati finti non mostrano da soli:
+- `crossCorrelate1D` su profili periodici dava punteggio 1.0 a lag 0/±40/±80 e
+  l'argmax cadeva a caso: `scaleY = 1.0667` su profili **identici**.
+- `LINE_GAP_RATIO 0.3` sbagliato di ~2,5×: a 72 DPI uno spazio di parola vale ~3,3px
+  mentre 0,3× l'altezza riga dà 5px, quindi l'intera riga collassava in 1-3 run contro
+  7-10 parole e `lineAgreement` valeva **0.00 su un sandwich perfettamente allineato**.
+- Il bbox di riga va da ascendente a discendente mentre l'inchiostro sta fra maiuscole
+  e linea di base: correlare un'onda quadra con una banda stretta dava falsi
+  `scale-mismatch`. Introdotta `GLYPH_BAND` (0,25–0,85): coverage 0.877 → 0.990.
+
+### Onda 1 — E3 (corpus) — INTERROTTO, completato dall'orchestratore
+E3 è stato terminato da un limite di sessione dopo aver generato **56 fixture su 56**,
+incluse quelle difficili (`geo-17-userunit`, `img-08-mrc`, `img-14-g4-grande`).
+Mancavano il `README.md` e il gruppo `roundtrip/`. Il README è stato scritto
+dall'orchestratore; `roundtrip/` resta **da fare** (vedi TODO).
+
+## Gate A — esito
+
+| Criterio | Soglia | Esito |
+|---|---|---|
+| Falsi positivi sui `negativi/` | 0, bloccante | **0** |
+| Geometrici rilevati | ≥ 90% | **20/20** |
+| `geo-05-una-riga` rilevato | obbligatorio | **sì** |
+| Qualità immagine 300/150/100 DPI | good/marginal/poor | **corretta** |
+| Tempo per pagina | < 60 ms | **~35 ms** |
+
+Test: `tests/ocrCorpus.test.ts`, 56 casi, 2,2 s. Totale suite **437/437**, typecheck pulito.
+
+### Guasti trovati dalla taratura (invisibili ai soli test sintetici)
+
+1. **`lineAgreement` scorreva l'intera larghezza di pagina** invece della finestra x
+   della riga. Due colonne → la banda y attraversa l'altra colonna; tabella → i filetti
+   rendono l'inchiostro continuo. `neg-08` e `neg-10` risultavano `misaligned`: **due
+   falsi positivi su documenti sani**, con il criterio a tolleranza zero.
+   Accordo 0.00 → 1.00 (tabella) e 0.41 → 0.94 (due colonne).
+2. **`fitScaleY` senza guardia sul braccio verticale.** Lo scarto di scala è
+   `(lagBot − lagTop) / distanza`: un pixel di rumore vale `1/distanza`. Su una pagina
+   di coda rada bastava per un falso `scale-mismatch` — e **quasi ogni documento reale
+   ha un'ultima pagina rada**. Ora si astiene sotto `2 / SCALE_TOLERANCE` (~400px a
+   72 DPI), soglia derivata dal rumore e non scelta a occhio.
+3. **`aggregatePages` ignorava il motivo delle pagine inconcludenti**, quindi un
+   documento con layer OCR solo sulla prima pagina risultava `aligned`. È il difetto
+   documentato "OCR solo sulla prima pagina" degli MFP.
+4. **`img-14` aveva `/BlackIs1` invertito**: la pagina renderizzava per l'89% nera e il
+   motore si asteneva con `dark-page`. Conta molto, perché **il CCITT G4 è il formato
+   dominante negli allegati PEC** e negli output MFP italiani.
+5. **`geo-18` non era osservabile per costruzione**: tre pagine identiche, e spostare il
+   layer di una pagina su pagine uguali non cambia nulla. Lezione generale: una fixture
+   deve rendere il difetto *misurabile*, non solo presente.
+6. **`verify.mjs` misurava la copertura sull'intero box di riga** invece che sulla fascia
+   dei glifi: 36 segnalazioni su un corpus sano. Ora 7, tutte spiegabili.
+
 ## Problemi ambientali incontrati (utili a chi riprende)
 
 1. **`npm ci` non esegue gli install-script delle dipendenze** (npm 11.19 richiede
@@ -105,29 +162,49 @@ da sostituire con `vi.mocked`). Non corretto adesso per non cambiare il signific
    ```
    Senza questo, 4 file di test falliscono con "Electron failed to install correctly".
 
+## TODO prossima sessione
+
+- [ ] **`roundtrip/` è vuoto.** È il gruppo che spezza la circolarità del corpus: tutte le
+      altre fixture hanno difetti costruiti da noi, e tarare finché li si trova dimostra
+      poco. Serve: raster a 200 DPI con JPEG e rumore → OCR con il nostro tesseract.js →
+      ricostruzione con offset noto. `ita.traineddata` è presente in userData.
+- [ ] **`BASELINE_MAX: 0.5` è probabilmente troppo stretta.** E1 ha misurato baseline ≈ 0.61
+      su pagine di testo realistiche dopo la dilatazione: la guardia `ink-baseline-too-high`
+      scatterebbe su pagine ordinarie. Sul corpus non è mai scattata, ma su scansioni vere
+      più dense potrebbe. Suggerito 0.70–0.75, da verificare su documenti reali.
+- [ ] **Nota per la taratura di `textQuality`:** le voci di un carattere nel set di parole
+      funzionali (`a`, `e`, `i`, `o`, `l`, `d`) fanno risultare *alto* il tasso sul testo a
+      lettere spaziate. Il caso resta `poor` per altri due segnali, e un test lo congela.
+- [ ] **Debito tecnico:** `tsconfig.json` non typecheckka `tests/` (attività separata aperta).
+
 ## HANDOFF — stato al 2026-09-11
 
-- **Blocco corrente:** 1 · **Ultima onda completata:** Onda 0 · **Ultimo gate superato:** nessuno
-- **Ultimo commit buono:** `91c203a` — chore(ocr): contratto dei tipi per l'analisi del layer OCR (v1.6.0)
-- **typecheck:** OK · **test:** 291/291
-- **Fatto:** ambiente installato e riparato, branch creato, contratto dei tipi completo,
-  versione e lock allineati, stub CHANGELOG, questo file
-- **Prossimo passo:** Onda 1 — tre esecutori in parallelo:
-  - **E1** `src/main/services/ocrLayerCheck.ts` + test (spike MuPDF obbligatorio per primo)
-  - **E2** `src/main/services/textQuality.ts` + test
-  - **E3** `tests/corpus-ocr/**` (prima i `negativi/`, poi i `geometrici/` a difficoltà bassa)
-- **Decisioni aperte:** nessuna
-- **Trappole note da rispettare:**
-  - `getPixels()` è una **vista viva** sulla heap WASM: si stacca in silenzio se cresce.
-    Costruire prima la geometria del testo, rendere dopo, nessuna chiamata MuPDF in mezzo,
-    guardia `px.length < stride * h`.
-  - `showExtras` vale `true` di default: passare `false`, o le annotazioni entrano nella maschera.
-  - Omettere `onChar` salta l'intero ciclo dei caratteri (~3000 `keep_font` per pagina risparmiati).
-  - Una sola `toStructuredText()` per pagina: `asJSON()` è un metodo della stessa istanza.
-  - `asJSON()` restituisce **il testo del documento**: mai nei log né nel report.
+- **Blocco corrente:** 1 **COMPLETATO** · **Ultimo gate superato:** Gate A
+- **Ultimo commit buono:** `1cf5b33` — feat(ocr): corpus di 56 PDF di riferimento e taratura
+- **typecheck:** OK · **test:** 437/437 (291 preesistenti + 67 E1 + 23 E2 + 56 corpus)
+- **Fatto:** ambiente riparato, contratto dei tipi, motore di rilevamento, qualità
+  linguistica, corpus da 56 fixture con README, taratura completa, Gate A superato.
+  **Nulla è ancora collegato alla pipeline: l'utente non vede alcun cambiamento.**
+- **Prossimo passo:** Blocco 2 — Onda 2, quattro esecutori su file disgiunti:
+  - **E5** pipeline e IPC (`parsers/index.ts`, `ipcHandlers.ts`, `preload`, `env.d.ts`)
+        — include il fix dei disposer `removeAllListeners` e lo snapshot del sessionManager
+  - **E6** percorso di output (`outputGenerators/`) — `REDACT_IMAGE_PIXELS` con le guardie
+        su spazio colore, `/SMask`, area 25% e validazione dopo la scrittura
+  - **E7** interfaccia (`OcrQualityBanner.tsx`, `EntityReview.tsx`, store)
+  - **E8** qualità dell'OCR interno (`ocrParser.ts`) — 300 DPI, Sauvola, deskew al rendering
+- **Decisioni aperte:** nessuna bloccante; vedi TODO.
+- **Trappole da rispettare (confermate sul campo):**
+  - `getPixels()` è una vista viva sulla heap WASM: si stacca in silenzio.
+  - `showExtras` vale `true` di default: passare `false`.
+  - Omettere `onChar` salta l'intero ciclo dei caratteri.
+  - Una sola `toStructuredText()` per pagina; `asJSON()` è un metodo della stessa istanza
+    e restituisce **il testo del documento**: mai nei log né nel report.
+  - **R9 del piano:** `pdfGenerator.ts` L167-169 ricalcola `scale = 150/72` a mano,
+    duplicando la costante di `ocrParser.ts`. Se E8 rende il DPI variabile e E6 non lo
+    riceve, le redazioni finiscono fuori posto **in silenzio**. Il DPI va passato, mai
+    ricalcolato, e va verificato con almeno due valori diversi.
 - **Per riprendere:**
   ```bash
   git checkout feat/ocr-layer-quality-check
-  npm ci && npm run typecheck && npm test   # se i test Electron falliscono, vedi §Problemi ambientali
+  npm ci && npm run typecheck && npm test   # se i test Electron falliscono, vedi sopra
   ```
-  poi rileggere il piano e questo file, e aprire l'Onda 1.
