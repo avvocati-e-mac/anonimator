@@ -352,19 +352,83 @@ acceso correttamente. È il prezzo della rimozione vera, e l'avviso funziona.
 `npm start` sul corpus: `neg-*` nessun banner, `geo-*` banner con "Rifai OCR"
 funzionante, `img-03-dpi-100` avviso senza pulsante, PDF nativo e DOCX invariati.
 
+## Prova sul campo — scansione reale di 23 pagine
+
+Prima esecuzione dell'app con la funzionalità collegata, su un documento reale
+dell'utente (buste paga, 23 pagine). Solo metriche: nessun contenuto riportato.
+
+| Fase | Esito |
+|---|---|
+| Classificazione | `scan-no-text` (44 caratteri su 23 pagine) — corretta |
+| Costo del controllo | **38 ms** a freddo, **9 ms** a caldo, su 5 pagine campionate |
+| OCR interno a 300 DPI | 2 min 3 s per 23 pagine, confidenza per pagina 72-76% |
+| DPI | `dpiRichiesto: 300, dpiUsato: 300` — il contratto DPI regge fino all'OCR |
+| NER | 32 entità, `nerUsed: true`, `llmUsed: false` |
+
+Il costo della discovery automatica è, nei fatti, trascurabile: era la condizione
+posta dall'utente all'inizio ed è rispettata con ampio margine.
+
+### Quattro cose imparate, tutte corrette in giornata
+
+1. **`electron/path.txt` va scritto con `printf`, non `echo`** — vedi Problemi
+   ambientali. Primo avvio vero dell'app, primo difetto.
+2. **La barra di avanzamento restava ferma per tutto l'OCR.** Due minuti di
+   silenzio su un messaggio generico: chi guarda non può distinguere "sta
+   lavorando" da "si è piantato". Ora ogni pagina emette un evento con la stima
+   del tempo residuo (commit `4e1143f`).
+3. **L'avviso sull'LLM non era comprensibile.** "18 sezioni non analizzate per
+   errore del server" trattava allo stesso modo un guasto parziale e uno totale,
+   non diceva di quale server si trattasse, e non suggeriva nulla (commit
+   `378bd63`).
+4. **Verdetto sulla qualità immagine inventato dai valori a zero** (commit
+   `dda8e22`) — vedi sotto, è il più importante.
+
+### Difetto aperto: il raster non viene misurato quando manca il layer di testo
+
+`analyzePage` esce a `lineCount === 0` restituendo `image: null` **prima del
+rendering**. Su una scansione priva di layer di testo — cioè il caso in cui si
+finisce *sempre* per rifare l'OCR — non si misura quindi nulla dell'immagine,
+benché il dato necessario (il blocco immagine) sia già in mano poche righe sopra.
+
+Due conseguenze, in direzioni opposte e entrambe sbagliate:
+
+- **`suggestedOcrDpi` non si adatta.** Ricade su 300 fisso. Se il raster nativo è
+  a 150 DPI si rende al doppio della risoluzione reale: è interpolazione pura, e
+  la misura di E8 mostra che costa ~28% di tempo senza estrarre un carattere in
+  più.
+- **L'avviso "scansione inservibile" non può scattare.** `nativeDpi` e
+  `xHeightPx` restano `null`, quindi `classifyImageQuality` non può dire `poor`
+  — proprio sui documenti dove servirebbe di più.
+
+In più, fino al commit `dda8e22`, `separability` e `blurScore` valevano `0` per
+*mancata misura* e producevano un `marginal` con motivi `low-separability` e
+`possibly-blurred`: la stessa accusa su una scansione impeccabile e su una
+pessima. Ora ci si astiene, ma è una toppa, non il rimedio.
+
+**Rimedio vero, da fare deliberatamente:** estrarre il blocco "render + istogramma"
+di `analyzePage` in un helper e chiamarlo anche sul ramo `scan-no-text`,
+restituendo `xHeightPx: null` (legittimamente non calcolabile senza righe di
+testo) ma `nativeDpi`, `separability`, `skewDeg` e `blurScore` misurati davvero.
+Costa ~150-300 ms su un percorso che poi spende minuti in OCR, e **richiede di
+rieseguire la taratura del Gate A** sulle 56 fixture, perché cambia il verdetto di
+qualità immagine atteso per tutte le scansioni senza layer.
+
 ## HANDOFF — stato al 2026-09-11
 
 - **Blocco corrente:** 2 · **Ultima onda completata:** Onda 2 (E5-E8 integrati) ·
   **Ultimo gate superato:** Gate A
-- **Ultimo commit buono:** `b87f8c0` — test(ocr): prova della fuga di pixel con pdfimages
-- **typecheck:** OK · **test:** 527/527
+- **Ultimo commit buono:** `dda8e22` — fix(ocr): niente verdetto sulla qualita' immagine senza misura
+- **typecheck:** OK · **test:** 548/548
 - **Fatto:** contratto dei tipi, motore di rilevamento, qualità linguistica, corpus da
   56 fixture, taratura (Gate A), pipeline e IPC, redazione reale dei pixel con guardie,
   banner utente, OCR interno a 300 DPI con deskew e Sauvola, e le tre giunzioni fra
   esecutori. **La funzione è ora visibile all'utente e l'app è provabile con `npm start`.**
-- **Prossimo passo:** **Gate B automatico superato** (vedi sezione dedicata: prova della
-  fuga di pixel inclusa). Resta solo la **prova manuale con `npm start`** sul corpus, che
-  richiede l'interfaccia e quindi una persona davanti allo schermo.
+- **Prossimo passo — decisione dell'utente, in sospeso:** chiudere il Blocco 3
+  (documentazione + tag v1.6.0) **oppure** sistemare prima il difetto aperto sulla
+  misura del raster (vedi sezione dedicata: richiede di rieseguire la taratura del
+  Gate A). Gate B automatico superato, prova della fuga di pixel inclusa; la prova
+  manuale sul corpus è stata fatta su un documento reale, non ancora sulle fixture
+  `geo-*` che mostrano il banner.
 - **Poi Blocco 3 (Onda 3, E9):** `GUIDA.md`, `CLAUDE.md` (compresi gli errori
   preesistenti: `ProgressPayload`/`AnonymizeResult` non esistono, i nomi veri sono
   `ProcessingProgress`/`SaveResult`; `winston` è elencato ma il logger reale è
