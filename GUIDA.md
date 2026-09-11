@@ -1120,6 +1120,8 @@ L'app React è strutturata come una macchina a stati con 7 schermate, gestite da
 #### `ProcessingScreen.tsx`
 
 - Barra di progresso animata (0-100%)
+- Titolo neutro "Elaborazione in corso", valido sia per l'analisi sia per la successiva generazione dell'output
+- Messaggi distinti per evitare l'impressione di un secondo OCR: il riconoscimento del testo è indicato durante l'analisi; durante l'anonimizzazione viene dichiarato il riuso del testo OCR già in memoria e la ricostruzione del documento
 - Mostra il nome del file in elaborazione
 - Pulsante "Annulla" → `reset()`
 

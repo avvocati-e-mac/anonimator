@@ -57,3 +57,9 @@ export function buildOcrProgressMessage(
     formatRemainingOcrTime(startedAt, pagesDone, totalPages, now)
   )
 }
+
+export function anonymizationProgressMessage(stage: 'prepare' | 'redact'): string {
+  return stage === 'prepare'
+    ? 'Preparazione output: riuso del testo OCR già in memoria...'
+    : 'Anonimizzazione: rimozione dei dati e ricostruzione del documento...'
+}

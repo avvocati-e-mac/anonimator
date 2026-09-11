@@ -14,6 +14,7 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 ### Fix
 - **Pattern contestuali più precisi**: Partita IVA e targa richiedono ora una etichetta o un contesto coerente; il terzo ramo alternativo dei numeri documento restituisce il solo identificativo.
 - **Ledger delle entità manuali/importate**: la cardinalità intenzionalmente ignota resta `null`, evitando falsi `entity-count-mismatch` quando tutte le occorrenze vengono redatte.
+- **Avanzamento OCR più chiaro**: analisi e anonimizzazione sono ora distinte esplicitamente; nella seconda fase l'interfaccia chiarisce che riusa il testo OCR già in memoria mentre rimuove i dati e ricostruisce il documento.
 
 ## [1.7.0-beta.1] - 2026-09-11
 

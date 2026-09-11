@@ -12,7 +12,7 @@ import { sessionManager } from './services/sessionManager'
 import { settingsManager } from './services/settingsManager'
 import { testLlmConnection, listLlmModels, SYSTEM_PROMPT_IT, SYSTEM_PROMPT_EN } from './services/llmService'
 import { detectFormat, extractText } from './parsers/index'
-import { buildOcrProgressMessage, ocrProgressPercent } from './services/ocrProgressMessage'
+import { anonymizationProgressMessage, buildOcrProgressMessage, ocrProgressPercent } from './services/ocrProgressMessage'
 import { generateOutput } from './outputGenerators/index'
 import { analysisRegistry, AnalysisTokenError } from './services/analysisRegistry'
 import { ocrArtifactCache } from './services/ocrArtifactCache'
@@ -309,10 +309,10 @@ export function registerIpcHandlers(): void {
       analysisRegistry.validateDecisions(record, entities)
       const confirmed = entities.filter((entity) => entity.confirmed)
       const typedEntities = toGeneratorEntities(entities, record.entityLedger)
-      sendProgress('parsing', 20, 'Preparazione anonimizzazione...')
+      sendProgress('parsing', 20, anonymizationProgressMessage('prepare'))
       log.info('Anonimizzazione richiesta', { format: record.format, entitiesConfirmed: confirmed.length })
 
-      sendProgress('parsing', 50, 'Sostituzione entità...')
+      sendProgress('parsing', 50, anonymizationProgressMessage('redact'))
       const generated = await generateOutput(record.canonicalPath, record.format, typedEntities, {
         analysisToken,
         isScanned: record.isScanned,
