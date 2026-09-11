@@ -5,6 +5,16 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 
 ---
 
+## [1.7.0] - 2026-09-11
+
+### Novita
+- **PDF scansionati nuovamente ricercabili**: una singola passata OCR alimenta analisi, redazione e layer testuale pseudonimizzato. Il testo invisibile contiene gli pseudonimi, mai le entita originali confermate.
+- **Layer fail-closed**: il testo ricercabile viene aggiunto soltanto agli output completi; i documenti `_DA_VERIFICARE` restano raster-only.
+
+### Qualita e compatibilita
+- Gate obbligatorio Poppler/Tesseract italiano: confronto pixel del rendering, estrazione degli pseudonimi con `pdftotext`, assenza degli originali, degli attachment, dei metadata XMP e degli stream sorgente riutilizzati.
+- Corpus PDF ripetuto con distruzione esplicita degli oggetti MuPDF, svuotamento della cache globale e controllo RSS contro crescite monotone significative.
+
 ## [1.6.0-beta.2] - 2026-09-11
 
 > Beta di sicurezza sostitutiva: gli output vanno comunque verificati prima di

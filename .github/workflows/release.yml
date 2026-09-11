@@ -57,6 +57,12 @@ jobs:
       - name: Pixel leak tests with Poppler
         run: npm run test:pixel-leak
 
+      - name: Searchable PDF compatibility and sanitization gates
+        run: npm run test:searchable-pdf
+
+      - name: Repeated PDF corpus RSS gate
+        run: npm run test:pdf-rss
+
   build-windows:
     needs: quality
     if: startsWith(github.ref, 'refs/tags/v')
