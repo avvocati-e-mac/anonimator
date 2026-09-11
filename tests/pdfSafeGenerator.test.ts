@@ -61,7 +61,7 @@ describe('ricostruzione raster D1', () => {
           const object = output.loadPage(page).getObject()
           const annots = object.get('Annots')
           expect(annots.isNull() || (annots.isArray() && annots.length === 0)).toBe(true)
-          expect(object.get('Rotate').isNull() || object.get('Rotate').asInteger() === 0).toBe(true)
+          expect(object.get('Rotate').isNull() || object.get('Rotate').asNumber() === 0).toBe(true)
         }
         expect(text).not.toContain('Mario Rossi')
       } finally { source.destroy(); output.destroy() }

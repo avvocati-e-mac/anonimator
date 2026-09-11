@@ -1,4 +1,3 @@
-// @ts-nocheck -- gli helper legacy sotto il nuovo entry point restano solo per compatibilita test.
 import fs from 'fs/promises'
 import path from 'path'
 import { join } from 'path'
@@ -10,7 +9,7 @@ import { app } from 'electron'
 import type { DetectedEntity, PdfLayerKind, SaveResult } from '@shared/types'
 import type { PdfPageQualityOutcome } from '../services/ocrLayerCheck'
 import { getTessdataPath } from '../services/nerService'
-import { dpiToScale, resolveOcrDpi, PDF_POINTS_PER_INCH } from '../services/ocrRenderConfig'
+import { dpiToScale } from '../services/ocrRenderConfig'
 import log from 'electron-log'
 import { generateImagePdfSafe, generatePdfSafe } from './pdfSafeGenerator'
 
@@ -73,14 +72,18 @@ export interface PdfGenerateOptions {
  * modulo: i campi diagnostici sono aggiunti qui in modo strutturalmente compatibile,
  * così un consumatore tipizzato su SaveResult continua a funzionare invariato.
  */
-export interface PdfSaveResult extends SaveResult {
-  /** dimensioneOutput / dimensioneInput. Con REDACT_IMAGE_PIXELS può esplodere. */
+export type PdfSaveResult = SaveResult
+
+/** Forma del risultato della pipeline pre-v1.6, mantenuta solo dagli helper non
+ * esportati usati dai test di regressione. Il punto di ingresso pubblico non può
+ * più restituirla. */
+interface LegacyPdfSaveResult {
+  outputPath: string
+  entitiesReplaced: number
   sizeRatio?: number
-  /** true se l'output supera 3x l'input o i 20 MB: il deposito telematico ha limiti. */
   sizeWarning?: boolean
-  redactionMode?: RedactionMode
-  /** true se una qualsiasi pagina ha dovuto ripiegare sul solo overlay. */
-  fellBackToOverlay?: boolean
+  redactionMode: RedactionMode
+  fellBackToOverlay: boolean
 }
 
 // ============================================================================
@@ -387,7 +390,7 @@ interface RedactionBox {
 async function generatePdfDigital(
   filePath: string,
   entities: DetectedEntity[]
-): Promise<PdfSaveResult> {
+): Promise<LegacyPdfSaveResult> {
   const mupdf = await loadMupdf()
 
   const fileBuffer = await fs.readFile(filePath)
@@ -469,7 +472,7 @@ async function generateScannedPdf(
   mode: Exclude<SelectedRedactionMode, 'digital'>,
   ocrDpi: number,
   inputSizeBytes: number
-): Promise<PdfSaveResult> {
+): Promise<LegacyPdfSaveResult> {
   const mupdf = await loadMupdf()
 
   const confirmed = entities
@@ -613,6 +616,11 @@ async function generateScannedPdf(
     fellBackToOverlay
   }
 }
+
+// Helper storici mantenuti soltanto per i test di migrazione. Gli entry point di
+// produzione chiamano esclusivamente la pipeline fail-closed sopra.
+void generatePdfDigital
+void generateScannedPdf
 
 /**
  * Produce i byte candidati completi: redazione MuPDF + pseudonimi disegnati sopra.

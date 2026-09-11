@@ -37,6 +37,7 @@ export interface AnalysisRegistration {
   entities: DetectedEntity[]
   isScanned: boolean
   ocrReport?: OcrLayerReport
+  pageSafety?: PageSafetyReport[]
 }
 
 export interface AnalysisRecord {
@@ -142,7 +143,7 @@ export class AnalysisRegistry {
       canonicalPath,
       format: input.format,
       fingerprint,
-      pages: pageSafetyReport(input),
+      pages: input.pageSafety ?? pageSafetyReport(input),
       entityLedger: buildLedger(input.entities),
       isScanned: input.isScanned,
       ocrReport: input.ocrReport,

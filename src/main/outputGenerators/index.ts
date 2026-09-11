@@ -20,6 +20,8 @@ export type GenerateOutputResult = SaveResult | {
   entitiesReplaced: number
   sizeRatio?: number
   sizeWarning?: boolean
+  /** I formati non-PDF non hanno un percorso di redazione PDF. */
+  redactionMode?: undefined
 }
 
 export interface GenerateOutputOptions {

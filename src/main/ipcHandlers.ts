@@ -112,6 +112,7 @@ function toGeneratorEntities(
     pseudonym: decision.pseudonym,
     confirmed: decision.confirmed,
     occurrences: ledger.get(decision.entityId)?.expectedOccurrences ?? 1,
+    expectedOccurrences: ledger.get(decision.entityId)?.expectedOccurrences ?? null,
   }))
 }
 
@@ -209,7 +210,7 @@ export function registerIpcHandlers(): void {
         ocrPagesDone = page
       }
 
-      const { text, pageCount, warnings: parseWarnings, isScanned: docIsScanned, previewHtml, ocrReport } =
+      const { text, pageCount, warnings: parseWarnings, isScanned: docIsScanned, previewHtml, ocrReport, pdfSafety } =
         await extractText(filePath, format, { forceOcr, ocrDpi }, onOcrProgress)
 
       if (sessionSnapshot) {
@@ -253,6 +254,7 @@ export function registerIpcHandlers(): void {
         entities: enrichedEntities,
         isScanned: docIsScanned ?? false,
         ocrReport,
+        pageSafety: pdfSafety?.pages.map((page) => ({ page: page.page, kind: page.status })),
       })
       const ownerWebContentsId = event.sender.id
       event.sender.once('destroyed', () => analysisRegistry.releaseOwner(ownerWebContentsId))

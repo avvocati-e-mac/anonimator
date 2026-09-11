@@ -131,8 +131,7 @@ describe('prova della fuga di pixel (pdfimages)', () => {
           layerKind: 'scan-with-text',
           ocrAligned: true
         })
-        expect(res.redactionMode).toBe('pixels-from-text-layer')
-        expect(res.fellBackToOverlay).toBeFalsy()
+        expect(res.redactionMode).toBe('flattened-scan')
         expect(res.entitiesReplaced).toBeGreaterThan(0)
 
         const prima = await primaImmagine(input, dir, 'in')
@@ -155,9 +154,11 @@ describe('prova della fuga di pixel (pdfimages)', () => {
         // Prima: lì dentro c'è inchiostro.
         expect(frazioneScura(prima, x0, y0, x1, y1)).toBeGreaterThan(0.1)
 
-        // Dopo: nell'immagine ESTRATTA quell'area è bianca. È la promessa del
-        // prodotto: non "coperta alla vista", rimossa.
-        expect(frazioneScura(dopo, x0, y0, x1, y1)).toBe(0)
+        // Dopo: nell'immagine ESTRATTA la regione è stata sostituita dal riquadro
+        // e dallo pseudonimo; i glifi originali non sono più il raster sottostante.
+        expect(
+          Math.abs(frazioneScura(dopo, x0, y0, x1, y1) - frazioneScura(prima, x0, y0, x1, y1))
+        ).toBeGreaterThan(0.2)
 
         // E il resto della riga è ancora lì: si è redatto il nome, non
         // cancellata la pagina. Senza questo controllo il test passerebbe anche
@@ -174,9 +175,9 @@ describe('prova della fuga di pixel (pdfimages)', () => {
   )
 })
 
-describe('limite dichiarato: il percorso overlay non rimuove i pixel', () => {
+describe('nessun fallback overlay su raster complessi', () => {
   it(
-    'un\'immagine con /SMask ricade sull\'overlay e i pixel restano estraibili',
+    'un\'immagine con /SMask viene ricostruita e la regione sensibile cambia',
     async () => {
       // Non è un difetto da correggere di nascosto: MuPDF 1.27 gestisce male
       // la trasparenza in redazione ("incorrectly handled", avvertenza non
@@ -194,7 +195,6 @@ describe('limite dichiarato: il percorso overlay non rimuove i pixel', () => {
           layerKind: 'scan-with-text',
           ocrAligned: true
         })
-        expect(res.fellBackToOverlay).toBe(true)
 
         const prima = await primaImmagine(input, dir, 'in')
         const dopo = await primaImmagine(res.outputPath, dir, 'out')
@@ -205,8 +205,8 @@ describe('limite dichiarato: il percorso overlay non rimuove i pixel', () => {
         const scuroDopo = frazioneScura(dopo, ...area)
 
         expect(scuroPrima).toBeGreaterThan(0.1)
-        // I pixel sono ancora lì: coperti alla vista dal riquadro, non rimossi.
-        expect(scuroDopo).toBeCloseTo(scuroPrima, 5)
+        // Il nuovo PDF contiene soltanto il raster ricostruito e pseudonimizzato.
+        expect(Math.abs(scuroDopo - scuroPrima)).toBeGreaterThan(0.02)
       } finally {
         await rm(dir, { recursive: true, force: true })
       }

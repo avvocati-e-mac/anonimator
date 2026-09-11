@@ -6,7 +6,11 @@ import { parseOdt } from './odtParser'
 import { parsePdf } from './pdfParser'
 import { parseImage, parsePdfWithOcr, type OcrParseOptions } from './ocrParser'
 import { parseMarkdown } from './markdownParser'
-import { analyzeOcrLayer } from '../services/ocrLayerCheck'
+import {
+  analyzePdfQuality,
+  type PdfDocumentSafety,
+  type PdfQualityAnalysis,
+} from '../services/ocrLayerCheck'
 import { scoreTextQuality } from '../services/textQuality'
 
 /**
@@ -22,6 +26,8 @@ export interface ParseResult {
   isScanned?: boolean  // true se il testo è stato estratto via OCR (PDF scansionato o immagine)
   previewHtml?: string // solo per DOCX: HTML formattato generato da mammoth (undefined per tutti gli altri formati)
   ocrReport?: OcrLayerReport // solo per PDF: esito del controllo su layer OCR, allineamento e qualità
+  /** Routing Main-only per pagina; non viene serializzato verso il Renderer. */
+  pdfSafety?: PdfDocumentSafety
 }
 
 /**
@@ -48,9 +54,9 @@ export function detectFormat(filePath: string): DocumentFormat {
  * piano). In caso di errore si ritorna `undefined` e il chiamante ricade sulle
  * euristiche preesistenti.
  */
-async function analyzeOcrLayerSafe(filePath: string): Promise<OcrLayerReport | undefined> {
+async function analyzeOcrLayerSafe(filePath: string): Promise<PdfQualityAnalysis | undefined> {
   try {
-    return await analyzeOcrLayer(filePath)
+    return await analyzePdfQuality(filePath)
   } catch (err) {
     log.warn('Controllo layer OCR fallito — ricado sull\'euristica isScanned', {
       error: err instanceof Error ? err.message : String(err)
@@ -146,7 +152,8 @@ async function extractPdfText(
     // ~150-300 ms su un percorso in cui l'utente sta già aspettando minuti, e
     // in cambio dà al rendering l'inclinazione da correggere e la separabilità
     // che decide fra Otsu e Sauvola.
-    const preReport = await analyzeOcrLayerSafe(filePath)
+    const preAnalysis = await analyzeOcrLayerSafe(filePath)
+    const preReport = preAnalysis?.report
     const ocrResult = await parsePdfWithOcr(
       filePath,
       buildOcrParseOptions(preReport, opts.ocrDpi, onOcrProgress)
@@ -154,12 +161,15 @@ async function extractPdfText(
     return {
       ...ocrResult,
       isScanned: true,
-      ocrReport: reportAfterForcedOcr(preReport, ocrResult.text)
+      ocrReport: reportAfterForcedOcr(preReport, ocrResult.text),
+      pdfSafety: preAnalysis?.safety
     }
   }
 
   const pdfResult = await parsePdf(filePath)
-  const ocrReport = await analyzeOcrLayerSafe(filePath)
+  const qualityAnalysis = await analyzeOcrLayerSafe(filePath)
+  const ocrReport = qualityAnalysis?.report
+  const pdfSafety = qualityAnalysis?.safety
 
   const layerKind = ocrReport?.layerKind
   const isRecognizedKind =
@@ -179,11 +189,12 @@ async function extractPdfText(
         warnings: [...pdfResult.warnings, ...ocrResult.warnings],
         // Il testo ora è il nostro, quindi anche qui il giudizio linguistico va
         // rifatto su ciò che abbiamo prodotto noi.
-        ocrReport: reportAfterForcedOcr(ocrReport, ocrResult.text)
+        ocrReport: reportAfterForcedOcr(ocrReport, ocrResult.text),
+        pdfSafety
       }
     }
     // 'scan-with-text' (layer OCR già presente) o 'digital': il testo nativo va bene.
-    return { ...pdfResult, ocrReport }
+    return { ...pdfResult, ocrReport, pdfSafety }
   }
 
   // Rete di sicurezza: nessun report attendibile, ricadi sull'euristica isScanned.

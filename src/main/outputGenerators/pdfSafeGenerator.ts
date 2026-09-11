@@ -87,7 +87,9 @@ export async function generateImagePdfSafe(filePath: string, entities: DetectedE
 function outcomesFor(entities: readonly DetectedEntity[]): Map<string, EntityRedactionOutcome> {
   return new Map(entities.filter((entity) => entity.confirmed).map((entity) => [entity.id, {
     entityId: entity.id,
-    expectedOccurrences: Number.isSafeInteger(entity.occurrences) && entity.occurrences >= 0 ? entity.occurrences : null,
+    expectedOccurrences: entity.expectedOccurrences ?? (
+      Number.isSafeInteger(entity.occurrences) && entity.occurrences >= 0 ? entity.occurrences : null
+    ),
     matchedOccurrences: 0, redactedOccurrences: 0, ambiguousOccurrences: 0, rejectedOccurrences: 0,
   }]))
 }
@@ -156,7 +158,9 @@ async function flattened(filePath: string, source: Uint8Array, entities: Detecte
       try {
         const width = pixmap.getWidth(); const height = pixmap.getHeight(); enforcePixelBudget(width, height)
         const boxes: Box[] = []
-        if (kind === 'digital' || kind === 'scan-aligned') searchBoxes(page, index, entities, matrix, pixmap, pageWidth, pageHeight, boxes, outcomes)
+        if (kind === 'digital' || kind === 'scan-aligned') {
+          searchBoxes(page, index, entities, matrix, pixmap, pageWidth, pageHeight, boxes, outcomes)
+        }
         else {
           if (kind === 'page-error') reasons.add('analysis-page-error')
           try {
@@ -199,12 +203,19 @@ function qualityKind(options: SafePdfOptions, index: number): PdfPageQualityOutc
 
 function rasterDpi(page: import('mupdf').PDFPage): number | null {
   const bounds = page.getBounds(); const pageArea = Math.max(0, (bounds[2] - bounds[0]) * (bounds[3] - bounds[1])); const samples: Array<{ value: number; weight: number }> = []; let coverage = 0
-  try { page.toStructuredText('preserve-images').walk({ onImageBlock(box, _matrix, image) {
-    const w = box[2] - box[0]; const h = box[3] - box[1]; const area = Math.max(0, w * h)
-    if (w <= 1 || h <= 1 || !area) return
-    const dpi = Math.sqrt(image.getWidth() / (w / 72) * image.getHeight() / (h / 72))
-    if (dpi > 0 && Number.isFinite(dpi)) { samples.push({ value: dpi, weight: area }); coverage += area }
-  } }) } catch { return null }
+  const structured = page.toStructuredText('preserve-images')
+  try {
+    structured.walk({ onImageBlock(box, _matrix, image) {
+      const w = box[2] - box[0]; const h = box[3] - box[1]; const area = Math.max(0, w * h)
+      if (w <= 1 || h <= 1 || !area) return
+      const dpi = Math.sqrt(image.getWidth() / (w / 72) * image.getHeight() / (h / 72))
+      if (dpi > 0 && Number.isFinite(dpi)) { samples.push({ value: dpi, weight: area }); coverage += area }
+    } })
+  } catch {
+    return null
+  } finally {
+    structured.destroy()
+  }
   if (!pageArea || coverage / pageArea < 0.5) return null
   const value = weightedMedian(samples); return value === null ? null : Math.round(value)
 }

@@ -61,6 +61,8 @@ export interface DetectedEntity {
   originalText: string
   pseudonym: string
   occurrences: number
+  /** Conteggio Main-only usato dal ledger di salvataggio; null per entità manuali. */
+  expectedOccurrences?: number | null
   confirmed: boolean // l'utente ha confermato l'anonimizzazione
   fileCount?: number // numero di file in cui appare (usato nel batch review)
   /** Origine dell'entità — usato internamente nel Main per filtri e boosting.

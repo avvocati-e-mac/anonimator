@@ -457,16 +457,15 @@ describe('percorso pixels-from-text-layer', () => {
           ocrAligned: true
         })
 
-        expect(res.redactionMode).toBe('pixels-from-text-layer')
-        expect(res.fellBackToOverlay).toBe(false)
+        expect(res.redactionMode).toBe('flattened-scan')
         expect(res.entitiesReplaced).toBe(1)
-        // Una sola pagina porta annotazioni Redact, con il metodo 2.
-        expect(chiamate).toEqual([[false, mupdf.PDFPage.REDACT_IMAGE_PIXELS]])
+        // Il nuovo documento raster non usa applyRedactions sul sorgente.
+        expect(chiamate).toEqual([])
 
-        // Pagina 1: i pixel sono azzerati NELL'IMMAGINE, non solo coperti dall'overlay.
+        // Pagina 1: il raster incorporato è stato riscritto nella regione sensibile.
         const dopoPag1 = await inchiostroImmagine(res.outputPath, 0, rect)
         expect(dopoPag1).not.toBeNull()
-        expect(dopoPag1 ?? 1).toBeLessThan(0.005)
+        expect(Math.abs((dopoPag1 ?? 0) - (primaPag1 ?? 0))).toBeGreaterThan(0.2)
 
         // Pagina 2: nessuna redazione, l'immagine condivisa deve restare com'era.
         const dopoPag2 = await inchiostroImmagine(res.outputPath, 1, rect)
@@ -481,7 +480,8 @@ describe('percorso pixels-from-text-layer', () => {
           new mupdf.PDFDocument(new Uint8Array(await readFile(res.outputPath)))
         )
         expect(testo).not.toContain('Mario Rossi')
-        expect(testo).toContain('PERSONA_1')
+        // v1.6 è deliberatamente raster-only; il layer pseudonimizzato arriva in v1.7.
+        expect(testo).not.toContain('PERSONA_1')
 
         expect(res.sizeRatio).toBeGreaterThan(0)
       } finally {
@@ -492,7 +492,7 @@ describe('percorso pixels-from-text-layer', () => {
     }
   }, 60000)
 
-  it('SMask e Indexed ricadono sull\'overlay invece di rischiare il metodo 2', async () => {
+  it('SMask e Indexed vengono ricostruiti senza fallback overlay', async () => {
     const mupdf = await loadMupdf()
     for (const fixture of ['img-11-smask.pdf', 'img-12-indexed.pdf']) {
       const { input, dir } = await inCartellaTemporanea(join(CORPUS_IMG, fixture))
@@ -510,12 +510,9 @@ describe('percorso pixels-from-text-layer', () => {
           layerKind: 'scan-with-text',
           ocrAligned: true
         })
-        expect(res.redactionMode, fixture).toBe('overlay')
-        expect(res.fellBackToOverlay, fixture).toBe(true)
+        expect(res.redactionMode, fixture).toBe('flattened-scan')
         expect(res.entitiesReplaced, fixture).toBe(1)
-        // Nessuna chiamata con il metodo 2: i pixel non vengono mai toccati.
-        expect(chiamate, fixture).not.toContain(mupdf.PDFPage.REDACT_IMAGE_PIXELS)
-        expect(chiamate, fixture).toContain(mupdf.PDFPage.REDACT_IMAGE_NONE)
+        expect(chiamate, fixture).toEqual([])
       } finally {
         spy.mockRestore()
         await rm(dir, { recursive: true, force: true })
@@ -530,10 +527,9 @@ describe('percorso pixels-from-text-layer', () => {
         layerKind: 'scan-with-text',
         ocrAligned: true
       })
-      expect(res.redactionMode).toBe('pixels-from-text-layer')
+      expect(res.redactionMode).toBe('flattened-scan')
       expect(res.sizeRatio).toBeDefined()
-      // Un G4 bitonale ri-codificato cresce sempre: il campo deve dirlo.
-      expect(res.sizeRatio ?? 0).toBeGreaterThan(1)
+      expect(res.sizeRatio ?? 0).toBeGreaterThan(0)
       expect(typeof res.sizeWarning).toBe('boolean')
     } finally {
       await rm(dir, { recursive: true, force: true })
@@ -625,9 +621,8 @@ describe('generateOutput senza layerKind (flusso batch)', () => {
       // BatchAnonymizeRequest non porta layerKind: senza la deduzione interna questa
       // scansione finirebbe sul percorso nativo e i pixel resterebbero nel file.
       const res = await generateOutput(input, 'pdf', [entita('Mario Rossi', 'PERSONA_1')], {})
-      expect(res.redactionMode).toBe('pixels-from-text-layer')
-      expect(metodi).toContain(mupdf.PDFPage.REDACT_IMAGE_PIXELS)
-      expect(metodi).not.toContain(mupdf.PDFPage.REDACT_IMAGE_NONE)
+      expect(res.redactionMode).toBe('flattened-scan')
+      expect(metodi).toEqual([])
     } finally {
       spy.mockRestore()
       await rm(dir, { recursive: true, force: true })
