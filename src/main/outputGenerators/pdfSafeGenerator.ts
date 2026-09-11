@@ -272,12 +272,27 @@ function validateDocument(mupdf: Mupdf, source: Uint8Array, output: Uint8Array):
   try {
     if (before.countPages() !== after.countPages()) throw new PdfGenerationError('validation-failed', 'Numero pagine modificato.')
     for (let i = 0; i < before.countPages(); i++) {
-      const a = before.loadPage(i).getBounds(); const b = after.loadPage(i).getBounds()
+      const sourcePage = before.loadPage(i); const outputPage = after.loadPage(i)
+      const a = sourcePage.getBounds(); const b = outputPage.getBounds()
       if (Math.abs((a[2] - a[0]) - (b[2] - b[0])) > 0.5 || Math.abs((a[3] - a[1]) - (b[3] - b[1])) > 0.5) throw new PdfGenerationError('validation-failed', 'Dimensione fisica pagina modificata.')
-      const pixmap = after.loadPage(i).toPixmap(mupdf.Matrix.scale(1, 1), mupdf.ColorSpace.DeviceGray, false, true)
-      try { const pixels = pixmap.getPixels(); if (!pixmap.getWidth() || !pixmap.getHeight() || pixels.length < pixmap.getStride() * pixmap.getHeight()) throw new PdfGenerationError('validation-failed', 'Rendering output non valido.'); let dark = 0; for (let y = 0; y < pixmap.getHeight(); y++) for (let x = 0; x < pixmap.getWidth(); x++) if (pixels[y * pixmap.getStride() + x] < 160) dark++; if (dark / (pixmap.getWidth() * pixmap.getHeight()) > 0.95) throw new PdfGenerationError('validation-failed', 'Pagina annerita.') } finally { pixmap.destroy() }
+      const sourceInk = renderedInk(mupdf, sourcePage); const outputInk = renderedInk(mupdf, outputPage)
+      if (sourceInk === null || outputInk === null) throw new PdfGenerationError('validation-failed', 'Rendering output non valido.')
+      if (outputInk > 0.95) throw new PdfGenerationError('validation-failed', 'Pagina annerita.')
+      if (sourceInk > 0.002 && outputInk < 0.002) throw new PdfGenerationError('validation-failed', 'Pagina svuotata.')
     }
   } finally { before.destroy(); after.destroy() }
+}
+
+function renderedInk(mupdf: Mupdf, page: import('mupdf').PDFPage): number | null {
+  let pixmap: import('mupdf').Pixmap
+  try { pixmap = page.toPixmap(mupdf.Matrix.scale(1, 1), mupdf.ColorSpace.DeviceGray, false, true) } catch { return null }
+  try {
+    const width = pixmap.getWidth(); const height = pixmap.getHeight(); const stride = pixmap.getStride(); const pixels = pixmap.getPixels()
+    if (!width || !height || pixels.length < stride * height) return null
+    let dark = 0
+    for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) if (pixels[y * stride + x] < 160) dark++
+    return dark / (width * height)
+  } finally { pixmap.destroy() }
 }
 
 async function availablePath(dir: string, stem: string): Promise<string> { for (let i = 0; i < 10_000; i++) { const candidate = path.join(dir, `${stem}${i ? `_${i}` : ''}.pdf`); try { await fs.access(candidate) } catch { return candidate } } throw new PdfGenerationError('write-failed', 'Troppi output omonimi.') }
