@@ -19,3 +19,4 @@ resources/tessdata/*
 /logs/
 /sessioni/locale/
 /tests/corpus-ocr/roundtrip/
+/manual-test-output/

@@ -1,8 +1,8 @@
 import fs from 'fs/promises'
 import path from 'path'
-import { randomBytes } from 'crypto'
+import { createHash, randomBytes } from 'crypto'
 import { join } from 'path'
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
+import { PDFDocument, degrees, drawImage, rgb, StandardFonts, type PDFPage } from 'pdf-lib'
 import sharp from 'sharp'
 import { app } from 'electron'
 import type { DetectedEntity, EntityRedactionOutcome, PartialReason, SaveResult } from '@shared/types'
@@ -20,6 +20,12 @@ import {
   applySearchableLayer,
   type SensitiveWordSequence,
 } from '../services/searchableLayer'
+import {
+  BitonalCodecError,
+  analyzeBitonalEligibility,
+  packBitonalMsb,
+  tightRgbRaster,
+} from '../services/bitonalCodec'
 
 export { MAX_PAGE_PIXELS } from '../services/renderBudget'
 export const RASTER_JPEG_QUALITY = 85
@@ -41,9 +47,15 @@ export interface SafePdfOptions {
   ocrAligned?: boolean
   ocrDpi?: number
   pageSafety?: PdfPageQualityOutcome[]
+  /** Prototipo Main-only: il default resta JPEG e non esiste alcun controllo IPC/UI. */
+  rasterCodec?: 'jpeg' | 'bitonal-auto'
   /** Capability Main-only usata per recuperare l'artefatto OCR in RAM. */
   analysisToken?: string
 }
+
+type RasterEncoding =
+  | { codec: 'jpeg'; width: number; height: number }
+  | { codec: 'bitonal'; width: number; height: number; packedSha256: string }
 
 interface Box {
   page: number
@@ -71,6 +83,13 @@ export function enforcePixelBudget(width: number, height: number): void {
     assertPixelDimensions(width, height)
   } catch {
     throw new PdfGenerationError('resource-limit', 'La pagina supera il limite sicuro di 50 milioni di pixel.')
+  }
+}
+
+export function enforceRasterEncodingPageCount(expectedCount: number, pageCount: number): void {
+  if (!Number.isSafeInteger(expectedCount) || !Number.isSafeInteger(pageCount)
+    || expectedCount < 0 || pageCount < 0 || expectedCount !== pageCount) {
+    throw new PdfGenerationError('validation-failed', 'Ledger codec raster incompleto.')
   }
 }
 
@@ -166,6 +185,9 @@ async function flattened(filePath: string, source: Uint8Array, entities: Detecte
   const cachedArtifact = options.analysisToken ? getOcrArtifact(options.analysisToken) : undefined
   const pageBounds: Array<readonly [number, number, number, number]> = []
   const sensitiveSequences: SensitiveWordSequence[] = []
+  const rasterEncodings: RasterEncoding[] = []
+  const bitonalOptIn = options.rasterCodec === 'bitonal-auto'
+    && hasCompletePageSafety(options.pageSafety, doc.countPages())
   try {
     for (let index = 0; index < doc.countPages(); index++) {
       const page = doc.loadPage(index); const bounds = page.getBounds(); const pageWidth = bounds[2] - bounds[0]; const pageHeight = bounds[3] - bounds[1]
@@ -252,10 +274,54 @@ async function flattened(filePath: string, source: Uint8Array, entities: Detecte
         }
         ambiguate(boxes, outcomes)
         const active = boxes.filter((box) => box.status === 'matched')
-        const pixels = Buffer.from(Uint8Array.from(pixmap.getPixels()))
-        if (pixels.length < width * height * 3) throw new PdfGenerationError('render-failed', 'Buffer raster incompleto.')
-        const jpeg = await rasterLabels(pixels, width, height, active)
-        const embedded = await output.embedJpg(jpeg); const target = output.addPage([pageWidth, pageHeight]); target.drawImage(embedded, { x: 0, y: 0, width: pageWidth, height: pageHeight })
+        let pixels: Uint8Array
+        try {
+          pixels = tightRgbRaster(pixmap.getPixels(), width, height, pixmap.getStride())
+        } catch {
+          throw new PdfGenerationError('render-failed', 'Layout raster RGB non valido.')
+        }
+        const target = output.addPage([pageWidth, pageHeight])
+        let bitonalEligibility: ReturnType<typeof analyzeBitonalEligibility> | null = null
+        try {
+          bitonalEligibility = bitonalOptIn
+          && kind !== 'digital'
+          && kind !== 'page-error'
+            ? analyzeBitonalEligibility(pixels, width, height)
+            : null
+        } catch {
+          throw new PdfGenerationError('validation-failed', 'Selezione bitonale non riuscita.')
+        }
+        if (bitonalEligibility?.eligible) {
+          try {
+            const redactedPixels = await rasterLabelPixels(pixels, width, height, active)
+            const packed = packBitonalMsb(
+              redactedPixels,
+              width,
+              height,
+              bitonalEligibility.metrics.threshold,
+            )
+            embedBitonalPage(output, target, packed, width, height, pageWidth, pageHeight)
+            rasterEncodings.push({
+              codec: 'bitonal',
+              width,
+              height,
+              packedSha256: createHash('sha256').update(packed).digest('hex'),
+            })
+          } catch (error) {
+            if (error instanceof PdfGenerationError) throw error
+            throw new PdfGenerationError(
+              'validation-failed',
+              error instanceof BitonalCodecError
+                ? error.message
+                : 'Codifica bitonale non riuscita.',
+            )
+          }
+        } else {
+          const jpeg = await rasterLabels(pixels, width, height, active)
+          const embedded = await output.embedJpg(jpeg)
+          target.drawImage(embedded, { x: 0, y: 0, width: pageWidth, height: pageHeight })
+          rasterEncodings.push({ codec: 'jpeg', width, height })
+        }
         for (const box of active) {
           outcomes.get(box.entityId)!.redactedOccurrences += 1
           if (box.wordStart !== undefined && box.wordEnd !== undefined) {
@@ -301,9 +367,24 @@ async function flattened(filePath: string, source: Uint8Array, entities: Detecte
       }
     }
     const result = resultFor('', 'flattened-scan', outcomes, reasons, source.length, finalBytes.length)
-    const outputPath = await atomicValidatedWrite(filePath, finalBytes, result.safetyStatus === 'partial', source, mupdf)
+    const outputPath = await atomicValidatedWrite(
+      filePath,
+      finalBytes,
+      result.safetyStatus === 'partial',
+      source,
+      mupdf,
+      rasterEncodings,
+    )
     return { ...result, outputPath }
   } finally { doc.destroy() }
+}
+
+function hasCompletePageSafety(pageSafety: readonly PdfPageQualityOutcome[] | undefined, pageCount: number): boolean {
+  if (!pageSafety || pageSafety.length !== pageCount) return false
+  const pages = new Set(pageSafety.map((entry) => entry.page))
+  if (pages.size !== pageCount) return false
+  for (let page = 1; page <= pageCount; page++) if (!pages.has(page)) return false
+  return true
 }
 
 function qualityKind(options: SafePdfOptions, index: number): PdfPageQualityOutcome['status'] {
@@ -349,7 +430,30 @@ function ambiguate(boxes: Box[], outcomes: Map<string, EntityRedactionOutcome>):
   }
 }
 
-async function rasterLabels(raw: Buffer, width: number, height: number, boxes: readonly Box[]): Promise<Uint8Array> {
+async function rasterLabels(raw: Uint8Array, width: number, height: number, boxes: readonly Box[]): Promise<Uint8Array> {
+  const overlays = rasterLabelOverlays(width, height, boxes)
+  return sharp(raw, { raw: { width, height, channels: 3 } }).composite(overlays).jpeg({ quality: RASTER_JPEG_QUALITY }).toBuffer()
+}
+
+async function rasterLabelPixels(raw: Uint8Array, width: number, height: number, boxes: readonly Box[]): Promise<Uint8Array> {
+  const overlays = rasterLabelOverlays(width, height, boxes)
+  const result = await sharp(raw, { raw: { width, height, channels: 3 } })
+    .composite(overlays)
+    .flatten({ background: '#fff' })
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true })
+  if (result.info.channels !== 3 || result.data.byteLength !== width * height * 3) {
+    throw new BitonalCodecError('Raster redatto non RGB.')
+  }
+  return result.data
+}
+
+function rasterLabelOverlays(width: number, height: number, boxes: readonly Box[]): Array<{
+  input: Buffer
+  left: number
+  top: number
+}> {
   const overlays = boxes.flatMap((box) => {
     if (!box.pixel) return []
     const x = Math.max(0, Math.floor(box.pixel.x0 - 2)); const y = Math.max(0, Math.floor(box.pixel.y0 - 2)); const w = Math.min(width - x, Math.ceil(box.pixel.x1 + 2) - x); const h = Math.min(height - y, Math.ceil(box.pixel.y1 + 2) - y)
@@ -357,7 +461,42 @@ async function rasterLabels(raw: Buffer, width: number, height: number, boxes: r
     const safe = box.pseudo.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[char]!)
     return [{ input: Buffer.from(`<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="#262626"/><text x="50%" y="50%" dominant-baseline="central" text-anchor="middle" font-family="sans-serif" font-size="${Math.max(8, Math.min(32, h * 0.58))}" fill="#f2f2f2">${safe}</text></svg>`), left: x, top: y }]
   })
-  return sharp(raw, { raw: { width, height, channels: 3 } }).composite(overlays).jpeg({ quality: RASTER_JPEG_QUALITY }).toBuffer()
+  return overlays
+}
+
+function embedBitonalPage(
+  document: PDFDocument,
+  page: PDFPage,
+  packed: Uint8Array,
+  width: number,
+  height: number,
+  pageWidth: number,
+  pageHeight: number,
+): void {
+  const expectedBytes = Math.ceil(width / 8) * height
+  if (packed.byteLength !== expectedBytes) {
+    throw new BitonalCodecError('Buffer bitonale di dimensione inattesa.')
+  }
+  const image = document.context.flateStream(packed, {
+    Type: 'XObject',
+    Subtype: 'Image',
+    Width: width,
+    Height: height,
+    ColorSpace: 'DeviceGray',
+    BitsPerComponent: 1,
+    Decode: [0, 1],
+  })
+  const imageRef = document.context.register(image)
+  const imageName = page.node.newXObject('Bitonal', imageRef)
+  page.pushOperators(...drawImage(imageName, {
+    x: 0,
+    y: 0,
+    width: pageWidth,
+    height: pageHeight,
+    rotate: degrees(0),
+    xSkew: degrees(0),
+    ySkew: degrees(0),
+  }))
 }
 
 async function digitalLabels(source: Uint8Array, boxes: readonly Box[]): Promise<Uint8Array> {
@@ -388,19 +527,20 @@ async function loadNotoSans(): Promise<Uint8Array> {
   }
 }
 
-async function atomicValidatedWrite(sourcePath: string, bytes: Uint8Array, partial: boolean, source: Uint8Array, mupdf: Mupdf): Promise<string> {
+async function atomicValidatedWrite(sourcePath: string, bytes: Uint8Array, partial: boolean, source: Uint8Array, mupdf: Mupdf, expectedRasterEncodings?: readonly RasterEncoding[]): Promise<string> {
   const dir = path.dirname(sourcePath); const stem = `${path.basename(sourcePath, path.extname(sourcePath))}_anonimizzato${partial ? '_DA_VERIFICARE' : ''}`; const temp = path.join(dir, `.${stem}.${randomBytes(12).toString('hex')}.tmp`)
   try {
-    await fs.writeFile(temp, bytes, { flag: 'wx' }); const stored = Uint8Array.from(await fs.readFile(temp)); validateDocument(mupdf, source, stored)
+    await fs.writeFile(temp, bytes, { flag: 'wx' }); const stored = Uint8Array.from(await fs.readFile(temp)); validateDocument(mupdf, source, stored, expectedRasterEncodings)
     const output = await availablePath(dir, stem); await fs.rename(temp, output); return output
   } catch (error) { await fs.unlink(temp).catch(() => undefined); if (error instanceof PdfGenerationError) throw error; throw new PdfGenerationError('write-failed', 'Scrittura atomica fallita.') }
 }
 
-function validateDocument(mupdf: Mupdf, source: Uint8Array, output: Uint8Array): void {
+function validateDocument(mupdf: Mupdf, source: Uint8Array, output: Uint8Array, expectedRasterEncodings?: readonly RasterEncoding[]): void {
   let before: import('mupdf').PDFDocument; let after: import('mupdf').PDFDocument
   try { before = new mupdf.PDFDocument(source); after = new mupdf.PDFDocument(output) } catch { throw new PdfGenerationError('validation-failed', 'Output PDF non riapribile.') }
   try {
     if (before.countPages() !== after.countPages()) throw new PdfGenerationError('validation-failed', 'Numero pagine modificato.')
+    if (expectedRasterEncodings) enforceRasterEncodingPageCount(expectedRasterEncodings.length, after.countPages())
     for (let i = 0; i < before.countPages(); i++) {
       const sourcePage = before.loadPage(i); const outputPage = after.loadPage(i)
       const a = sourcePage.getBounds(); const b = outputPage.getBounds()
@@ -409,8 +549,70 @@ function validateDocument(mupdf: Mupdf, source: Uint8Array, output: Uint8Array):
       if (sourceInk === null || outputInk === null) throw new PdfGenerationError('validation-failed', 'Rendering output non valido.')
       if (outputInk > 0.95) throw new PdfGenerationError('validation-failed', 'Pagina annerita.')
       if (sourceInk > 0.002 && outputInk < 0.002) throw new PdfGenerationError('validation-failed', 'Pagina svuotata.')
+      const expected = expectedRasterEncodings?.[i]
+      if (expected?.codec === 'bitonal' && !hasSingleBitonalImage(outputPage, expected)) {
+        throw new PdfGenerationError('validation-failed', 'Struttura immagine bitonale non valida.')
+      }
     }
   } finally { before.destroy(); after.destroy() }
+}
+
+function hasSingleBitonalImage(
+  page: import('mupdf').PDFPage,
+  expected: Extract<RasterEncoding, { codec: 'bitonal' }>,
+): boolean {
+  try {
+    const resources = page.getObject().getInheritable('Resources')
+    const xObjects = resources.get('XObject')
+    if (!xObjects.isDictionary()) return false
+    const images: import('mupdf').PDFObject[] = []
+    xObjects.forEach((candidate) => {
+      if (candidate.isStream() && candidate.get('Subtype').asName() === 'Image') images.push(candidate)
+    })
+    let resourceCount = 0
+    xObjects.forEach(() => { resourceCount++ })
+    if (resourceCount !== 1 || images.length !== 1) return false
+    const image = images[0]
+    const decode = image.get('Decode').resolve()
+    if (image.get('Type').asName() !== 'XObject'
+      || image.get('Filter').asName() !== 'FlateDecode'
+      || image.get('ColorSpace').asName() !== 'DeviceGray'
+      || image.get('BitsPerComponent').asNumber() !== 1
+      || image.get('Width').asNumber() !== expected.width
+      || image.get('Height').asNumber() !== expected.height
+      || !decode.isArray()
+      || decode.length !== 2
+      || decode.get(0).asNumber() !== 0
+      || decode.get(1).asNumber() !== 1
+      || !image.get('DecodeParms').isNull()
+      || !image.get('ImageMask').isNull()
+      || !image.get('Mask').isNull()
+      || !image.get('SMask').isNull()) {
+      return false
+    }
+    const decoded = image.readStream()
+    if (decoded.length !== Math.ceil(expected.width / 8) * expected.height
+      || createHash('sha256').update(decoded.asUint8Array()).digest('hex') !== expected.packedSha256) {
+      return false
+    }
+    let count = 0
+    let renderedValid = true
+    const structured = page.toStructuredText('preserve-images')
+    try {
+      structured.walk({
+        onImageBlock(_bbox, _matrix, renderedImage) {
+          count++
+          if (renderedImage.getBitsPerComponent() !== 1
+            || renderedImage.getColorSpace()?.getType() !== 'Gray') renderedValid = false
+        },
+      })
+    } finally {
+      structured.destroy()
+    }
+    return count === 1 && renderedValid
+  } catch {
+    return false
+  }
 }
 
 function renderedInk(mupdf: Mupdf, page: import('mupdf').PDFPage): number | null {

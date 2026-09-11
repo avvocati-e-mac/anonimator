@@ -143,6 +143,7 @@ npm run build:electron  # Package app with electron-builder
 - `services/` - all document processing logic:
   - `nerService.ts` - hybrid NER engine (Regex + Transformers.js + optional LLM)
   - `renderBudget.ts` - preflight overflow-safe delle pixmap MuPDF e delle immagini OCR (limite 50 MP)
+  - `bitonalCodec.ts` - selettore conservativo e packer puro DeviceGray 1-bit (prototipo Main-only opt-in)
   - `sessionManager.ts` - in-memory substitution dictionary (session persistence)
   - `settingsManager.ts` - LLM configuration persistence on disk
   - `llmService.ts` - client for local LLMs (Ollama/LM Studio) via OpenAI-compatible endpoint
@@ -196,7 +197,7 @@ File dropped
 - `fast-xml-parser` - parse XML content inside ODT archives (used in `odtParser.ts`)
 - `tesseract.js` - offline OCR (tessdata downloaded at first run); una sola passata per pagina, artefatto ridotto in RAM legato all'analysis token (limite globale 128 MiB)
 
-For raster or mixed PDFs, `pdfSafeGenerator.ts` creates a new flattened PDF and never copies the source catalog, attachments, forms, metadata, JavaScript, or image streams. Every MuPDF raster allocation is preceded by the shared 50 MP preflight in `renderBudget.ts`. Redactions are painted into each DeviceRGB raster before JPEG encoding. A searchable invisible layer is added only to complete outputs; partial outputs remain raster-only. OCR rendering/recognition errors abort analysis instead of falling back to potentially empty digital text.
+For raster or mixed PDFs, `pdfSafeGenerator.ts` creates a new flattened PDF and never copies the source catalog, attachments, forms, metadata, JavaScript, or image streams. Every MuPDF raster allocation is preceded by the shared 50 MP preflight in `renderBudget.ts`. Redactions are painted into each DeviceRGB raster before encoding. JPEG quality 85 remains the default. A Main-only internal opt-in can conservatively quantize eligible scan pages to DeviceGray 1-bit and then compress that bitmask losslessly with Flate; RGB-to-1-bit conversion is destructive. The opt-in requires complete one-to-one `pageSafety`; otherwise every page stays on JPEG. Its initial policy admits only essentially pure black/white rasters: any pixel with channel delta greater than 24, or luma strictly between 32 and 223, vetoes bitonal output for that page. Digital pages and analysis errors also stay on JPEG. The bitonal encoder receives only the newly redacted raster, and technical codec/validation failures abort without fallback. A searchable invisible layer is added only to complete outputs; partial outputs remain raster-only. OCR rendering/recognition errors abort analysis instead of falling back to potentially empty digital text.
 
 **NER (Named Entity Recognition):**
 - Regex for structured Italian data and context-bound legal/administrative fields, including OCR label variants
@@ -236,6 +237,7 @@ For raster or mixed PDFs, `pdfSafeGenerator.ts` creates a new flattened PDF and 
 │   │   ├── parsers/
 │   │   ├── outputGenerators/
 │   │   └── services/
+│   │       ├── bitonalCodec.ts  # selector + packer 1-bit puro, opt-in Main
 │   │       ├── privacyLogger.ts # unico accesso autorizzato a electron-log
 │   │       └── renderBudget.ts  # preflight pixmap/immagini, limite 50 MP
 │   ├── preload/

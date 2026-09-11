@@ -4,6 +4,7 @@ import { copyFile, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { DetectedEntity } from '../src/shared/types'
+import type { PdfPageQualityOutcome } from '../src/main/services/ocrLayerCheck'
 
 vi.mock('electron', () => ({
   app: { isPackaged: false, getAppPath: () => process.cwd(), getPath: () => tmpdir() }
@@ -15,6 +16,19 @@ import { transformRect, type Rect } from '../src/main/services/geometry'
 
 const FIXTURE = join(__dirname, 'corpus-ocr', 'negativi', 'neg-02-allineato-flate.pdf')
 const GATE = join(process.cwd(), 'scripts', 'verify-searchable-pdf.mjs')
+
+const ALIGNED_PAGE_SAFETY: PdfPageQualityOutcome[] = [{
+  page: 1,
+  status: 'scan-aligned',
+  layerKind: 'scan-with-text',
+  existingTextLayerUsable: true,
+  reason: 'ok',
+  metrics: {
+    coverage: 1, lift: 2, lineAgreement: 1,
+    scaleY: 1, offsetXPt: 0, offsetYPt: 0,
+  },
+  imageMetrics: null,
+}]
 
 describe('gate PDF ricercabile v1.7', () => {
   it('richiede Poppler e Tesseract 5 con lingua italiana', () => {
@@ -38,13 +52,41 @@ describe('gate PDF ricercabile v1.7', () => {
       pseudonym: 'PERSONA_999', occurrences: 1, confirmed: true
     }
     try {
+      const reference = await generatePdfSafe(input, [], {
+        routing: 'flattened-scan', layerKind: 'scan-with-text', ocrAligned: true,
+        pageSafety: ALIGNED_PAGE_SAFETY,
+        rasterCodec: 'bitonal-auto',
+      })
       const result = await generatePdfSafe(input, [missing], {
-        routing: 'flattened-scan', layerKind: 'scan-with-text', ocrAligned: true
+        routing: 'flattened-scan', layerKind: 'scan-with-text', ocrAligned: true,
+        pageSafety: ALIGNED_PAGE_SAFETY,
+        rasterCodec: 'bitonal-auto',
       })
       expect(result.safetyStatus).toBe('partial')
+      const mupdf = (await import('mupdf')).default
+      const output = new mupdf.PDFDocument(new Uint8Array(await readFile(result.outputPath)))
+      try {
+        const page = output.loadPage(0)
+        const structured = page.toStructuredText('preserve-images')
+        const formats: Array<{ bits: number; colorSpace: string | null }> = []
+        try {
+          structured.walk({ onImageBlock(_bbox, _matrix, image) {
+            formats.push({
+              bits: image.getBitsPerComponent(),
+              colorSpace: image.getColorSpace()?.getType() ?? null,
+            })
+          } })
+        } finally {
+          structured.destroy()
+          page.destroy()
+        }
+        expect(formats).toEqual([{ bits: 1, colorSpace: 'Gray' }])
+      } finally {
+        output.destroy()
+      }
       execFileSync(process.execPath, [GATE,
         '--source', input,
-        '--visual-reference', result.outputPath,
+        '--visual-reference', reference.outputPath,
         '--output', result.outputPath,
         '--status', 'partial',
         '--original', missing.originalText
@@ -98,6 +140,8 @@ describe('gate PDF ricercabile v1.7', () => {
 
       const reference = await generatePdfSafe(input, [entity], {
         routing: 'flattened-scan', layerKind: 'scan-with-text', ocrAligned: true,
+        pageSafety: ALIGNED_PAGE_SAFETY,
+        rasterCodec: 'bitonal-auto',
       })
       const result = await generatePdfSafe(input, [entity], {
         routing: 'flattened-scan',
@@ -115,8 +159,31 @@ describe('gate PDF ricercabile v1.7', () => {
           imageMetrics: null,
         }],
         analysisToken: token,
+        rasterCodec: 'bitonal-auto',
       })
       expect(result.safetyStatus).toBe('complete')
+      const bitonalOutput = new mupdf.PDFDocument(new Uint8Array(await readFile(result.outputPath)))
+      try {
+        const bitonalPage = bitonalOutput.loadPage(0)
+        const structured = bitonalPage.toStructuredText('preserve-images')
+        const imageKinds: Array<{ bits: number; colorSpace: string | null }> = []
+        try {
+          structured.walk({
+            onImageBlock(_bbox, _matrix, image) {
+              imageKinds.push({
+                bits: image.getBitsPerComponent(),
+                colorSpace: image.getColorSpace()?.getType() ?? null,
+              })
+            },
+          })
+        } finally {
+          structured.destroy()
+          bitonalPage.destroy()
+        }
+        expect(imageKinds).toEqual([{ bits: 1, colorSpace: 'Gray' }])
+      } finally {
+        bitonalOutput.destroy()
+      }
       execFileSync(process.execPath, [GATE,
         '--source', input,
         '--visual-reference', reference.outputPath,

@@ -90,6 +90,7 @@ Ha accesso completo a Node.js (file system, moduli nativi). Contiene tutta la lo
 | `services/privacyLogger.ts` | Unico accesso a `electron-log`: eventi fissi, metadata allowlist e conversione degli errori in codici sicuri. |
 | `services/diagnostics.ts` | Formatter puro della diagnostica condivisibile; accetta solo versione, piattaforma e stati booleani, senza log o percorsi. |
 | `services/renderBudget.ts` | Calcola il bounding box raster come MuPDF e applica prima dell'allocazione il limite condiviso di 50 milioni di pixel, con aritmetica overflow-safe. |
+| `services/bitonalCodec.ts` | Selettore conservativo e packer puro MSB-first per il prototipo Main-only DeviceGray 1-bit Flate. |
 | `parsers/` | Estrattori di testo per ogni formato (txt, docx, odt, pdf, ocr, markdown). |
 | `outputGenerators/` | Generatori di file anonimizzati per ogni formato. |
 
@@ -1006,9 +1007,29 @@ Per ogni pagina:
   1. MuPDF renderizza sequenzialmente in DeviceRGB, senza alpha e con annotazioni/widget visibili inglobati.
   2. Il DPI deriva dalla mediana pesata per area dei raster; le pagine digitali di un PDF misto usano 300 DPI. Oltre 50 milioni di pixel la generazione fallisce senza output.
   3. I bbox dell'unica passata OCR vengono trasformati da pixel a spazio pagina mediante l'inversa della matrice registrata, quindi nella pixmap corrente.
-  4. Rettangoli e pseudonimi sono disegnati direttamente nei pixel; la pagina viene codificata JPEG colore qualità 85.
+  4. Rettangoli e pseudonimi sono disegnati direttamente nei pixel; la pagina viene codificata JPEG colore qualità 85 per default.
+     Un prototipo opt-in esclusivamente Main (`rasterCodec: 'bitonal-auto'`, non esposto via IPC/UI) si attiva solo con una `pageSafety` completa e biunivoca; se la provenienza manca o è incompleta tutte le pagine conservano JPEG. Il Main ricalcola l'idoneità sull'esatto raster RGB. La policy iniziale ammette soltanto scansioni sostanzialmente bianco/nero pure: basta un pixel con differenza fra canale massimo e minimo maggiore di 24, oppure con luma strettamente compresa fra 32 e 223, per mantenere la pagina in JPEG. Rumore, antialiasing, compressione JPEG, colore e tratti sbiaditi possono quindi escludere legittimamente il bitonale. Solo dopo avere impresso le redazioni, il nuovo raster viene quantizzato in modo distruttivo da RGB a 1 bit e impacchettato MSB-first come `/DeviceGray`, `/BitsPerComponent 1`; `/FlateDecode` comprime senza perdita il bitmask già quantizzato, non l'immagine RGB originaria. L'inidoneità prevista conserva JPEG; un errore tecnico del codec o della validazione fallisce senza fallback.
   5. Il file temporaneo viene validato su ogni pagina e rinominato atomicamente. Non esiste fallback overlay.
 ```
+
+Il controllo manuale dev-only del prototipo si avvia con:
+
+```bash
+npm run manual:bitonal
+```
+
+Richiede `pdfimages` e `pdftoppm`. Il comando non usa documenti dell'utente:
+genera quattro fixture artificiali (bianco/nero puro, tratto grigio luma 180,
+segno cromatico scuro e redazione con layer ricercabile), applica prima gli
+oracoli automatici e crea poi PDF, anteprime PNG, `report.json` aggregato e una
+checklist locale. Ogni esecuzione usa una nuova sottodirectory ignorata da Git
+in `manual-test-output/`; non apre automaticamente applicazioni grafiche. In
+caso di successo stampa `MANUAL_BITONAL_OK` e il solo percorso locale necessario
+per raggiungere gli artefatti. Sulla sola fixture bianco/nero grande e
+deterministica, lo stesso raster viene prodotto sia col JPEG predefinito sia col
+bitonale: il gate richiede `bitonalBytes < 0.60 * jpegBytes` e registra nel
+report soltanto byte e rapporto aggregati. La leggibilità resta una voce della
+checklist visiva e non introduce OCR nel gate.
 
 Le immagini standalone vengono date a Tesseract nei pixel originali e poi
 incapsulate in una pagina PDF con rapporto `1 pixel = 1 punto`. Il DPI comunicato
@@ -1054,8 +1075,10 @@ Solo se l'esito è `complete`, `searchableLayer.ts` incorpora Noto Sans tramite 
 │          │ 2) pdf-lib: sovrappone rettangoli grigi con lo          │
 │          │    pseudonimo centrato in Helvetica.                     │
 │          │                                                         │
-│ PDF      │ 1) Nuovo PDF raster, DeviceRGB/JPEG q85.                │
-│ (scans.) │ 2) Box dalla singola passata OCR, trasformati con       │
+│ PDF      │ 1) Nuovo PDF raster, DeviceRGB/JPEG q85 per default;   │
+│ (scans.) │    prototipo Main-only 1-bit Flate sulle sole scansioni│
+│          │    idonee e sempre dopo la redazione dei pixel.        │
+│          │ 2) Box dalla singola passata OCR, trasformati con       │
 │          │    matrice completa; anonimizzazione impressa nei pixel.│
 │          │ 3) Layer invisibile pseudonimizzato solo se completo.   │
 │          │                                                         │

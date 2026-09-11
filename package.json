@@ -24,9 +24,10 @@
     "test:searchable-pdf": "vitest run tests/searchablePdfGate.test.ts",
     "test:pdf-rss": "node --expose-gc scripts/check-pdf-rss.mjs",
     "bench:dpi": "node scripts/benchmark-dpi.mjs",
+    "manual:bitonal": "node scripts/manual-bitonal.mjs",
     "typecheck": "tsc --noEmit",
     "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json",
-    "typecheck:fixtures": "node --check tests/fixtures/createFixtures.mjs && node --check tests/corpus-ocr/generate.mjs && node --check tests/corpus-ocr/verify.mjs && node --check scripts/verify-searchable-pdf.mjs && node --check scripts/check-pdf-rss.mjs && node --check scripts/benchmark-dpi.mjs",
+    "typecheck:fixtures": "node --check tests/fixtures/createFixtures.mjs && node --check tests/corpus-ocr/generate.mjs && node --check tests/corpus-ocr/verify.mjs && node --check scripts/verify-searchable-pdf.mjs && node --check scripts/check-pdf-rss.mjs && node --check scripts/benchmark-dpi.mjs && node --check scripts/manual-bitonal.mjs",
     "typecheck:all": "npm run typecheck && npm run typecheck:tests && npm run typecheck:fixtures",
     "postinstall": "patch-package"
   },
