@@ -37,6 +37,7 @@
   "license": "MIT",
   "dependencies": {
     "@huggingface/transformers": "^3.3.3",
+    "@pdf-lib/fontkit": "1.1.1",
     "adm-zip": "^0.5.16",
     "electron-log": "^5.2.4",
     "electron-updater": "^6.3.9",
