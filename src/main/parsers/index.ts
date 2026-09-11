@@ -28,6 +28,8 @@ export interface ParseResult {
   ocrReport?: OcrLayerReport // solo per PDF: esito del controllo su layer OCR, allineamento e qualità
   /** Routing Main-only per pagina; non viene serializzato verso il Renderer. */
   pdfSafety?: PdfDocumentSafety
+  /** Handle Main-only: non deve mai essere incluso nella risposta IPC. */
+  ocrArtifactHandle?: string
 }
 
 /**

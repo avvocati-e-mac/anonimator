@@ -21,6 +21,7 @@ import {
   buildImageLowConfidenceWarning,
   buildOcrRenderMatrix,
   buildPdfLowConfidenceWarning,
+  extractOcrArtifactWords,
   isLowConfidence,
   resolveRenderDpi
 } from '../src/main/parsers/ocrParser'
@@ -31,6 +32,30 @@ import {
   dpiToScale,
   resolveOcrDpi
 } from '../src/main/services/ocrRenderConfig'
+
+describe('artefatto OCR ridotto', () => {
+  it('conserva parole, bbox, confidenza, riga e pagina senza duplicare il testo', () => {
+    const words = extractOcrArtifactWords({
+      text: 'Mario Rossi',
+      blocks: [{ paragraphs: [{ lines: [
+        { words: [{ text: 'Mario', confidence: 91, bbox: { x0: 1, y0: 2, x1: 10, y1: 12 } }] },
+        { words: [{ text: 'Rossi', confidence: 87, bbox: { x0: 2, y0: 20, x1: 11, y1: 30 } }] },
+      ] }] }],
+    }, 3)
+
+    expect(words).toEqual([
+      { text: 'Mario', confidence: 91, bbox: { x0: 1, y0: 2, x1: 10, y1: 12 }, line: 1, page: 3 },
+      { text: 'Rossi', confidence: 87, bbox: { x0: 2, y0: 20, x1: 11, y1: 30 }, line: 2, page: 3 },
+    ])
+  })
+
+  it('scarta bbox degeneri o non numerici', () => {
+    expect(extractOcrArtifactWords({ words: [
+      { text: 'ok', confidence: 80, bbox: { x0: 0, y0: 0, x1: 5, y1: 5 } },
+      { text: 'bad', confidence: 80, bbox: { x0: 0, y0: 0, x1: 0, y1: 5 } },
+    ] }, 1)).toHaveLength(1)
+  })
+})
 
 // ocrParser ha bisogno di Tesseract e di ita.traineddata per i percorsi end-to-end
 // (parseImage, parsePdfWithOcr): test lenti e fragili, esclusi qui di proposito.

@@ -8,6 +8,7 @@ import type {
   EntityType,
   OcrLayerReport,
 } from '@shared/types'
+import { ocrArtifactCache } from './ocrArtifactCache'
 
 export interface SourceFingerprint {
   size: number
@@ -38,6 +39,8 @@ export interface AnalysisRegistration {
   isScanned: boolean
   ocrReport?: OcrLayerReport
   pageSafety?: PageSafetyReport[]
+  /** Handle provvisorio Main-only prodotto dal parser OCR. */
+  ocrArtifactHandle?: string
 }
 
 export interface AnalysisRecord {
@@ -149,6 +152,14 @@ export class AnalysisRegistry {
       ocrReport: input.ocrReport,
     }
     this.records.set(token, record)
+    if (input.ocrArtifactHandle) {
+      try {
+        ocrArtifactCache.bind(input.ocrArtifactHandle, token)
+      } catch (error) {
+        this.records.delete(token)
+        throw error
+      }
+    }
     return record
   }
 
@@ -161,6 +172,7 @@ export class AnalysisRegistry {
     for (const [token, record] of this.records) {
       if (record.ownerWebContentsId === ownerWebContentsId && record.canonicalPath === canonicalPath) {
         this.records.delete(token)
+        ocrArtifactCache.release(token)
       }
     }
   }
@@ -177,11 +189,13 @@ export class AnalysisRegistry {
       current = (await fingerprintSource(record.canonicalPath)).fingerprint
     } catch (error) {
       this.records.delete(token)
+      ocrArtifactCache.release(token)
       if (error instanceof AnalysisTokenError) throw error
       throw new AnalysisTokenError('source-changed', 'Il documento sorgente non è più disponibile.')
     }
     if (!fingerprintsEqual(record.fingerprint, current)) {
       this.records.delete(token)
+      ocrArtifactCache.release(token)
       throw new AnalysisTokenError('source-changed', 'Il documento sorgente è cambiato dopo l\'analisi.')
     }
     return record
@@ -204,17 +218,23 @@ export class AnalysisRegistry {
   release(token: string, ownerWebContentsId: number): boolean {
     const record = this.records.get(token)
     if (!record || record.ownerWebContentsId !== ownerWebContentsId) return false
-    return this.records.delete(token)
+    const deleted = this.records.delete(token)
+    ocrArtifactCache.release(token)
+    return deleted
   }
 
   releaseOwner(ownerWebContentsId: number): void {
     for (const [token, record] of this.records) {
-      if (record.ownerWebContentsId === ownerWebContentsId) this.records.delete(token)
+      if (record.ownerWebContentsId === ownerWebContentsId) {
+        this.records.delete(token)
+        ocrArtifactCache.release(token)
+      }
     }
   }
 
   clear(): void {
     this.records.clear()
+    ocrArtifactCache.clear()
   }
 
   size(): number {

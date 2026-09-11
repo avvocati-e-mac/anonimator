@@ -3,6 +3,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import { afterEach, describe, expect, it } from 'vitest'
 import { AnalysisRegistry, AnalysisTokenError } from '../src/main/services/analysisRegistry'
+import { ocrArtifactCache } from '../src/main/services/ocrArtifactCache'
 
 const directories: string[] = []
 
@@ -15,6 +16,7 @@ async function source(contents = 'Mario Rossi'): Promise<string> {
 }
 
 afterEach(async () => {
+  ocrArtifactCache.clear()
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })))
 })
 
@@ -82,5 +84,35 @@ describe('AnalysisRegistry', () => {
       pseudonym: 'IBAN_001',
       confirmed: true,
     }])).toThrowError(AnalysisTokenError)
+  })
+
+  it('lega e rilascia l artefatto OCR insieme al token', async () => {
+    const registry = new AnalysisRegistry()
+    const handle = ocrArtifactCache.stage({ pages: [] })
+    const record = await registry.register({ ...registration(await source()), ocrArtifactHandle: handle })
+    expect(ocrArtifactCache.get(record.token)).toEqual({ pages: [] })
+    expect(registry.release(record.token, 7)).toBe(true)
+    expect(ocrArtifactCache.get(record.token)).toBeUndefined()
+    expect(ocrArtifactCache.stats().usedBytes).toBe(0)
+  })
+
+  it('releaseOwner e clear liberano tutti gli artefatti attivi', async () => {
+    const registry = new AnalysisRegistry()
+    const firstHandle = ocrArtifactCache.stage({ pages: [] })
+    const first = await registry.register({
+      ...registration(await source('primo'), 7),
+      ocrArtifactHandle: firstHandle,
+    })
+    const secondHandle = ocrArtifactCache.stage({ pages: [] })
+    const second = await registry.register({
+      ...registration(await source('secondo'), 8),
+      ocrArtifactHandle: secondHandle,
+    })
+
+    registry.releaseOwner(7)
+    expect(ocrArtifactCache.get(first.token)).toBeUndefined()
+    expect(ocrArtifactCache.get(second.token)).toBeDefined()
+    registry.clear()
+    expect(ocrArtifactCache.stats()).toMatchObject({ active: 0, pending: 0, usedBytes: 0 })
   })
 })

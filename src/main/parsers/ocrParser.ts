@@ -10,6 +10,11 @@ import log from 'electron-log'
 import { getTessdataPath } from '../services/nerService'
 import { resolveOcrDpi, dpiToScale } from '../services/ocrRenderConfig'
 import type { Matrix as MupdfMatrix } from 'mupdf'
+import {
+  ocrArtifactCache,
+  type OcrArtifactWord,
+  type OcrPageArtifact,
+} from '../services/ocrArtifactCache'
 
 /** Soglia di confidenza Tesseract (0-100) sotto la quale si avvisa l'utente. */
 export const OCR_CONFIDENCE_THRESHOLD = 60
@@ -26,6 +31,64 @@ const SKEW_APPLY_THRESHOLD_DEG = 0.5
 export interface OcrPageResult {
   text: string
   confidence: number
+  words: OcrArtifactWord[]
+}
+
+type UnknownRecord = Record<string, unknown>
+
+function asRecord(value: unknown): UnknownRecord | null {
+  return value !== null && typeof value === 'object' ? value as UnknownRecord : null
+}
+
+function records(value: unknown): UnknownRecord[] {
+  return Array.isArray(value) ? value.map(asRecord).filter((item): item is UnknownRecord => item !== null) : []
+}
+
+function artifactWord(node: UnknownRecord, page: number, line: number): OcrArtifactWord | null {
+  const bbox = asRecord(node.bbox)
+  const text = typeof node.text === 'string' ? node.text.trim() : ''
+  if (!bbox || !text) return null
+  const x0 = Number(bbox.x0)
+  const y0 = Number(bbox.y0)
+  const x1 = Number(bbox.x1)
+  const y1 = Number(bbox.y1)
+  if (![x0, y0, x1, y1].every(Number.isFinite) || x1 <= x0 || y1 <= y0) return null
+  const confidence = Number(node.confidence)
+  return {
+    text,
+    bbox: { x0, y0, x1, y1 },
+    confidence: Number.isFinite(confidence) ? confidence : 0,
+    line,
+    page,
+  }
+}
+
+/** Riduce il risultato Tesseract al solo artefatto necessario a NER/redazione/layer. */
+export function extractOcrArtifactWords(data: unknown, page: number): OcrArtifactWord[] {
+  const root = asRecord(data)
+  if (!root) return []
+  const output: OcrArtifactWord[] = []
+  let lineNumber = 0
+  for (const block of records(root.blocks)) {
+    for (const paragraph of records(block.paragraphs)) {
+      for (const line of records(paragraph.lines)) {
+        lineNumber++
+        for (const word of records(line.words)) {
+          const reduced = artifactWord(word, page, lineNumber)
+          if (reduced) output.push(reduced)
+        }
+      }
+    }
+  }
+  // Compatibilità con output Tesseract configurati senza gerarchia blocks.
+  if (output.length === 0) {
+    lineNumber = 1
+    for (const word of records(root.words)) {
+      const reduced = artifactWord(word, page, lineNumber)
+      if (reduced) output.push(reduced)
+    }
+  }
+  return output
 }
 
 /**
@@ -223,7 +286,8 @@ async function createOcrWorker(options?: {
 async function ocrSingleImage(
   worker: import('tesseract.js').Worker,
   source: string | Buffer,
-  pageLabel: string
+  pageLabel: string,
+  page: number,
 ): Promise<OcrPageResult> {
   let imagePath: string | null = null
   let tempCreated = false
@@ -237,10 +301,15 @@ async function ocrSingleImage(
       imagePath = source
     }
 
-    const result = await worker.recognize(imagePath)
+    const result = await worker.recognize(imagePath, {}, {
+      blocks: true,
+      text: true,
+      hocr: false,
+      tsv: false,
+    })
     const { text, confidence } = result.data
     log.info(`OCR ${pageLabel}`, { confidence: Math.round(confidence) })
-    return { text: text.trim(), confidence }
+    return { text: text.trim(), confidence, words: extractOcrArtifactWords(result.data, page) }
   } finally {
     // Cancellazione immediata: niente contenuto documentale deve sopravvivere
     // sul disco più del tempo strettamente necessario al riconoscimento.
@@ -262,10 +331,12 @@ export async function parseImage(filePath: string, opts?: OcrParseOptions): Prom
 
   let text: string
   let confidence: number
+  let words: OcrArtifactWord[]
   try {
-    const result = await ocrSingleImage(worker, filePath, 'immagine')
+    const result = await ocrSingleImage(worker, filePath, 'immagine', 1)
     text = result.text
     confidence = result.confidence
+    words = result.words
   } finally {
     await worker.terminate()
   }
@@ -275,7 +346,15 @@ export async function parseImage(filePath: string, opts?: OcrParseOptions): Prom
   }
 
   log.info('Image OCR completed', { chars: text.length, confidence: Math.round(confidence) })
-  return { text, pageCount: 1, warnings }
+  const ocrArtifactHandle = ocrArtifactCache.stage({
+    pages: [{
+      page: 1,
+      words,
+      renderMatrix: buildOcrRenderMatrix(dpi),
+      pixmapOrigin: { x: 0, y: 0 },
+    }],
+  })
+  return { text, pageCount: 1, warnings, ocrArtifactHandle }
 }
 
 export async function parsePdfWithOcr(filePath: string, opts?: OcrParseOptions): Promise<ParseResult> {
@@ -307,6 +386,7 @@ export async function parsePdfWithOcr(filePath: string, opts?: OcrParseOptions):
   let totalConfidence = 0
   let lowConfidencePages = 0
   let digitalFallbackPages = 0
+  const artifactPages: OcrPageArtifact[] = []
 
   const startTime = Date.now()
   const startHeapUsed = process.memoryUsage().heapUsed
@@ -333,6 +413,8 @@ export async function parsePdfWithOcr(filePath: string, opts?: OcrParseOptions):
 
       let pageText = ''
       let confidence = 100
+      let words: OcrArtifactWord[] = []
+      let pixmapOrigin = { x: 0, y: 0 }
 
       try {
         if (!sharedWorker) {
@@ -347,14 +429,16 @@ export async function parsePdfWithOcr(filePath: string, opts?: OcrParseOptions):
         const pixmap = page.toPixmap(matrix, mupdf.ColorSpace.DeviceRGB, false)
         let pngBuffer: Buffer
         try {
+          pixmapOrigin = { x: pixmap.getX(), y: pixmap.getY() }
           pngBuffer = Buffer.from(pixmap.asPNG())
         } finally {
           pixmap.destroy()
         }
 
-        const ocrResult = await ocrSingleImage(sharedWorker, pngBuffer, `pagina ${i + 1}`)
+        const ocrResult = await ocrSingleImage(sharedWorker, pngBuffer, `pagina ${i + 1}`, i + 1)
         pageText = ocrResult.text
         confidence = ocrResult.confidence
+        words = ocrResult.words
       } catch (err) {
         // Fallback: estrai il testo digitale se disponibile (es. PDF ibridi)
         digitalFallbackPages++
@@ -370,6 +454,12 @@ export async function parsePdfWithOcr(filePath: string, opts?: OcrParseOptions):
       }
 
       pageTexts.push(pageText)
+      artifactPages.push({
+        page: i + 1,
+        words,
+        renderMatrix: [...matrix] as MupdfMatrix,
+        pixmapOrigin,
+      })
       totalConfidence += confidence
       if (isLowConfidence(confidence)) lowConfidencePages++
     }
@@ -399,5 +489,6 @@ export async function parsePdfWithOcr(filePath: string, opts?: OcrParseOptions):
 
   doc.destroy()
 
-  return { text, pageCount, warnings }
+  const ocrArtifactHandle = ocrArtifactCache.stage({ pages: artifactPages })
+  return { text, pageCount, warnings, ocrArtifactHandle }
 }

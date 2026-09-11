@@ -15,6 +15,7 @@ import { detectFormat, extractText } from './parsers/index'
 import { buildOcrProgressMessage, ocrProgressPercent } from './services/ocrProgressMessage'
 import { generateOutput } from './outputGenerators/index'
 import { analysisRegistry, AnalysisTokenError } from './services/analysisRegistry'
+import { ocrArtifactCache } from './services/ocrArtifactCache'
 import type {
   EntityDecision,
   EntityRedactionOutcome,
@@ -178,6 +179,7 @@ export function registerIpcHandlers(): void {
     const { filePath, forceOcr, ocrDpi } = parsed.data
     const llmConfig = settingsManager.getLlmConfig()
 
+    let pendingOcrArtifactHandle: string | undefined
     try {
       if (forceOcr) await analysisRegistry.invalidateForPath(event.sender.id, filePath)
       // Fase 1: rilevamento formato e parsing
@@ -210,8 +212,10 @@ export function registerIpcHandlers(): void {
         ocrPagesDone = page
       }
 
+      const parseResult = await extractText(filePath, format, { forceOcr, ocrDpi }, onOcrProgress)
+      pendingOcrArtifactHandle = parseResult.ocrArtifactHandle
       const { text, pageCount, warnings: parseWarnings, isScanned: docIsScanned, previewHtml, ocrReport, pdfSafety } =
-        await extractText(filePath, format, { forceOcr, ocrDpi }, onOcrProgress)
+        parseResult
 
       if (sessionSnapshot) {
         sessionManager.restore(sessionSnapshot)
@@ -255,7 +259,9 @@ export function registerIpcHandlers(): void {
         isScanned: docIsScanned ?? false,
         ocrReport,
         pageSafety: pdfSafety?.pages.map((page) => ({ page: page.page, kind: page.status })),
+        ocrArtifactHandle: pendingOcrArtifactHandle,
       })
+      pendingOcrArtifactHandle = undefined
       const ownerWebContentsId = event.sender.id
       event.sender.once('destroyed', () => analysisRegistry.releaseOwner(ownerWebContentsId))
 
@@ -282,6 +288,7 @@ export function registerIpcHandlers(): void {
         ...(ocrReport ? { ocrReport } : {}),
       }
     } catch (err) {
+      ocrArtifactCache.discard(pendingOcrArtifactHandle)
       const message = err instanceof Error ? err.message : String(err)
       log.error('Errore elaborazione documento', { error: message })
       return { error: `Errore durante l'elaborazione: ${message}` }
