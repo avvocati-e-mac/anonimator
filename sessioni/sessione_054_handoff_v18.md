@@ -92,7 +92,7 @@ Obiettivo: aumentare i dati personali proposti automaticamente senza indebolire 
 
 Ordine consigliato:
 
-1. Creare `feat/ner-recall-v18` dal tag `v1.7.0-beta.1`; non lavorare su `master` e non spostare il tag.
+1. Creare `feat/ner-recall-v18` dalla tip corrente di `feat/ocr-cache-layer-v17`, verificando che `v1.7.0-beta.1` sia l'antenato immediatamente precedente al solo handoff documentale; non lavorare su `master` e non spostare il tag.
 2. Scaricare e installare il DMG arm64 della beta, eseguire uno smoke su documento sintetico e sul caso manuale già verificato. Se la dimensione resta ragionevole, documentare evidenza e chiudere #21.
 3. Costruire un corpus esclusivamente sintetico di falsi negativi rappresentativi di atti e documenti amministrativi italiani: nomi spezzati, intestazioni, tabelle, etichette `Cognome/Nome`, indirizzi, date e luoghi di nascita, datore/dipendente, varianti OCR e righe isolate.
 4. Introdurre metriche aggregate di precision/recall/F1 per tipo, senza testo personale nei log e senza persistenza degli artefatti OCR.
@@ -108,7 +108,7 @@ Lavora nel repository /Users/filippostrozzi/Documents/Sviluppo App/anonimator.
 
 Leggi integralmente CLAUDE.md e sessioni/sessione_054_handoff_v18.md, poi verifica Git, tag, release e baseline senza assumere che lo stato remoto sia invariato.
 
-Avvia la fase v1.8 dedicata al recall delle entità. Crea la branch feat/ner-recall-v18 dal tag immutabile v1.7.0-beta.1. Prima esegui il P0 indicato nell'handoff: smoke della build macOS arm64 pubblicata e verifica dell'issue #21; chiudila solo con evidenza sufficiente.
+Avvia la fase v1.8 dedicata al recall delle entità. Crea la branch feat/ner-recall-v18 dalla tip aggiornata di feat/ocr-cache-layer-v17, dopo aver verificato che il tag immutabile v1.7.0-beta.1 ne sia antenato e che dopo il tag vi siano soltanto commit di handoff documentale. Prima esegui il P0 indicato nell'handoff: smoke della build macOS arm64 pubblicata e verifica dell'issue #21; chiudila solo con evidenza sufficiente.
 
 Poi costruisci un corpus ed evaluation sintetici per i falsi negativi NER/OCR osservati su documenti legali e amministrativi italiani, misura precision/recall/F1 per tipo e implementa miglioramenti mirati senza registrare o versionare dati personali. Mantieni congelati trust boundary e pipeline PDF fail-closed salvo regressioni riproducibili. Esegui tutti i gate v1.7 obbligatori e aggiungi test per ogni correzione.
 
