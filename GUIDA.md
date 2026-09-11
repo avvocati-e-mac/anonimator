@@ -1005,6 +1005,13 @@ Per ogni pagina:
   5. Il file temporaneo viene validato su ogni pagina e rinominato atomicamente. Non esiste fallback overlay.
 ```
 
+Le immagini standalone vengono date a Tesseract nei pixel originali e poi
+incapsulate in una pagina PDF con rapporto `1 pixel = 1 punto`. Il DPI comunicato
+al motore OCR è soltanto un hint di riconoscimento: la matrice dell'artefatto è
+identità, così i bbox restano nello stesso spazio geometrico usato dal generatore.
+Il gate pixel-leak verifica dall'XObject estratto che cambi la regione sensibile e
+resti invariata una regione di controllo sintetica.
+
 Un esito incompleto usa il suffisso `_DA_VERIFICARE.pdf` e resta raster-only. Errori di sorgente modificato, risorse, rendering, validazione o scrittura non producono alcun `SaveResult`.
 
 **Confronto visivo prima/dopo (entrambe le strategie):**

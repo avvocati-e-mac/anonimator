@@ -101,9 +101,10 @@ export interface OcrParseOptions {
   /**
    * DPI desiderato dal chiamante (es. DPI nativo del raster incorporato nel
    * PDF, se noto). Risolto SEMPRE tramite resolveOcrDpi/ocrRenderConfig — MAI
-   * una costante locale — così il valore resta incorporato nella matrice
-   * dell'artefatto OCR riusata da `pdfSafeGenerator.ts` per la geometria delle
-   * redazioni. Se non specificato: 300 DPI (vedi
+   * una costante locale. Per i PDF il valore resta incorporato nella matrice
+   * dell'artefatto OCR riusata da `pdfSafeGenerator.ts`; per le immagini native
+   * è soltanto un hint a Tesseract, perché non avviene alcun ridimensionamento e
+   * i bbox restano in pixel 1:1. Se non specificato: 300 DPI (vedi
    * OCR_RENDER_DPI_DEFAULT in ocrRenderConfig.ts e il perché nel suo commento).
    */
   dpi?: number
@@ -175,6 +176,16 @@ export function buildOcrRenderMatrix(dpi: number, skewDeg?: number): MupdfMatrix
   const c = Math.cos(rad)
   const sn = Math.sin(rad)
   return [s * c, s * sn, -s * sn, s * c, 0, 0]
+}
+
+/**
+ * Le immagini standalone vengono date a Tesseract nei loro pixel originali e
+ * il generatore le incapsula in una pagina PDF con 1 pixel = 1 punto. Il DPI
+ * comunicato a Tesseract descrive la risoluzione, ma non è una trasformazione
+ * geometrica: i bbox dell'artefatto devono quindi restare in matrice identità.
+ */
+export function buildImagePixelMatrix(): MupdfMatrix {
+  return [1, 0, 0, 1, 0, 0]
 }
 
 /** true se la confidenza (0-100) di una pagina/immagine OCR è sotto soglia. */
@@ -350,7 +361,7 @@ export async function parseImage(filePath: string, opts?: OcrParseOptions): Prom
     pages: [{
       page: 1,
       words,
-      renderMatrix: buildOcrRenderMatrix(dpi),
+      renderMatrix: buildImagePixelMatrix(),
       pixmapOrigin: { x: 0, y: 0 },
     }],
   })

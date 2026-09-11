@@ -23,6 +23,7 @@ import { tmpdir } from 'os'
 import { mkdtemp, copyFile, readFile, rm } from 'fs/promises'
 import { execFileSync } from 'child_process'
 import { randomUUID } from 'crypto'
+import sharp from 'sharp'
 import type { DetectedEntity } from '../src/shared/types'
 
 vi.mock('electron', () => ({
@@ -34,6 +35,9 @@ vi.mock('electron', () => ({
 }))
 
 import { generatePdf } from '../src/main/outputGenerators/pdfGenerator'
+import { generateImagePdfSafe } from '../src/main/outputGenerators/pdfSafeGenerator'
+import { buildImagePixelMatrix } from '../src/main/parsers/ocrParser'
+import { ocrArtifactCache } from '../src/main/services/ocrArtifactCache'
 
 const FIXTURE = join(__dirname, 'corpus-ocr', 'negativi', 'neg-02-allineato-flate.pdf')
 const FIXTURE_SMASK = join(__dirname, 'corpus-ocr', 'immagine', 'img-11-smask.pdf')
@@ -115,6 +119,43 @@ function entita(originalText: string, pseudonym: string): DetectedEntity {
   }
 }
 
+function mediaLuminanza(img: GrayImage, x0: number, y0: number, x1: number, y1: number): number {
+  const xa = Math.max(0, Math.floor(x0))
+  const ya = Math.max(0, Math.floor(y0))
+  const xb = Math.min(img.width, Math.ceil(x1))
+  const yb = Math.min(img.height, Math.ceil(y1))
+  if (xb <= xa || yb <= ya) throw new Error('rettangolo degenere')
+  let totale = 0
+  for (let y = ya; y < yb; y++) {
+    for (let x = xa; x < xb; x++) totale += img.pixels[y * img.width + x]
+  }
+  return totale / ((xb - xa) * (yb - ya))
+}
+
+function frazioneModificata(
+  before: GrayImage,
+  after: GrayImage,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  threshold = 20,
+): number {
+  const xa = Math.max(0, Math.floor(x0))
+  const ya = Math.max(0, Math.floor(y0))
+  const xb = Math.min(before.width, after.width, Math.ceil(x1))
+  const yb = Math.min(before.height, after.height, Math.ceil(y1))
+  if (xb <= xa || yb <= ya) throw new Error('rettangolo degenere')
+  let changed = 0
+  for (let y = ya; y < yb; y++) {
+    for (let x = xa; x < xb; x++) {
+      const index = y * before.width + x
+      if (Math.abs(after.pixels[index] - before.pixels[index]) > threshold) changed++
+    }
+  }
+  return changed / ((xb - xa) * (yb - ya))
+}
+
 describe('prova della fuga di pixel (pdfimages)', () => {
   it(
     'i pixel del nome spariscono dall\'immagine estratta, non solo dalla pagina',
@@ -173,6 +214,110 @@ describe('prova della fuga di pixel (pdfimages)', () => {
       }
     },
     60_000
+  )
+
+  it(
+    'un’immagine standalone redige il bbox nei pixel originali',
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'anonimator-image-pixelleak-'))
+      const input = join(dir, 'immagine-sintetica.png')
+      const width = 240
+      const height = 100
+      const sensitive = { x0: 60, y0: 30, x1: 140, y1: 60 }
+      const raw = Buffer.alloc(width * height * 3, 255)
+
+      // Pattern sintetico ad alto contrasto: il vecchio errore di scala lasciava
+      // quasi tutta questa regione invariata e redigeva un riquadro 4,17x più piccolo.
+      for (let y = sensitive.y0; y < sensitive.y1; y++) {
+        for (let x = sensitive.x0; x < sensitive.x1; x++) {
+          const value = ((x - sensitive.x0) % 8) < 4 ? 0 : 255
+          const offset = (y * width + x) * 3
+          raw[offset] = value
+          raw[offset + 1] = value
+          raw[offset + 2] = value
+        }
+      }
+
+      const handle = ocrArtifactCache.stage({
+        pages: [{
+          page: 1,
+          words: [{
+            text: 'SOGGETTOALFA',
+            bbox: sensitive,
+            confidence: 99,
+            line: 1,
+            page: 1,
+          }],
+          renderMatrix: buildImagePixelMatrix(),
+          pixmapOrigin: { x: 0, y: 0 },
+        }],
+      })
+      const token = randomUUID()
+      ocrArtifactCache.bind(handle, token)
+
+      try {
+        await sharp(raw, { raw: { width, height, channels: 3 } }).png().toFile(input)
+        const result = await generateImagePdfSafe(
+          input,
+          [entita('SOGGETTOALFA', 'SOGGETTO_1')],
+          token,
+        )
+
+        expect(result.safetyStatus).toBe('complete')
+        expect(result.outcomes[0]).toMatchObject({
+          matchedOccurrences: 1,
+          redactedOccurrences: 1,
+        })
+
+        const output = await primaImmagine(result.outputPath, dir, 'image-out')
+        expect(output.width).toBe(width)
+        expect(output.height).toBe(height)
+
+        const mupdf = (await import('mupdf')).default
+        const document = new mupdf.PDFDocument(new Uint8Array(await readFile(result.outputPath)))
+        try {
+          const searchableText = document.loadPage(0).toStructuredText().asText()
+          expect(searchableText).not.toContain('SOGGETTOALFA')
+          expect(searchableText).toContain('SOGGETTO_1')
+        } finally {
+          document.destroy()
+        }
+
+        const inputImage: GrayImage = {
+          width,
+          height,
+          pixels: Uint8Array.from({ length: width * height }, (_, index) => raw[index * 3]),
+        }
+        const before = mediaLuminanza(inputImage, sensitive.x0, sensitive.y0, sensitive.x1, sensitive.y1)
+        const after = mediaLuminanza(output, sensitive.x0, sensitive.y0, sensitive.x1, sensitive.y1)
+        expect(Math.abs(after - before)).toBeGreaterThan(35)
+        expect(frazioneModificata(
+          inputImage, output, sensitive.x0, sensitive.y0, sensitive.x1, sensitive.y1,
+        )).toBeGreaterThan(0.85)
+
+        // Anche tutte le bande di bordo devono risultare coperte: una redazione
+        // parziale o traslata non può superare il gate modificando solo il centro.
+        const border = 5
+        const bands = [
+          [sensitive.x0, sensitive.y0, sensitive.x1, sensitive.y0 + border],
+          [sensitive.x0, sensitive.y1 - border, sensitive.x1, sensitive.y1],
+          [sensitive.x0, sensitive.y0, sensitive.x0 + border, sensitive.y1],
+          [sensitive.x1 - border, sensitive.y0, sensitive.x1, sensitive.y1],
+        ] as const
+        for (const band of bands) {
+          expect(frazioneModificata(inputImage, output, ...band)).toBeGreaterThan(0.85)
+        }
+
+        // Il controllo a destra non deve essere cancellato insieme al bbox.
+        const controlBefore = mediaLuminanza(inputImage, 170, 30, 220, 60)
+        const controlAfter = mediaLuminanza(output, 170, 30, 220, 60)
+        expect(Math.abs(controlAfter - controlBefore)).toBeLessThan(3)
+      } finally {
+        ocrArtifactCache.release(token)
+        await rm(dir, { recursive: true, force: true })
+      }
+    },
+    60_000,
   )
 })
 

@@ -1,4 +1,21 @@
 import { describe, it, expect, vi } from 'vitest'
+import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises'
+import { join } from 'path'
+import { tmpdir } from 'os'
+import { randomUUID } from 'crypto'
+
+const ocrTestState = vi.hoisted(() => ({ tessdataDir: '' }))
+const recognizeMock = vi.hoisted(() => vi.fn())
+const terminateMock = vi.hoisted(() => vi.fn())
+const setParametersMock = vi.hoisted(() => vi.fn())
+
+vi.mock('tesseract.js', () => ({
+  createWorker: vi.fn(async () => ({
+    recognize: recognizeMock,
+    terminate: terminateMock,
+    setParameters: setParametersMock,
+  })),
+}))
 
 // Mock electron — non c'è finestra Electron in vitest (stesso pattern di pdfParser.test.ts).
 vi.mock('electron', () => ({
@@ -13,18 +30,21 @@ vi.mock('electron-log', () => ({
 // ne importa solo getTessdataPath, quindi lo si mocka per non trascinarsi dietro tutto
 // il grafo di dipendenze in un test che deve restare rapido e deterministico.
 vi.mock('../src/main/services/nerService', () => ({
-  getTessdataPath: vi.fn(() => '/tmp/test-tessdata')
+  getTessdataPath: vi.fn(() => ocrTestState.tessdataDir)
 }))
 
 import {
   OCR_CONFIDENCE_THRESHOLD,
   buildImageLowConfidenceWarning,
+  buildImagePixelMatrix,
   buildOcrRenderMatrix,
   buildPdfLowConfidenceWarning,
   extractOcrArtifactWords,
   isLowConfidence,
+  parseImage,
   resolveRenderDpi
 } from '../src/main/parsers/ocrParser'
+import { getOcrArtifact, ocrArtifactCache } from '../src/main/services/ocrArtifactCache'
 import {
   OCR_RENDER_DPI_DEFAULT,
   OCR_RENDER_DPI_MAX,
@@ -77,6 +97,57 @@ describe('resolveRenderDpi', () => {
   it('coincide con resolveOcrDpi su un campione di valori arbitrari', () => {
     for (const v of [null, undefined, 72, 150, 200, 300, 400, 600, 1000]) {
       expect(resolveRenderDpi(v ?? undefined)).toBe(resolveOcrDpi(v))
+    }
+  })
+})
+
+describe('geometria immagini standalone', () => {
+  it('mantiene i bbox nei pixel originali indipendentemente dall’hint DPI', () => {
+    expect(buildImagePixelMatrix()).toEqual([1, 0, 0, 1, 0, 0])
+  })
+
+  it('parseImage registra davvero la matrice identità nell’artefatto token-bound', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'anonimator-image-artifact-'))
+    const input = join(dir, 'zxq-canary.png')
+    const token = randomUUID()
+    let handle: string | undefined
+    ocrTestState.tessdataDir = join(dir, 'tessdata')
+    recognizeMock.mockResolvedValueOnce({
+      data: {
+        text: 'ZXQCANARY',
+        confidence: 99,
+        words: [{
+          text: 'ZXQCANARY',
+          confidence: 99,
+          bbox: { x0: 50, y0: 20, x1: 150, y1: 45 },
+        }],
+      },
+    })
+
+    try {
+      await mkdir(ocrTestState.tessdataDir)
+      await writeFile(join(ocrTestState.tessdataDir, 'ita.traineddata'), 'synthetic-test-bytes')
+      await writeFile(input, 'synthetic-image-placeholder')
+
+      const result = await parseImage(input, { dpi: 300 })
+      handle = result.ocrArtifactHandle
+      expect(handle).toBeDefined()
+      if (!handle) throw new Error('Artefatto OCR atteso')
+      ocrArtifactCache.bind(handle, token)
+      handle = undefined
+
+      expect(getOcrArtifact(token)?.pages[0]).toMatchObject({
+        renderMatrix: [1, 0, 0, 1, 0, 0],
+        pixmapOrigin: { x: 0, y: 0 },
+        words: [{
+          text: 'ZXQCANARY',
+          bbox: { x0: 50, y0: 20, x1: 150, y1: 45 },
+        }],
+      })
+    } finally {
+      ocrArtifactCache.discard(handle)
+      ocrArtifactCache.release(token)
+      await rm(dir, { recursive: true, force: true })
     }
   })
 })
