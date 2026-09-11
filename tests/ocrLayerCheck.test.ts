@@ -848,3 +848,33 @@ describe('samplePageIndices', () => {
     expect(samplePageIndices(0, 5)).toEqual([])
   })
 })
+
+describe('classifyImageQuality — non giudicare ciò che non è stato misurato', () => {
+  it('separabilità e sfocatura a zero producono un verdetto, e per questo non vanno passate quando non sono misurate', () => {
+    // Questo test documenta il motivo della guardia in analyzeOcrLayer: con
+    // metriche a zero — che è il valore di "non misurato", non di "misurato
+    // male" — classifyImageQuality accusa la scansione senza averla vista.
+    const { verdict, reasons } = classifyImageQuality({
+      nativeDpi: null,
+      xHeightPx: null,
+      separability: 0,
+      skewDeg: 0,
+      blurScore: 0
+    })
+    expect(verdict).toBe('marginal')
+    expect(reasons).toContain('low-separability')
+    expect(reasons).toContain('possibly-blurred')
+  })
+
+  it('su misure reali buone non accusa nulla', () => {
+    const { verdict, reasons } = classifyImageQuality({
+      nativeDpi: 300,
+      xHeightPx: 20,
+      separability: 0.8,
+      skewDeg: 0.2,
+      blurScore: 0.9
+    })
+    expect(verdict).toBe('good')
+    expect(reasons).toEqual([])
+  })
+})

@@ -1507,8 +1507,17 @@ export async function analyzeOcrLayer(
       ),
       blurScore: median(imageSamples.map((m) => m.blurScore)) ?? 0
     }
+    // Nessuna pagina campionata ha prodotto misure sull'immagine (tipicamente una
+    // scansione senza alcun layer di testo, dove analyzePage esce prima del
+    // rendering). In quel caso separability e blurScore valgono 0 perche' non
+    // sono stati misurati, non perche' siano risultati pessimi: darli in pasto a
+    // classifyImageQuality produrrebbe un 'marginal' con motivi 'low-separability'
+    // e 'possibly-blurred' inventati di sana pianta. Ci si astiene, come fa
+    // scoreTextQuality con un campione troppo piccolo.
     const { verdict: imageQuality, reasons: imageQualityReasons } =
-      classifyImageQuality(imageMetrics)
+      imageSamples.length > 0
+        ? classifyImageQuality(imageMetrics)
+        : { verdict: 'good' as ImageQualityVerdict, reasons: [] as ImageQualityReason[] }
 
     const producerFont =
       fonts.find((f) => f.toLowerCase().includes('glyphless')) ?? fonts[0] ?? null
