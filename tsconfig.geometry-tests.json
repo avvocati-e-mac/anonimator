@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node", "vitest/globals"]
+  },
+  "include": [
+    "src/main/services/geometry.ts",
+    "src/main/services/entityMatcher.ts",
+    "src/shared/types.ts",
+    "tests/geometry.test.ts",
+    "tests/entityMatcher.test.ts"
+  ],
+  "exclude": ["node_modules", "dist", "out"]
+}
