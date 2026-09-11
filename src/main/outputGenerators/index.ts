@@ -4,7 +4,7 @@ import { generateTxt } from './txtGenerator'
 import { generateDocx } from './docxGenerator'
 import { generateOdt } from './odtGenerator'
 import { generatePdf, generatePdfFromImage } from './pdfGenerator'
-import type { PdfGenerateOptions, RedactionMode } from './pdfGenerator'
+import type { PdfGenerateOptions } from './pdfGenerator'
 import { generateMarkdown } from './markdownGenerator'
 
 /**
@@ -15,11 +15,11 @@ import { generateMarkdown } from './markdownGenerator'
  * in @shared/types non viene modificato qui — i campi extra sono strutturalmente
  * compatibili, quindi un chiamante tipizzato su SaveResult continua a compilare.
  */
-export interface GenerateOutputResult extends SaveResult {
+export type GenerateOutputResult = SaveResult | {
+  outputPath: string
+  entitiesReplaced: number
   sizeRatio?: number
   sizeWarning?: boolean
-  redactionMode?: RedactionMode
-  fellBackToOverlay?: boolean
 }
 
 export interface GenerateOutputOptions {
@@ -79,24 +79,22 @@ async function resolvePdfOptions(
   filePath: string,
   options: GenerateOutputOptions
 ): Promise<PdfGenerateOptions> {
-  if (options.layerKind !== undefined) return options
-
   try {
-    const { analyzeOcrLayer } = await import('../services/ocrLayerCheck')
-    const report = await analyzeOcrLayer(filePath)
+    const { analyzePdfQuality } = await import('../services/ocrLayerCheck')
+    const { report, safety } = await analyzePdfQuality(filePath)
     return {
       isScanned: options.isScanned,
       layerKind: report.layerKind,
-      // Solo un verdetto esplicitamente 'aligned' abilita il percorso veloce:
-      // 'inconclusive' vale quanto 'misaligned' e porta ai box di Tesseract.
-      ocrAligned: report.layerKind === 'scan-with-text' && report.verdict === 'aligned',
-      ocrDpi: report.suggestedOcrDpi
+      ocrAligned: safety.existingTextLayerUsable,
+      ocrDpi: report.suggestedOcrDpi,
+      routing: safety.routing,
+      pageSafety: safety.pages,
     }
   } catch (err) {
     // In dubbio si è prudenti: senza report si mantiene il comportamento del chiamante.
     log.warn('generateOutput: analisi layer OCR non riuscita, opzioni invariate', {
       code: err instanceof Error ? err.name : 'unknown'
     })
-    return options
+    return { ...options, routing: 'flattened-scan' }
   }
 }
