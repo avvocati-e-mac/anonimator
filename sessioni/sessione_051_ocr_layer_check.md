@@ -383,6 +383,35 @@ posta dall'utente all'inizio ed è rispettata con ampio margine.
 4. **Verdetto sulla qualità immagine inventato dai valori a zero** (commit
    `dda8e22`) — vedi sotto, è il più importante.
 
+### Misura: il verdetto inventato peggiorava davvero l'OCR (+16% di entita')
+
+Il `marginal` fabbricato dai valori a zero **non era cosmetico**. Fra i motivi
+c'era `low-separability`, e `buildOcrParseOptions` lo legge per ricavarne
+`unevenLighting: true`, che fa passare Tesseract da Otsu a **Sauvola**. L'app
+stava quindi applicando Sauvola a *ogni* scansione priva di layer di testo, sulla
+base di una misura mai effettuata — esattamente cio' che la ricerca in fase di
+piano sconsigliava: pre-binarizzare aiuta solo con illuminazione non uniforme, e
+su una scansione pulita toglie al motore LSTM l'informazione in scala di grigi.
+
+Misurato sullo stesso documento reale di 23 pagine, stesso DPI, stesso file:
+
+| Giro | Binarizzazione | LLM | Entita' rilevate |
+|---|---|---|---|
+| 1 (pre-fix) | Sauvola (per errore) | acceso ma irraggiungibile | 32 |
+| 2 (pre-fix) | Sauvola (per errore) | spento | 32 |
+| 3 (post-fix `dda8e22`) | Otsu (default) | spento | **38** |
+
+**+6 entita', il 16%.** Sei dati personali che prima non venivano rilevati.
+L'LLM e' escluso come causa: i due giri pre-fix danno 32 sia con LLM acceso sia
+spento. L'unica variabile cambiata e' la binarizzazione.
+
+Conseguenza per la valutazione del difetto qui sotto: non e' soltanto "il DPI non
+si adatta e l'avviso non puo' scattare". Un valore **non misurato** stava
+pilotando una scelta tecnica reale dentro il motore OCR, e nella direzione
+sbagliata. Vale anche come promemoria generale: in questo modulo lo zero di
+"non misurato" e lo zero di "misurato male" non devono mai essere lo stesso
+valore.
+
 ### Difetto aperto: il raster non viene misurato quando manca il layer di testo
 
 `analyzePage` esce a `lineCount === 0` restituendo `image: null` **prima del
