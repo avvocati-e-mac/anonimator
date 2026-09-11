@@ -1546,9 +1546,10 @@ function emptyReport(elapsedMs: number, layerKind: PdfLayerKind = 'digital'): Oc
  * caso, se quel layer è allineato ai pixel. Non fallisce mai in modo fatale: un PDF
  * cifrato o corrotto produce un verdetto 'inconclusive'.
  */
-export async function analyzeOcrLayer(
+async function analyzeOcrLayerInternal(
   filePath: string,
-  opts?: { maxPages?: number }
+  opts?: { maxPages?: number },
+  safetySink?: PdfPageQualityOutcome[]
 ): Promise<OcrLayerReport> {
   const started = Date.now()
   // maxPages governa soltanto l'eventuale campione diagnostico esposto dalla
@@ -1588,6 +1589,7 @@ export async function analyzeOcrLayer(
       try {
         const outcome = analyzePage(mupdf, doc.loadPage(index), index + 1, textSink)
         pages.push(outcome.metrics)
+        safetySink?.push(toSafetyOutcome(outcome))
         kinds.push(outcome.layerKind)
         if (outcome.image) imageSamples.push(outcome.image)
         if (outcome.fontName) fonts.push(outcome.fontName)
@@ -1597,6 +1599,7 @@ export async function analyzeOcrLayer(
           code: err instanceof Error ? err.name : 'unknown'
         })
         pages.push(emptyPage(index + 1, 'inconclusive', 'page-error'))
+        safetySink?.push(errorSafetyOutcome(index + 1))
       }
     }
 
@@ -1693,6 +1696,14 @@ export async function analyzeOcrLayer(
   }
 }
 
+/** Report IPC compatibile; la decisione e' comunque calcolata su tutte le pagine. */
+export async function analyzeOcrLayer(
+  filePath: string,
+  opts?: { maxPages?: number }
+): Promise<OcrLayerReport> {
+  return analyzeOcrLayerInternal(filePath, opts)
+}
+
 /**
  * API interna per il generatore: outcome esplicito per ogni pagina e routing
  * deterministico. `maxPages` seleziona solo i numeri mostrabili in diagnostica;
@@ -1702,17 +1713,8 @@ export async function analyzePdfQuality(
   filePath: string,
   opts?: { maxPages?: number }
 ): Promise<PdfQualityAnalysis> {
-  const report = await analyzeOcrLayer(filePath, opts)
-  const pages = report.pages.map((metrics): PdfPageQualityOutcome => {
-    if (metrics.reason === 'page-error') return errorSafetyOutcome(metrics.page)
-    const layerKind: PdfLayerKind =
-      metrics.reason === 'not-raster-page'
-        ? 'digital'
-        : metrics.reason === 'no-text-layer'
-          ? 'scan-no-text'
-          : 'scan-with-text'
-    return toSafetyOutcome({ metrics, layerKind, image: null, fontName: null })
-  })
+  const pages: PdfPageQualityOutcome[] = []
+  const report = await analyzeOcrLayerInternal(filePath, opts, pages)
   const maxPages = Math.max(1, opts?.maxPages ?? OCR_CHECK_TUNING.MAX_PAGES)
   const diagnosticPageNumbers = samplePageIndices(report.pages.length, maxPages).map(
     (index) => index + 1
