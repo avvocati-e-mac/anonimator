@@ -18,3 +18,4 @@ resources/tessdata/*
 # Artefatti locali e rilievi di sicurezza: non pubblicare.
 /logs/
 /sessioni/locale/
+/tests/corpus-ocr/roundtrip/

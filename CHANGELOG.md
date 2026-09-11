@@ -8,7 +8,8 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.0.0/).
 ## [1.6.0-beta.2] - 2026-09-11
 
 > Beta di sicurezza sostitutiva: gli output vanno comunque verificati prima di
-> usare documenti reali. I binari della beta.1 sono stati ritirati.
+> usare documenti reali. Il ritiro remoto della beta.1 richiede il ripristino
+> dell'autenticazione GitHub ed è ancora pendente.
 
 ### Sicurezza
 - **Capability di analisi Main-only**: il salvataggio usa un token casuale legato a finestra, file canonico, fingerprint SHA-256 e ledger delle entità. Il Renderer non decide più percorso o modalità di redazione.

@@ -19,3 +19,15 @@ La riscrittura delle ref e solo contenimento: non elimina copie gia presenti in 
 - Nessun errore nel percorso scansione puo degradare a overlay.
 - I risultati parziali devono essere espliciti; gli errori di sicurezza e persistenza non producono output.
 - v1.7 parte solo dopo i gate v1.6 e aggiunge cache OCR RAM e layer testuale invisibile pseudonimizzato.
+
+## Gate locali v1.6.0-beta.2
+
+- `typecheck:all`: verde.
+- unit: 32 file, 522 test verdi.
+- corpus: 57 test verdi; roundtrip Tesseract reale generato e verificato senza anomalie.
+- pixel leak Poppler: 2 test verdi, incluso `/SMask` senza fallback overlay.
+- La suite usa un mock globale di `electron-log` e non scrive più nei log utente.
+
+Questi gate consentono di congelare il candidato locale beta.2. Non equivalgono alla
+promozione stabile: restano necessari i pacchetti multipiattaforma e i sette giorni
+senza P0/P1 previsti dal piano di rilascio.
