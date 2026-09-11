@@ -73,31 +73,35 @@ La dimensione dell'output è dichiarata
 `source-native-independent-of-ocr-dpi`: `generatePdfSafe()` renderizza la pagina
 alla risoluzione nativa stimata, mentre il DPI candidato riguarda il solo OCR.
 
-## Risultato smoke
+## Risultato benchmark completo
 
-Comando: `npm run bench:dpi -- --repetitions=1`.
+Comando: `npm run bench:dpi`.
 
-- 9 run reali completati in circa 17 secondi.
+- Tre repliche per ciascuna combinazione, 27 run reali complessivi.
 - Tutti i candidati hanno ottenuto recall sensibile e token recall pari a 1,
   WER/CER pari a 0, tre target su tre, output completo ed errore del centro sotto
   0,97 pt.
-- Il tempo OCR è cresciuto, a seconda della fixture, da circa 0,77–0,85 secondi
-  a 200 DPI a circa 1,25–1,39 secondi a 400 DPI.
-- Il delta RSS è cresciuto da circa 221–223 MiB a 200 DPI a circa 300–305 MiB a
-  400 DPI.
+- Le mediane OCR 200/300/400 DPI sono state rispettivamente 815/1019/1363 ms
+  per `clean`, 756/952/1278 ms per `small-7pt` e 782/1042/1186 ms per
+  `degraded-150dpi`.
+- Il delta RSS di picco è stato circa 220–225 MiB a 200 DPI, 243–251 MiB a
+  300 DPI e 301–304 MiB a 400 DPI.
 - La dimensione finale è rimasta sostanzialmente stabile fra i tre OCR DPI
   all'interno della stessa fixture, confermando il disaccoppiamento atteso.
 
-Lo smoke con una sola replica valida l'harness ma non costituisce evidenza
-sufficiente per cambiare la policy produttiva.
+Sulla macchina locale 200 DPI riduce il tempo mediano di oltre il 20% rispetto a
+300 DPI in tutte e tre le fixture, mentre il vantaggio sul delta RSS è soltanto
+circa 9–10%. È quindi un candidato locale promettente, non ancora una policy di
+produzione.
 
 ## Decisione
 
-Il default resta 300 DPI. Prima di valutare 200 servono le tre repliche standard,
-fixture ulteriormente discriminanti e un vantaggio stabile di tempo/memoria
-senza alcuna regressione di recall o geometria. I 400 DPI restano una possibile
-escalation mirata soltanto per falsi negativi riproducibili su fixture sintetiche,
-non un default e non un retry dopo fallimenti.
+Il default resta 300 DPI. I risultati consentono di portare 200 DPI alla fase di
+conferma, ma non di promuoverlo: occorrono una replica su Ubuntu/ambiente CI e un
+corpus sintetico più ampio e discriminante prima di cambiare la configurazione
+produttiva. I 400 DPI restano una possibile escalation mirata soltanto per falsi
+negativi riproducibili su fixture sintetiche, non un default e non un retry dopo
+fallimenti.
 
 ## Invarianti
 
@@ -115,5 +119,5 @@ non un default e non un retry dopo fallimenti.
 - `npm run typecheck:all`: verde.
 - `tests/dpiBenchmarkMetrics.test.ts`: 6 test verdi.
 - `npm run test:unit`: 596 test verdi, runner benchmark intenzionalmente skipped.
-- Smoke completo 200/300/400 sulle tre fixture: verde.
+- Benchmark completo: 27 run, tutti i candidati e tutte le fixture verdi.
 - `git diff --check`: verde.
