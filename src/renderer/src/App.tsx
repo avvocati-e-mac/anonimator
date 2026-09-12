@@ -46,8 +46,8 @@ export default function App(): React.JSX.Element {
 
   // Registra il listener globale per i progressi una sola volta al mount
   useEffect(() => {
-    const remove = window.electronAPI.onProgress(({ percent, message }) => {
-      setProgress(percent, message)
+    const remove = window.electronAPI.onProgress(({ percent, message, stage }) => {
+      setProgress(percent, message, stage)
     })
     return remove
   }, [setProgress])

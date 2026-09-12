@@ -249,7 +249,7 @@ All'interno di `ipcHandlers.ts`, l'handler esegue questi passi:
 5. **`sessionManager.enrichEntities(entities)`** → assegna pseudonimi a ogni entità usando il dizionario di sessione
 6. **Risposta** al Renderer con `{fileName, format, pageCount, entities[], warnings[]}`
 
-Durante l'elaborazione, il Main invia eventi `doc:progress` al Renderer con `{stage, percent, message}`. Gli stage sono: `'parsing'`, `'ner'`, `'ocr'`, `'done'`.
+Durante l'elaborazione, il Main invia eventi `doc:progress` al Renderer con `{stage, percent, message}`. Gli stage sono: `'parsing'`, `'ner'`, `'ocr'`, `'output'`, `'done'`. Lo stage `output` identifica esplicitamente la generazione del documento anonimizzato.
 
 ### Dettaglio dell'handler `doc:anonymize`
 
@@ -1169,7 +1169,8 @@ L'app React è strutturata come una macchina a stati con 7 schermate, gestite da
 #### `ProcessingScreen.tsx`
 
 - Barra di progresso animata (0-100%)
-- Titolo neutro "Elaborazione in corso", valido sia per l'analisi sia per la successiva generazione dell'output
+- Icona e titolo specifici per l'attività corrente: lettura documento, riconoscimento OCR, rilevamento entità, anonimizzazione output e completamento
+- `ProgressActivityIcon.tsx` centralizza la corrispondenza visuale; le icone sono accompagnate dal titolo testuale e da un'etichetta accessibile
 - Messaggi distinti per evitare l'impressione di un secondo OCR: il riconoscimento del testo è indicato durante l'analisi; durante l'anonimizzazione viene dichiarato il riuso del testo OCR già in memoria e la ricostruzione del documento
 - Mostra il nome del file in elaborazione
 - Pulsante "Annulla" → `reset()`
@@ -1212,7 +1213,7 @@ L'app React è strutturata come una macchina a stati con 7 schermate, gestite da
 #### `BatchProcessingScreen.tsx`
 
 - Sidebar sinistra: lista file con icone di stato (orologio/spinner/check/X)
-- Area principale: progresso del file corrente + progresso globale
+- Area principale: icona e titolo dell'attività corrente, progresso del file corrente + progresso globale
 - Dialog errore per-file: "Riprova" o "Salta"
 
 #### `BatchReview.tsx`
@@ -1288,7 +1289,7 @@ Store globale con Zustand (nessun Provider React necessario). Tutte le azioni so
 | `setScreen(screen)` | Cambia la schermata corrente |
 | `setFilePath(path)` | Salva il path del file |
 | `setAnalysisResult(result)` | Salva il risultato dell'analisi, popola `entities` |
-| `setProgress(percent, message)` | Aggiorna barra di progresso |
+| `setProgress(percent, message, stage)` | Aggiorna barra, messaggio e attività visualizzata (`parsing`, `ocr`, `ner`, `output`, `done`) |
 | `toggleEntityConfirmed(id)` | Inverte `confirmed` dell'entità con quell'ID |
 | `updateEntityPseudonym(id, pseudonym)` | Aggiorna lo pseudonimo editato dall'utente |
 | `addEntity(entity)` | Aggiunge un'entità singola alla lista (inserimento manuale) |

@@ -72,7 +72,7 @@ export interface DetectedEntity {
 
 // Stato di avanzamento durante il processing
 export interface ProcessingProgress {
-  stage: 'parsing' | 'ner' | 'ocr' | 'done'
+  stage: 'parsing' | 'ner' | 'ocr' | 'output' | 'done'
   percent: number // 0-100
   message: string
 }

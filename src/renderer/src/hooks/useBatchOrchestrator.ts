@@ -44,7 +44,7 @@ export function useBatchOrchestrator(): UseBatchOrchestratorReturn {
         const file = files[i]
         setBatchCurrentFileIndex(i + 1)
         updateBatchFile(file.filePath, { status: 'analyzing' })
-        setProgress(0, `Analisi ${i + 1}/${files.length}: ${file.fileName}...`)
+        setProgress(0, `Analisi ${i + 1}/${files.length}: ${file.fileName}...`, 'parsing')
 
         let success = false
         while (!success) {

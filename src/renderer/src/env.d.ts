@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-import type { AnonymizeRequest, SaveResult, DocumentAnalysisResult, LlmConfig, BatchAnonymizeRequest, BatchResultItem, DetectedEntity, EntityType, ModelStatus, ModelDownloadProgress, ProcessDocumentOptions } from '@shared/types'
+import type { AnonymizeRequest, SaveResult, DocumentAnalysisResult, LlmConfig, BatchAnonymizeRequest, BatchResultItem, DetectedEntity, EntityType, ModelStatus, ModelDownloadProgress, ProcessingProgress, ProcessDocumentOptions } from '@shared/types'
 
 // Tipizzazione dell'API esposta dal preload via contextBridge
 interface ElectronAPI {
@@ -10,7 +10,7 @@ interface ElectronAPI {
   releaseAnalysis: (analysisToken: string) => Promise<{ released: boolean } | { error: string }>
   resetSession: () => Promise<{ status: string }>
   onProgress: (
-    callback: (progress: { stage: string; percent: number; message: string }) => void
+    callback: (progress: ProcessingProgress) => void
   ) => () => void
   showInFolder: (filePath: string) => void
   getPathForFile: (file: File) => string

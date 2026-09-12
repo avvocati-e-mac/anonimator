@@ -21,6 +21,7 @@ import type {
   EntityDecision,
   EntityRedactionOutcome,
   PartialReason,
+  ProcessingProgress,
   SaveResult,
 } from '@shared/types'
 
@@ -96,7 +97,7 @@ const LlmConfigSchema = z.object({
 })
 
 // ─── Helper: invia progresso alla finestra attiva ─────────────────────────────
-function sendProgress(stage: string, percent: number, message: string): void {
+function sendProgress(stage: ProcessingProgress['stage'], percent: number, message: string): void {
   const win = BrowserWindow.getAllWindows()[0]
   if (win) {
     win.webContents.send(IPC_CHANNELS.DOC_PROGRESS, { stage, percent, message })
@@ -313,10 +314,10 @@ export function registerIpcHandlers(): void {
       analysisRegistry.validateDecisions(record, entities)
       const confirmed = entities.filter((entity) => entity.confirmed)
       const typedEntities = toGeneratorEntities(entities, record.entityLedger)
-      sendProgress('parsing', 20, anonymizationProgressMessage('prepare'))
+      sendProgress('output', 20, anonymizationProgressMessage('prepare'))
       log.info('Anonimizzazione richiesta', { format: record.format, entitiesConfirmed: confirmed.length })
 
-      sendProgress('parsing', 50, anonymizationProgressMessage('redact'))
+      sendProgress('output', 50, anonymizationProgressMessage('redact'))
       const generated = await generateOutput(record.canonicalPath, record.format, typedEntities, {
         analysisToken,
         isScanned: record.isScanned,
@@ -369,7 +370,7 @@ export function registerIpcHandlers(): void {
         const record = await analysisRegistry.resolveForSave(req.analysisToken, event.sender.id)
         analysisRegistry.validateDecisions(record, req.entities)
         const fileName = record.canonicalPath.split('/').pop() ?? record.canonicalPath
-        sendProgress('parsing', 0, `Anonimizzazione: ${fileName}...`)
+        sendProgress('output', 0, `Anonimizzazione: ${fileName}...`)
         const typedEntities = toGeneratorEntities(req.entities, record.entityLedger)
         const generated = await generateOutput(record.canonicalPath, record.format, typedEntities, {
           analysisToken: req.analysisToken,

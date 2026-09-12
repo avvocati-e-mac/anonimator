@@ -156,7 +156,7 @@ npm run build:electron  # Package app with electron-builder
 **Renderer** (`src/renderer/`)
 - React app with ZERO Node.js access (sandboxed)
 - `src/store/sessionStore.ts` - Zustand state management
-- `src/components/` - UI components (DropZone, ProcessingScreen, EntityReview, BatchReview, SuccessScreen, BatchSuccess, Settings)
+- `src/components/` - UI components (DropZone, ProcessingScreen, ProgressActivityIcon, EntityReview, BatchReview, SuccessScreen, BatchSuccess, Settings)
 
 **React Rules (Renderer):**
 - **Styling:** Use ONLY Tailwind CSS classes. Do **not** create inline styles (`style={{...}}`) or new `.css` files unless strictly unavoidable and explicitly approved.
@@ -311,7 +311,7 @@ All channels are defined as constants in `src/shared/types.ts`. Never hardcode c
 
 | Channel | Payload |
 |---------|---------|
-| `doc:progress` | `{ stage: 'parsing' \| 'ner' \| 'ocr' \| 'done', percent: number, message: string }` |
+| `doc:progress` | `{ stage: 'parsing' \| 'ner' \| 'ocr' \| 'output' \| 'done', percent: number, message: string }` |
 | `model:download:progress` | `{ file: string, percent: number, done: boolean, error?: string }` |
 
 > ⚠️ **Direzione Main → Renderer:** usare sempre `mainWindow.webContents.send(channel, data)`.

@@ -192,7 +192,7 @@ export default function BatchReview(): React.JSX.Element {
   async function handleAnonymize(): Promise<void> {
     if (confirmedCount === 0) return
     setIsSubmitting(true)
-    setProgress(0, 'Avvio anonimizzazione batch...')
+    setProgress(0, 'Avvio anonimizzazione batch...', 'output')
     setScreen('batch-processing')
 
     const requests = buildBatchAnonymizeRequests(doneFiles, mergedEntities)

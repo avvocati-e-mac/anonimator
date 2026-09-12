@@ -281,10 +281,10 @@ export default function EntityReview(): React.JSX.Element {
     if (!resolvedPath) return
 
     setIsAnalyzing(true)
-    setProgress(0, 'Analisi documento...')
+    setProgress(0, 'Analisi documento...', 'parsing')
 
-    const removeListener = window.electronAPI.onProgress(({ percent, message }) => {
-      setProgress(percent, message)
+    const removeListener = window.electronAPI.onProgress(({ percent, message, stage }) => {
+      setProgress(percent, message, stage)
     })
     try {
       const result = await window.electronAPI.processDocument(resolvedPath)
@@ -310,10 +310,10 @@ export default function EntityReview(): React.JSX.Element {
     if (!filePath || !analysisResult?.ocrReport) return
 
     setIsAnalyzing(true)
-    setProgress(0, 'Nuovo riconoscimento del testo in corso...')
+    setProgress(0, 'Nuovo riconoscimento del testo in corso...', 'ocr')
 
-    const removeListener = window.electronAPI.onProgress(({ percent, message }) => {
-      setProgress(percent, message)
+    const removeListener = window.electronAPI.onProgress(({ percent, message, stage }) => {
+      setProgress(percent, message, stage)
     })
     try {
       const result = await window.electronAPI.processDocument(filePath, {
@@ -344,11 +344,11 @@ export default function EntityReview(): React.JSX.Element {
   async function handleAnonymize(): Promise<void> {
     if (!filePath || !analysisResult?.analysisToken) return
     setIsSubmitting(true)
-    setProgress(0, 'Avvio anonimizzazione...')
+    setProgress(0, 'Avvio anonimizzazione...', 'output')
     setScreen('processing')
 
-    const removeListener = window.electronAPI.onProgress(({ percent, message }) => {
-      setProgress(percent, message)
+    const removeListener = window.electronAPI.onProgress(({ percent, message, stage }) => {
+      setProgress(percent, message, stage)
     })
 
     try {

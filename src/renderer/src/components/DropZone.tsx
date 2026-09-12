@@ -76,10 +76,10 @@ export default function DropZone({ onOpenSettings, isDark, onToggleDark }: DropZ
         setFilePath(filePath)
         setProcessingStartedAt(Date.now())
         setScreen('processing')
-        setProgress(0, 'Avvio elaborazione...')
+        setProgress(0, 'Avvio elaborazione...', 'parsing')
 
-        const removeListener = window.electronAPI.onProgress(({ percent, message }) => {
-          setProgress(percent, message)
+        const removeListener = window.electronAPI.onProgress(({ percent, message, stage }) => {
+          setProgress(percent, message, stage)
         })
 
         try {

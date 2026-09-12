@@ -6,6 +6,7 @@ import type {
   LlmConfig,
   BatchAnonymizeRequest,
   ModelDownloadProgress,
+  ProcessingProgress,
   ProcessDocumentOptions
 } from '@shared/types'
 
@@ -32,10 +33,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   resetSession: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_RESET),
 
   // Ascolta aggiornamenti di avanzamento (emessi dal Main durante il processing)
-  onProgress: (callback: (progress: { stage: string; percent: number; message: string }) => void) => {
+  onProgress: (callback: (progress: ProcessingProgress) => void) => {
     // Handler nominato: removeListener rimuove SOLO questo, mai il listener globale
     // registrato da App.tsx al mount (removeAllListeners li ucciderebbe entrambi).
-    const handler = (_event: IpcRendererEvent, data: { stage: string; percent: number; message: string }): void =>
+    const handler = (_event: IpcRendererEvent, data: ProcessingProgress): void =>
       callback(data)
     ipcRenderer.on(IPC_CHANNELS.DOC_PROGRESS, handler)
     // Restituisce una funzione per rimuovere il listener (evita memory leak)

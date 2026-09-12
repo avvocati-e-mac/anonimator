@@ -1,29 +1,25 @@
 import React from 'react'
-import { Loader2, ShieldCheck } from 'lucide-react'
 import { useSessionStore } from '../store/sessionStore'
+import ProgressActivityIcon from './ProgressActivityIcon'
+import { getProgressActivityPresentation } from '../utils/progressActivity'
 
 export default function ProcessingScreen(): React.JSX.Element {
-  const { progressPercent, progressMessage, filePath, reset } = useSessionStore()
+  const { progressPercent, progressMessage, progressStage, filePath, reset } = useSessionStore()
   const fileName = filePath?.split('/').pop() ?? ''
+  const activity = getProgressActivityPresentation(progressStage)
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-md text-center space-y-6">
 
-        {/* Icona animata */}
+        {/* Icona dell'attività corrente */}
         <div className="flex justify-center">
-          <div className="relative">
-            <ShieldCheck size={56} className="text-blue-600" />
-            <Loader2
-              size={24}
-              className="absolute -bottom-1 -right-1 text-blue-400 animate-spin"
-            />
-          </div>
+          <ProgressActivityIcon stage={progressStage} />
         </div>
 
         <div>
           <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100 mb-1">
-            Elaborazione in corso
+            {activity.label}
           </h2>
           {fileName && (
             <p className="text-sm text-slate-500 dark:text-slate-400 truncate max-w-xs mx-auto" title={fileName}>

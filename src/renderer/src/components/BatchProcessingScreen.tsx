@@ -2,6 +2,8 @@ import React from 'react'
 import { Loader2, ShieldCheck, Clock, CheckCircle2, XCircle } from 'lucide-react'
 import { useSessionStore } from '../store/sessionStore'
 import type { BatchFileStatus } from '@shared/types'
+import ProgressActivityIcon from './ProgressActivityIcon'
+import { getProgressActivityPresentation } from '../utils/progressActivity'
 
 function StatusIcon({ status }: { status: BatchFileStatus }): React.JSX.Element {
   switch (status) {
@@ -17,10 +19,11 @@ function StatusIcon({ status }: { status: BatchFileStatus }): React.JSX.Element 
 }
 
 export default function BatchProcessingScreen(): React.JSX.Element {
-  const { batchFiles, batchCurrentFileIndex, progressPercent, progressMessage, reset } = useSessionStore()
+  const { batchFiles, batchCurrentFileIndex, progressPercent, progressMessage, progressStage, reset } = useSessionStore()
 
   const total = batchFiles.length
   const currentFile = batchFiles[batchCurrentFileIndex - 1]
+  const activity = getProgressActivityPresentation(progressStage)
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex">
@@ -60,20 +63,14 @@ export default function BatchProcessingScreen(): React.JSX.Element {
       {/* Area principale */}
       <main className="flex-1 flex flex-col items-center justify-center p-8">
         <div className="w-full max-w-md text-center space-y-6">
-          {/* Icona animata */}
+          {/* Icona dell'attività corrente */}
           <div className="flex justify-center">
-            <div className="relative">
-              <ShieldCheck size={56} className="text-blue-600" />
-              <Loader2
-                size={24}
-                className="absolute -bottom-1 -right-1 text-blue-400 animate-spin"
-              />
-            </div>
+            <ProgressActivityIcon stage={progressStage} />
           </div>
 
           <div>
             <h2 className="text-xl font-semibold text-slate-800 dark:text-slate-100 mb-1">
-              Elaborazione in corso
+              {activity.label}
             </h2>
             <p className="text-sm text-slate-500 dark:text-slate-400">
               File {batchCurrentFileIndex} di {total}

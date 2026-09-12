@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type {
   DetectedEntity, DocumentAnalysisResult, BatchFileItem, BatchResultItem, EntityType,
-  EntityRedactionOutcome, PartialReason, RedactionMode
+  EntityRedactionOutcome, PartialReason, RedactionMode, ProcessingProgress
 } from '@shared/types'
 import type { MergedEntity as ReferencedMergedEntity } from '../utils/entityUtils'
 
@@ -53,6 +53,7 @@ interface SessionState {
   analysisResult: DocumentAnalysisResult | null
   progressPercent: number
   progressMessage: string
+  progressStage: ProcessingProgress['stage']
   entities: DetectedEntity[]
   successInfo: SuccessInfo | null
 
@@ -73,7 +74,7 @@ interface SessionState {
   setScreen: (screen: AppScreen) => void
   setFilePath: (path: string) => void
   setAnalysisResult: (result: DocumentAnalysisResult) => void
-  setProgress: (percent: number, message: string) => void
+  setProgress: (percent: number, message: string, stage: ProcessingProgress['stage']) => void
   toggleEntityConfirmed: (id: string) => void
   updateEntityPseudonym: (id: string, pseudonym: string) => void
   updateEntityType: (id: string, type: EntityType) => void
@@ -112,6 +113,7 @@ const initialState = {
   analysisResult: null,
   progressPercent: 0,
   progressMessage: '',
+  progressStage: 'parsing' as ProcessingProgress['stage'],
   entities: [],
   successInfo: null,
   batchFiles: [],
@@ -139,7 +141,8 @@ export const useSessionStore = create<SessionState>((set) => ({
   setScreen: (screen) => set({ screen }),
   setFilePath: (filePath) => set({ filePath }),
   setAnalysisResult: (result) => set({ analysisResult: result, entities: result.entities }),
-  setProgress: (progressPercent, progressMessage) => set({ progressPercent, progressMessage }),
+  setProgress: (progressPercent, progressMessage, progressStage) =>
+    set({ progressPercent, progressMessage, progressStage }),
 
   toggleEntityConfirmed: (id) =>
     set((state) => ({
