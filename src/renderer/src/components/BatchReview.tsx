@@ -7,9 +7,11 @@ import {
 import { useSessionStore } from '../store/sessionStore'
 import { ENTITY_CONFIG } from '../utils/entityConfig'
 import AddEntityModal from './AddEntityModal'
+import PdfOutputModeSelector from './PdfOutputModeSelector'
 import type { EntityType } from '@shared/types'
 import type { MergedEntity } from '../store/sessionStore'
 import { buildBatchAnonymizeRequests } from '../utils/entityUtils'
+import { requiresBitonalAcknowledgement, supportsPdfOutputMode } from '../utils/pdfOutputMode'
 
 function EntityRow({ entity }: { entity: MergedEntity }): React.JSX.Element {
   const { toggleMergedEntityConfirmed, updateMergedEntityPseudonym, updateMergedEntityType, updateMergedEntityOriginalText } = useSessionStore()
@@ -179,15 +181,22 @@ export default function BatchReview(): React.JSX.Element {
     addMergedEntity,
     importEntitiesToBatch,
     setError,
+    pdfOutputMode,
+    setPdfOutputMode,
   } = useSessionStore()
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showFileList, setShowFileList] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [isAddingEntity, setIsAddingEntity] = useState(false)
+  const [bitonalAcknowledged, setBitonalAcknowledged] = useState(false)
 
   const doneFiles = batchFiles.filter((f) => f.status === 'done')
   const confirmedCount = mergedEntities.filter((e) => e.confirmed).length
+  const canChoosePdfOutput = doneFiles.some((file) => supportsPdfOutputMode(file.analysisResult))
+  const bitonalNeedsAcknowledgement = canChoosePdfOutput
+    && requiresBitonalAcknowledgement(pdfOutputMode)
+    && !bitonalAcknowledged
 
   async function handleAnonymize(): Promise<void> {
     if (confirmedCount === 0) return
@@ -195,7 +204,7 @@ export default function BatchReview(): React.JSX.Element {
     setProgress(0, 'Avvio anonimizzazione batch...', 'output')
     setScreen('batch-processing')
 
-    const requests = buildBatchAnonymizeRequests(doneFiles, mergedEntities)
+    const requests = buildBatchAnonymizeRequests(doneFiles, mergedEntities, pdfOutputMode)
 
     try {
       const results = await window.electronAPI.batchAnonymize(requests)
@@ -308,6 +317,16 @@ export default function BatchReview(): React.JSX.Element {
             </p>
           </div>
 
+          {canChoosePdfOutput && (
+            <PdfOutputModeSelector
+              value={pdfOutputMode}
+              onChange={setPdfOutputMode}
+              acknowledged={bitonalAcknowledged}
+              onAcknowledgedChange={setBitonalAcknowledged}
+              batch
+            />
+          )}
+
           {mergedEntities.length > 0 && (
             <div className="space-y-1">
               {mergedEntities.map((entity) => (
@@ -360,14 +379,19 @@ export default function BatchReview(): React.JSX.Element {
           <div className="flex-1" />
           <button
             onClick={() => void handleAnonymize()}
-            disabled={isSubmitting || confirmedCount === 0}
+            disabled={isSubmitting || confirmedCount === 0 || bitonalNeedsAcknowledgement}
+            title={bitonalNeedsAcknowledgement
+              ? 'Conferma di aver compreso la conversione in bianco e nero'
+              : undefined}
             className="
               px-6 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg
               hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed
               transition-colors
             "
           >
-            {confirmedCount === 0
+            {bitonalNeedsAcknowledgement
+              ? 'Conferma modalità bitonale'
+              : confirmedCount === 0
               ? "Seleziona almeno un'entità"
               : `Anonimizza ${doneFiles.length} file →`}
           </button>

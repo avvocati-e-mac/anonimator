@@ -209,9 +209,13 @@ export interface EntityDecision {
   confirmed: boolean
 }
 
+export type PdfOutputMode = 'preserve-color' | 'force-bitonal'
+
 export interface AnonymizeRequest {
   analysisToken: string
   entities: EntityDecision[]
+  /** Preferenza esplicita per PDF e immagini; assente equivale a preserve-color. */
+  pdfOutputMode?: PdfOutputMode
 }
 
 // Risposta dopo il salvataggio (Main → Renderer)
@@ -265,6 +269,7 @@ export interface BatchFileItem {
 export interface BatchAnonymizeRequest {
   analysisToken: string
   entities: EntityDecision[]
+  pdfOutputMode?: PdfOutputMode
 }
 
 export interface BatchResultItem {

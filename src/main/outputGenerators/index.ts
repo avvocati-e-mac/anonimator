@@ -1,4 +1,4 @@
-import type { DocumentFormat, DetectedEntity, PdfLayerKind, SaveResult } from '@shared/types'
+import type { DocumentFormat, DetectedEntity, PdfLayerKind, PdfOutputMode, SaveResult } from '@shared/types'
 import { privacyLog as log, safeErrorCode } from '../services/privacyLogger'
 import { generateTxt } from './txtGenerator'
 import { generateDocx } from './docxGenerator'
@@ -6,6 +6,7 @@ import { generateOdt } from './odtGenerator'
 import { generatePdf, generatePdfFromImage } from './pdfGenerator'
 import type { PdfGenerateOptions } from './pdfGenerator'
 import { generateMarkdown } from './markdownGenerator'
+import { resolvePdfRasterCodec } from '../services/rasterCodecConfig'
 
 /**
  * Risultato di generateOutput.
@@ -30,6 +31,8 @@ export interface GenerateOutputOptions {
   ocrAligned?: boolean
   /** Capability Main-only; non fa parte del payload Renderer dopo la validazione IPC. */
   analysisToken?: string
+  /** Preferenza utente validata dall'IPC; non contiene dettagli del codec. */
+  pdfOutputMode?: PdfOutputMode
 }
 
 /**
@@ -58,7 +61,10 @@ export async function generateOutput(
     case 'image':
       // Un PNG/JPG non è un PDF: prima veniva passato a generatePdf, che lo apriva come
       // documento PDF e sollevava eccezione. Va incapsulato e redatto come scansione.
-      return generatePdfFromImage(filePath, entities, options)
+      return generatePdfFromImage(filePath, entities, {
+        analysisToken: options.analysisToken,
+        rasterCodec: resolvePdfRasterCodec(options.pdfOutputMode),
+      })
 
     case 'markdown':
       return generateMarkdown(filePath, entities)
@@ -94,8 +100,12 @@ async function resolvePdfOptions(
       routing: safety.routing,
       pageSafety: safety.pages,
       analysisToken: options.analysisToken,
+      rasterCodec: resolvePdfRasterCodec(options.pdfOutputMode),
     }
   } catch (err) {
+    if (options.pdfOutputMode === 'force-bitonal') {
+      throw err
+    }
     // In dubbio si è prudenti: senza report si mantiene il comportamento del chiamante.
     log.warn('generateOutput: analisi layer OCR non riuscita, opzioni invariate', {
       stage: 'output',

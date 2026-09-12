@@ -11,8 +11,10 @@ import { sanitizeDocxHtml, buildHighlightHtml, buildAnonymizedHtml } from '../ut
 import type { PreviewMode } from '../utils/docxPreview'
 import AddEntityModal from './AddEntityModal'
 import OcrQualityBanner from './OcrQualityBanner'
+import PdfOutputModeSelector from './PdfOutputModeSelector'
 import type { DetectedEntity, EntityType } from '@shared/types'
 import { toEntityDecision } from '../utils/entityUtils'
+import { requiresBitonalAcknowledgement, supportsPdfOutputMode } from '../utils/pdfOutputMode'
 
 // ─── Componente header pannello anteprima con tab bar ────────────────────────
 
@@ -218,6 +220,7 @@ export default function EntityReview(): React.JSX.Element {
     entities, analysisResult, filePath, processingStartedAt,
     setScreen, setProgress, setSuccessInfo, setSessionStats, setError, reset,
     addEntity, importEntitiesToSingle, setFilePathAndMerge, setAnalysisResult,
+    pdfOutputMode, setPdfOutputMode,
   } = useSessionStore()
 
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -230,11 +233,13 @@ export default function EntityReview(): React.JSX.Element {
   const [ocrRedone, setOcrRedone] = useState(false)
   const [showPreview, setShowPreview] = useState(true)
   const [previewMode, setPreviewMode] = useState<PreviewMode>('original')
+  const [bitonalAcknowledged, setBitonalAcknowledged] = useState(false)
 
   // Cambiando documento il "gia' rifatto" non vale piu': il nuovo file ha il
   // suo layer di testo e merita di vedersi offrire il rimedio, se serve.
   useEffect(() => {
     setOcrRedone(false)
+    setBitonalAcknowledged(false)
   }, [filePath])
 
   const rawPreviewHtml = analysisResult?.previewHtml
@@ -255,6 +260,10 @@ export default function EntityReview(): React.JSX.Element {
   const warnings = analysisResult?.warnings ?? []
 
   const isRestoredSession = filePath === null
+  const canChoosePdfOutput = supportsPdfOutputMode(analysisResult ?? undefined)
+  const bitonalNeedsAcknowledgement = canChoosePdfOutput
+    && requiresBitonalAcknowledgement(pdfOutputMode)
+    && !bitonalAcknowledged
 
   // ── Mini drop zone per sessione ripristinata ──────────────────────────────
   const nativeDropPathsRef = useRef<string[]>([])
@@ -355,6 +364,7 @@ export default function EntityReview(): React.JSX.Element {
       const result = await window.electronAPI.anonymizeDocument({
         analysisToken: analysisResult.analysisToken,
         entities: entities.map((entity) => toEntityDecision(entity)),
+        pdfOutputMode,
       })
 
       if ('error' in result && result.error) {
@@ -555,6 +565,15 @@ export default function EntityReview(): React.JSX.Element {
               </div>
             )}
 
+            {canChoosePdfOutput && (
+              <PdfOutputModeSelector
+                value={pdfOutputMode}
+                onChange={setPdfOutputMode}
+                acknowledged={bitonalAcknowledged}
+                onAcknowledgedChange={setBitonalAcknowledged}
+              />
+            )}
+
             {/* Lista entità */}
             {entities.length > 0 && (
               <div className="space-y-1">
@@ -624,15 +643,21 @@ export default function EntityReview(): React.JSX.Element {
           <div className="flex-1" />
           <button
             onClick={() => void handleAnonymize()}
-            disabled={isSubmitting || confirmedCount === 0 || isRestoredSession}
-            title={isRestoredSession ? 'Trascina un documento per anonimizzare' : undefined}
+            disabled={isSubmitting || confirmedCount === 0 || isRestoredSession || bitonalNeedsAcknowledgement}
+            title={isRestoredSession
+              ? 'Trascina un documento per anonimizzare'
+              : bitonalNeedsAcknowledgement
+                ? 'Conferma di aver compreso la conversione in bianco e nero'
+                : undefined}
             className="
               px-6 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg
               hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed
               transition-colors
             "
           >
-            {isRestoredSession
+            {bitonalNeedsAcknowledgement
+              ? 'Conferma modalità bitonale'
+              : isRestoredSession
               ? 'Trascina un documento'
               : confirmedCount === 0
                 ? 'Seleziona almeno un\'entità'

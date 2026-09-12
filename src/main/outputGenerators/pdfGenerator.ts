@@ -17,6 +17,8 @@ export interface PdfGenerateOptions {
   ocrAligned?: boolean
   ocrDpi?: number
   pageSafety?: PdfPageQualityOutcome[]
+  /** Opt-in Main-only; il default resta JPEG e il valore non attraversa l'IPC. */
+  rasterCodec?: 'jpeg' | 'bitonal-auto' | 'bitonal-force'
   /** Capability Main-only necessaria per recuperare l'artefatto OCR in RAM. */
   analysisToken?: string
 }
@@ -35,7 +37,7 @@ export async function generatePdf(
 export async function generatePdfFromImage(
   filePath: string,
   entities: DetectedEntity[],
-  options: Pick<PdfGenerateOptions, 'analysisToken'> = {},
+  options: Pick<PdfGenerateOptions, 'analysisToken' | 'rasterCodec'> = {},
 ): Promise<PdfSaveResult> {
-  return generateImagePdfSafe(filePath, entities, options.analysisToken)
+  return generateImagePdfSafe(filePath, entities, options)
 }

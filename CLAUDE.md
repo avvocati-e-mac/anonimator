@@ -143,7 +143,7 @@ npm run build:electron  # Package app with electron-builder
 - `services/` - all document processing logic:
   - `nerService.ts` - hybrid NER engine (Regex + Transformers.js + optional LLM)
   - `renderBudget.ts` - preflight overflow-safe delle pixmap MuPDF e delle immagini OCR (limite 50 MP)
-  - `bitonalCodec.ts` - selettore conservativo e packer puro DeviceGray 1-bit (prototipo Main-only opt-in)
+  - `bitonalCodec.ts` - selettore conservativo, soglia Otsu e packer puro DeviceGray 1-bit usati dai percorsi automatico Main-only e forzato dalla UI
   - `sessionManager.ts` - in-memory substitution dictionary (session persistence)
   - `settingsManager.ts` - LLM configuration persistence on disk
   - `llmService.ts` - client for local LLMs (Ollama/LM Studio) via OpenAI-compatible endpoint
@@ -156,7 +156,7 @@ npm run build:electron  # Package app with electron-builder
 **Renderer** (`src/renderer/`)
 - React app with ZERO Node.js access (sandboxed)
 - `src/store/sessionStore.ts` - Zustand state management
-- `src/components/` - UI components (DropZone, ProcessingScreen, ProgressActivityIcon, EntityReview, BatchReview, SuccessScreen, BatchSuccess, Settings)
+- `src/components/` - UI components (DropZone, ProcessingScreen, ProgressActivityIcon, PdfOutputModeSelector, EntityReview, BatchReview, SuccessScreen, BatchSuccess, Settings)
 
 **React Rules (Renderer):**
 - **Styling:** Use ONLY Tailwind CSS classes. Do **not** create inline styles (`style={{...}}`) or new `.css` files unless strictly unavoidable and explicitly approved.
@@ -179,7 +179,7 @@ File dropped
   → analysisRegistry: token casuale Main-only + fingerprint + ledger entità
   → IPC: doc:complete (analysisToken, mai path o routing autorevoli)
   → Renderer: EntityReview.tsx (user reviews/confirms)
-  → IPC: doc:anonymize ({ analysisToken, entities })
+  → IPC: doc:anonymize ({ analysisToken, entities, pdfOutputMode })
   → Main: verifica owner/fingerprint e determina il routing per pagina
   → outputGenerators/ (format-specific anonymization)
   → Save: [original]_anonimizzato.[ext]
@@ -197,7 +197,7 @@ File dropped
 - `fast-xml-parser` - parse XML content inside ODT archives (used in `odtParser.ts`)
 - `tesseract.js` - offline OCR (tessdata downloaded at first run); una sola passata per pagina, artefatto ridotto in RAM legato all'analysis token (limite globale 128 MiB)
 
-For raster or mixed PDFs, `pdfSafeGenerator.ts` creates a new flattened PDF and never copies the source catalog, attachments, forms, metadata, JavaScript, or image streams. Every MuPDF raster allocation is preceded by the shared 50 MP preflight in `renderBudget.ts`. Redactions are painted into each DeviceRGB raster before encoding. JPEG quality 85 remains the default. A Main-only internal opt-in can conservatively quantize eligible scan pages to DeviceGray 1-bit and then compress that bitmask losslessly with Flate; RGB-to-1-bit conversion is destructive. The opt-in requires complete one-to-one `pageSafety`; otherwise every page stays on JPEG. Its initial policy admits only essentially pure black/white rasters: any pixel with channel delta greater than 24, or luma strictly between 32 and 223, vetoes bitonal output for that page. Digital pages and analysis errors also stay on JPEG. The bitonal encoder receives only the newly redacted raster, and technical codec/validation failures abort without fallback. A searchable invisible layer is added only to complete outputs; partial outputs remain raster-only. OCR rendering/recognition errors abort analysis instead of falling back to potentially empty digital text.
+For raster or mixed PDFs, `pdfSafeGenerator.ts` creates a new flattened PDF and never copies the source catalog, attachments, forms, metadata, JavaScript, or image streams. Every MuPDF raster allocation is preceded by the shared 50 MP preflight in `renderBudget.ts`. Redactions are painted into each DeviceRGB raster before encoding. JPEG quality 85 remains the default and corresponds to the UI choice `preserve-color`: it preserves the visible color appearance, not pixel identity. The explicit UI choice `force-bitonal` converts scan/image pages irreversibly to DeviceGray 1-bit; Renderer acknowledgement is a UX safeguard, while complete one-to-one Main-owned `pageSafety` is the security boundary and digital pages are not converted. The older Main-only `bitonal-auto` remains available to tests/manual harnesses and uses the conservative eligibility selector. Both bitonal paths compress the new bitmask with Flate only after redaction. Missing provenance, page errors in forced mode, or technical codec/validation failures abort atomically without JPEG fallback. A searchable invisible layer is added only to complete outputs; partial outputs remain raster-only. OCR rendering/recognition errors abort analysis instead of falling back to potentially empty digital text.
 
 **NER (Named Entity Recognition):**
 - Regex for structured Italian data and context-bound legal/administrative fields, including OCR label variants
@@ -293,8 +293,8 @@ All channels are defined as constants in `src/shared/types.ts`. Never hardcode c
 | Channel | Input | Output |
 |---------|-------|--------|
 | `doc:process` | `{ filePath: string }` | `DocumentAnalysisResult` |
-| `doc:anonymize` | `AnonymizeRequest` | `AnonymizeResult` |
-| `batch:anonymize` | `AnonymizeRequest[]` | `BatchResult[]` |
+| `doc:anonymize` | `AnonymizeRequest` con `pdfOutputMode?: 'preserve-color' \| 'force-bitonal'` | `AnonymizeResult` |
+| `batch:anonymize` | `AnonymizeRequest[]` con la stessa preferenza validata per file | `BatchResult[]` |
 | `session:reset` | none | `{ status: string }` |
 | `settings:get` | none | `{ llm: LlmConfig }` |
 | `settings:set` | `{ llm: LlmConfig }` | `{ status: string }` |

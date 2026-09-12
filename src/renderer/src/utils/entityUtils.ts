@@ -1,5 +1,6 @@
 import type {
-  BatchAnonymizeRequest, BatchFileItem, DetectedEntity, DocumentAnalysisResult, EntityDecision
+  BatchAnonymizeRequest, BatchFileItem, DetectedEntity, DocumentAnalysisResult, EntityDecision,
+  PdfOutputMode
 } from '@shared/types'
 
 export interface EntityReference {
@@ -27,7 +28,8 @@ export function toEntityDecision(entity: DetectedEntity, entityId = entity.id): 
 
 export function buildBatchAnonymizeRequests(
   files: readonly BatchFileItem[],
-  entities: readonly MergedEntity[]
+  entities: readonly MergedEntity[],
+  pdfOutputMode: PdfOutputMode = 'preserve-color',
 ): BatchAnonymizeRequest[] {
   return files.flatMap((file) => {
     const analysisToken = file.analysisResult?.analysisToken
@@ -38,7 +40,7 @@ export function buildBatchAnonymizeRequests(
       if (entity.applyToAll) return [toEntityDecision(entity)]
       return []
     })
-    return [{ analysisToken, entities: decisions }]
+    return [{ analysisToken, entities: decisions, pdfOutputMode }]
   })
 }
 

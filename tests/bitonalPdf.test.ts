@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { copyFile, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -37,8 +37,11 @@ vi.mock('../src/main/services/bitonalCodec', async (importOriginal) => {
 
 import {
   enforceRasterEncodingPageCount,
+  generateImagePdfSafe,
   generatePdfSafe,
 } from '../src/main/outputGenerators/pdfSafeGenerator'
+import { buildImagePixelMatrix } from '../src/main/parsers/ocrParser'
+import { ocrArtifactCache } from '../src/main/services/ocrArtifactCache'
 
 const ALIGNED_FIXTURE = join(__dirname, 'corpus-ocr', 'negativi', 'neg-02-allineato-flate.pdf')
 
@@ -284,6 +287,100 @@ describe('PDF bitonale opt-in interno', () => {
     }
   })
 
+  it('forza una pagina a colori in un raster DeviceGray a 1 bit', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'anonimator-bitonal-force-color-'))
+    const input = join(dir, 'synthetic-color.pdf')
+    await writeRasterPdf(input, [colorPage(257, 129)], 257, 129)
+    try {
+      const result = await generatePdfSafe(input, [], {
+        routing: 'flattened-scan',
+        layerKind: 'scan-with-text',
+        pageSafety: [scanSafety(1)],
+        rasterCodec: 'bitonal-force',
+      })
+      const mupdf = (await import('mupdf')).default
+      const output = new mupdf.PDFDocument(new Uint8Array(await readFile(result.outputPath)))
+      try {
+        expect(pageImages(output, 0)).toEqual([{ bits: 1, colorSpace: 'Gray' }])
+        const image = soleImageXObject(output, 0)
+        expect(image.get('Filter').asName()).toBe('FlateDecode')
+        expect(image.get('BitsPerComponent').asNumber()).toBe(1)
+        expect(image.readStream().length).toBe(Math.ceil(257 / 8) * 129)
+      } finally {
+        output.destroy()
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('forza anche un PNG a colori nel PDF standalone DeviceGray a 1 bit', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'anonimator-bitonal-force-image-'))
+    const input = join(dir, 'synthetic-color.png')
+    const width = 257
+    const height = 129
+    const token = randomUUID()
+    const handle = ocrArtifactCache.stage({
+      pages: [{
+        page: 1,
+        words: [],
+        renderMatrix: buildImagePixelMatrix(),
+        pixmapOrigin: { x: 0, y: 0 },
+      }],
+    })
+    ocrArtifactCache.bind(handle, token)
+    await sharp(colorPage(width, height), { raw: { width, height, channels: 3 } }).png().toFile(input)
+    try {
+      const result = await generateImagePdfSafe(input, [], {
+        analysisToken: token,
+        rasterCodec: 'bitonal-force',
+      })
+      const mupdf = (await import('mupdf')).default
+      const output = new mupdf.PDFDocument(new Uint8Array(await readFile(result.outputPath)))
+      try {
+        expect(pageImages(output, 0)).toEqual([{ bits: 1, colorSpace: 'Gray' }])
+      } finally {
+        output.destroy()
+      }
+    } finally {
+      ocrArtifactCache.release(token)
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('il bitonale forzato fallisce chiuso se la provenienza pagina è incompleta', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'anonimator-bitonal-force-provenance-'))
+    const input = join(dir, 'synthetic-color.pdf')
+    await writeRasterPdf(input, [colorPage(257, 129)], 257, 129)
+    try {
+      await expect(generatePdfSafe(input, [], {
+        routing: 'flattened-scan',
+        layerKind: 'scan-with-text',
+        rasterCodec: 'bitonal-force',
+      })).rejects.toMatchObject({ code: 'validation-failed' })
+      await expectNoOutputOrTemp(dir)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('il bitonale forzato fallisce chiuso su una pagina non verificata', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'anonimator-bitonal-force-page-error-'))
+    const input = join(dir, 'synthetic-color.pdf')
+    await writeRasterPdf(input, [colorPage(257, 129)], 257, 129)
+    try {
+      await expect(generatePdfSafe(input, [], {
+        routing: 'flattened-scan',
+        layerKind: 'scan-with-text',
+        pageSafety: [{ ...scanSafety(1), status: 'page-error', layerKind: null, reason: 'page-error' }],
+        rasterCodec: 'bitonal-force',
+      })).rejects.toMatchObject({ code: 'validation-failed' })
+      await expectNoOutputOrTemp(dir)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
   it('riduce sotto il 60% del JPEG la stessa fixture bianco-nero grande e deterministica', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'anonimator-bitonal-size-'))
     const input = join(dir, 'synthetic-large.pdf')
@@ -437,7 +534,7 @@ describe('PDF bitonale opt-in interno', () => {
     }
   })
 
-  it.each(['selector', 'pack'] as const)('un errore tecnico %s fallisce chiuso senza output o temporanei', async (stage) => {
+  it.each(['selector', 'pack'] as const)('un errore tecnico %s nel forzato fallisce chiuso senza output o temporanei', async (stage) => {
     const dir = await mkdtemp(join(tmpdir(), `anonimator-bitonal-${stage}-`))
     const input = join(dir, 'synthetic.pdf')
     await writeRasterPdf(input, [grayPage(240, 100)], 240, 100)
@@ -445,7 +542,7 @@ describe('PDF bitonale opt-in interno', () => {
     try {
       await expect(generatePdfSafe(input, [], {
         routing: 'flattened-scan', layerKind: 'scan-with-text',
-        pageSafety: [scanSafety(1)], rasterCodec: 'bitonal-auto',
+        pageSafety: [scanSafety(1)], rasterCodec: 'bitonal-force',
       })).rejects.toMatchObject({ code: 'validation-failed' })
       await expectNoOutputOrTemp(dir)
     } finally {
@@ -466,7 +563,7 @@ describe('PDF bitonale opt-in interno', () => {
         routing: 'flattened-scan',
         layerKind: 'scan-with-text',
         pageSafety: [scanSafety(1)],
-        rasterCodec: 'bitonal-auto',
+        rasterCodec: 'bitonal-force',
       })).rejects.toMatchObject({ code: 'validation-failed' })
       await expectNoOutputOrTemp(dir)
     } finally {
@@ -486,7 +583,7 @@ describe('PDF bitonale opt-in interno', () => {
     try {
       await expect(generatePdfSafe(input, [], {
         routing: 'flattened-scan', layerKind: 'scan-with-text',
-        pageSafety: [scanSafety(1)], rasterCodec: 'bitonal-auto',
+        pageSafety: [scanSafety(1)], rasterCodec: 'bitonal-force',
       })).rejects.toMatchObject({ code: 'validation-failed' })
       await expectNoOutputOrTemp(dir)
     } finally {
@@ -593,7 +690,7 @@ describe('PDF bitonale opt-in interno', () => {
       routing: 'flattened-scan' as const,
       layerKind: 'scan-with-text' as const,
       ocrAligned: true,
-      rasterCodec: 'bitonal-auto' as const,
+      rasterCodec: 'bitonal-force' as const,
       pageSafety: [scanSafety(1)],
     }
     try {

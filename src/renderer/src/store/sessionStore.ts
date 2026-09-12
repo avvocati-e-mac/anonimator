@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type {
   DetectedEntity, DocumentAnalysisResult, BatchFileItem, BatchResultItem, EntityType,
-  EntityRedactionOutcome, PartialReason, RedactionMode, ProcessingProgress
+  EntityRedactionOutcome, PartialReason, RedactionMode, ProcessingProgress, PdfOutputMode
 } from '@shared/types'
 import type { MergedEntity as ReferencedMergedEntity } from '../utils/entityUtils'
 
@@ -54,6 +54,7 @@ interface SessionState {
   progressPercent: number
   progressMessage: string
   progressStage: ProcessingProgress['stage']
+  pdfOutputMode: PdfOutputMode
   entities: DetectedEntity[]
   successInfo: SuccessInfo | null
 
@@ -75,6 +76,7 @@ interface SessionState {
   setFilePath: (path: string) => void
   setAnalysisResult: (result: DocumentAnalysisResult) => void
   setProgress: (percent: number, message: string, stage: ProcessingProgress['stage']) => void
+  setPdfOutputMode: (mode: PdfOutputMode) => void
   toggleEntityConfirmed: (id: string) => void
   updateEntityPseudonym: (id: string, pseudonym: string) => void
   updateEntityType: (id: string, type: EntityType) => void
@@ -114,6 +116,7 @@ const initialState = {
   progressPercent: 0,
   progressMessage: '',
   progressStage: 'parsing' as ProcessingProgress['stage'],
+  pdfOutputMode: 'preserve-color' as PdfOutputMode,
   entities: [],
   successInfo: null,
   batchFiles: [],
@@ -143,6 +146,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   setAnalysisResult: (result) => set({ analysisResult: result, entities: result.entities }),
   setProgress: (progressPercent, progressMessage, progressStage) =>
     set({ progressPercent, progressMessage, progressStage }),
+  setPdfOutputMode: (pdfOutputMode) => set({ pdfOutputMode }),
 
   toggleEntityConfirmed: (id) =>
     set((state) => ({
@@ -282,6 +286,8 @@ export const useSessionStore = create<SessionState>((set) => ({
       batchResults: [],
       progressPercent: 0,
       progressMessage: '',
+      progressStage: 'parsing',
+      pdfOutputMode: 'preserve-color',
       error: null,
       }
     }),

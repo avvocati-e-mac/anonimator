@@ -65,6 +65,7 @@ const EntityDecisionSchema = z.object({
 export const AnonymizeRequestSchema = z.object({
   analysisToken: z.string().regex(/^[a-f0-9]{64}$/),
   entities: z.array(EntityDecisionSchema).max(10_000),
+  pdfOutputMode: z.enum(['preserve-color', 'force-bitonal']).default('preserve-color'),
 }).strict().superRefine((request, context) => {
   const seen = new Set<string>()
   request.entities.forEach((entity, index) => {
@@ -309,7 +310,7 @@ export function registerIpcHandlers(): void {
     }
 
     try {
-      const { analysisToken, entities } = parsed.data
+      const { analysisToken, entities, pdfOutputMode } = parsed.data
       const record = await analysisRegistry.resolveForSave(analysisToken, event.sender.id)
       analysisRegistry.validateDecisions(record, entities)
       const confirmed = entities.filter((entity) => entity.confirmed)
@@ -323,6 +324,7 @@ export function registerIpcHandlers(): void {
         isScanned: record.isScanned,
         layerKind: record.ocrReport?.layerKind,
         ocrAligned: record.ocrReport?.verdict === 'aligned',
+        pdfOutputMode,
       })
       const mode: SaveResult['redactionMode'] = record.format === 'pdf' &&
         record.pages.some((page) => page.kind !== 'digital') ? 'flattened-scan' : 'digital'
@@ -377,6 +379,7 @@ export function registerIpcHandlers(): void {
           isScanned: record.isScanned,
           layerKind: record.ocrReport?.layerKind,
           ocrAligned: record.ocrReport?.verdict === 'aligned',
+          pdfOutputMode: req.pdfOutputMode,
         })
         const mode: SaveResult['redactionMode'] = record.format === 'pdf' &&
           record.pages.some((page) => page.kind !== 'digital') ? 'flattened-scan' : 'digital'

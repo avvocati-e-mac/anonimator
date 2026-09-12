@@ -82,10 +82,11 @@ describe('buildBatchAnonymizeRequests', () => {
       makeResult([makeEntity({ id: 'id-b' })], 'token-b')
     ])
     merged.pseudonym = 'Persona 7'
-    const requests = buildBatchAnonymizeRequests(files, [merged])
+    const requests = buildBatchAnonymizeRequests(files, [merged], 'force-bitonal')
     expect(requests.map((request) => request.analysisToken)).toEqual(['token-a', 'token-b'])
     expect(requests.map((request) => request.entities[0].entityId)).toEqual(['id-a', 'id-b'])
     expect(requests.map((request) => request.entities[0].pseudonym)).toEqual(['Persona 7', 'Persona 7'])
+    expect(requests.map((request) => request.pdfOutputMode)).toEqual(['force-bitonal', 'force-bitonal'])
   })
 
   it('applica manuali/importate a tutti e omette le rilevate assenti', () => {
@@ -97,6 +98,7 @@ describe('buildBatchAnonymizeRequests', () => {
       applyToAll: true
     }
     const requests = buildBatchAnonymizeRequests(files, [detected, manual])
+    expect(requests.every((request) => request.pdfOutputMode === 'preserve-color')).toBe(true)
     expect(requests[0].entities.map((entity) => entity.entityId)).toEqual(['only-a', 'manual-1'])
     expect(requests[1].entities.map((entity) => entity.entityId)).toEqual(['manual-1'])
   })

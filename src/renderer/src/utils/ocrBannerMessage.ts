@@ -91,6 +91,25 @@ export function selectOcrBannerMessage(
     }
   }
 
+  // Aumentare il DPI di rendering non può ricreare dettaglio che la scansione
+  // non contiene. Questo avviso viene dopo il disallineamento, perché in quel
+  // caso rifare l'OCR può ancora correggere la geometria del layer testuale.
+  if (report.imageQuality === 'marginal'
+    && report.imageQualityReasons.includes('low-native-dpi')) {
+    const dpi = report.imageMetrics.nativeDpi
+    const dpiPart = dpi !== null ? ` (circa ${Math.round(dpi)} DPI)` : ''
+    return {
+      severity: 'warning',
+      title: 'Scansione a bassa risoluzione',
+      body:
+        `La scansione ha una risoluzione modesta${dpiPart}. Il riconoscimento può perdere caratteri ` +
+        'piccoli o sbiaditi: verificare attentamente l’elenco delle entità. Un nuovo OCR a DPI più ' +
+        'alti non può recuperare dettagli assenti nell’immagine originale.',
+      showRedoButton: false,
+      estimatedMinutes: null,
+    }
+  }
+
   if (report.textQuality === 'poor') {
     if (ocrRedone) {
       return {

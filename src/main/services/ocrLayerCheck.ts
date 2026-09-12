@@ -1324,22 +1324,24 @@ function analyzePage(
       fontName
     }
   }
-  if (lineCount === 0) {
-    return {
-      metrics: emptyPage(pageNumber, 'inconclusive', 'no-text-layer'),
-      layerKind: 'scan-no-text',
-      image: null,
-      fontName
-    }
-  }
+  const rasterLayerKind: PdfLayerKind = lineCount === 0 ? 'scan-no-text' : 'scan-with-text'
 
   // DPI nativo del raster incorporato, non quello di rendering.
   const dpiSamples: number[] = []
   for (const blk of imageBlocks) {
     const wPt = blk.rect[2] - blk.rect[0]
-    if (wPt > 1 && blk.pxWidth > 0) dpiSamples.push(blk.pxWidth / (wPt / 72))
+    const hPt = blk.rect[3] - blk.rect[1]
+    // La radice del rapporto fra aree è invariante rispetto a rotazioni di
+    // 90°: associare pxWidth alla sola larghezza del bbox raddoppiava il DPI
+    // per raster rettangolari ruotati.
+    if (wPt > 1 && hPt > 1 && blk.pxWidth > 0 && blk.pxHeight > 0) {
+      dpiSamples.push(Math.sqrt((blk.pxWidth * blk.pxHeight) / (wPt * hPt)) * 72)
+    }
   }
-  const nativeDpi = median(dpiSamples)
+  const measuredNativeDpi = median(dpiSamples)
+  // Le dimensioni pagina in punti sono decimali: un 150 DPI nominale può
+  // risultare 149,999999 e cadere per errore nella classe inferiore.
+  const nativeDpi = measuredNativeDpi === null ? null : Math.round(measuredNativeDpi)
 
   // Bbox di riga in pixel. Si preferiscono i bbox float della walk; se i due
   // elenchi non combaciano si ripiega sui bbox (troncati) di asJSON.
@@ -1415,7 +1417,7 @@ function analyzePage(
   if (detached || !grid) {
     return {
       metrics: emptyPage(pageNumber, 'inconclusive', 'pixel-view-detached'),
-      layerKind: 'scan-with-text',
+      layerKind: rasterLayerKind,
       image: null,
       fontName
     }
@@ -1433,6 +1435,17 @@ function analyzePage(
     separability,
     skewDeg,
     blurScore
+  }
+
+  // Anche una scansione senza layer di testo deve riportare il DPI nativo e
+  // la qualità del raster: è proprio il caso che passerà all'OCR interno.
+  if (lineCount === 0) {
+    return {
+      metrics: emptyPage(pageNumber, 'inconclusive', 'no-text-layer'),
+      layerKind: 'scan-no-text',
+      image: imageMetrics,
+      fontName
+    }
   }
 
   if (
@@ -1640,9 +1653,8 @@ async function analyzeOcrLayerInternal(
       ),
       blurScore: median(imageSamples.map((m) => m.blurScore)) ?? 0
     }
-    // Nessuna pagina campionata ha prodotto misure sull'immagine (tipicamente una
-    // scansione senza alcun layer di testo, dove analyzePage esce prima del
-    // rendering). In quel caso separability e blurScore valgono 0 perche' non
+    // Nessuna pagina campionata ha prodotto misure sull'immagine (per esempio
+    // perché il rendering diagnostico è fallito). In quel caso separability e blurScore valgono 0 perche' non
     // sono stati misurati, non perche' siano risultati pessimi: darli in pasto a
     // classifyImageQuality produrrebbe un 'marginal' con motivi 'low-separability'
     // e 'possibly-blurred' inventati di sana pianta. Ci si astiene, come fa

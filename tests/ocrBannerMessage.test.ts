@@ -109,6 +109,24 @@ describe('selectOcrBannerMessage — immagine di qualità pessima', () => {
   })
 })
 
+describe('selectOcrBannerMessage — DPI nativo marginale', () => {
+  it('avvisa senza proporre un OCR che non può ricreare dettaglio', () => {
+    const report = makeReport({
+      imageQuality: 'marginal',
+      imageQualityReasons: ['low-native-dpi'] as ImageQualityReason[],
+      imageMetrics: { ...BASE_METRICS, nativeDpi: 150 },
+    })
+    const msg = selectOcrBannerMessage(report, 1)
+    expect(msg).toMatchObject({
+      severity: 'warning',
+      title: 'Scansione a bassa risoluzione',
+      showRedoButton: false,
+      estimatedMinutes: null,
+    })
+    expect(msg?.body).toContain('150 DPI')
+  })
+})
+
 // ─── verdict misaligned ─────────────────────────────────────────────────────────
 
 describe('selectOcrBannerMessage — testo e immagine disallineati', () => {
@@ -132,6 +150,20 @@ describe('selectOcrBannerMessage — testo e immagine disallineati', () => {
     const senzaAvviso = makeReport({ verdict: 'misaligned', maxOffsetMm: 3, imageQuality: 'good' })
     const msgSenzaAvviso = selectOcrBannerMessage(senzaAvviso, 5)
     expect(msg?.body.length).toBeGreaterThan(msgSenzaAvviso?.body.length ?? 0)
+  })
+
+  it('dà priorità al disallineamento anche con DPI nativo basso', () => {
+    const report = makeReport({
+      verdict: 'misaligned',
+      maxOffsetMm: 3,
+      imageQuality: 'marginal',
+      imageQualityReasons: ['low-native-dpi'] as ImageQualityReason[],
+      imageMetrics: { ...BASE_METRICS, nativeDpi: 150 },
+    })
+    expect(selectOcrBannerMessage(report, 2)).toMatchObject({
+      title: 'Testo e immagine della scansione non allineati',
+      showRedoButton: true,
+    })
   })
 })
 

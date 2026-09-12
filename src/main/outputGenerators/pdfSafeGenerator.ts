@@ -47,8 +47,8 @@ export interface SafePdfOptions {
   ocrAligned?: boolean
   ocrDpi?: number
   pageSafety?: PdfPageQualityOutcome[]
-  /** Prototipo Main-only: il default resta JPEG e non esiste alcun controllo IPC/UI. */
-  rasterCodec?: 'jpeg' | 'bitonal-auto'
+  /** Codec interno risolto nel Main dalla scelta UI semantica; il default resta JPEG. */
+  rasterCodec?: 'jpeg' | 'bitonal-auto' | 'bitonal-force'
   /** Capability Main-only usata per recuperare l'artefatto OCR in RAM. */
   analysisToken?: string
 }
@@ -100,7 +100,11 @@ export async function generatePdfSafe(filePath: string, entities: DetectedEntity
     : flattened(filePath, source, entities, options)
 }
 
-export async function generateImagePdfSafe(filePath: string, entities: DetectedEntity[], analysisToken?: string): Promise<SaveResult> {
+export async function generateImagePdfSafe(
+  filePath: string,
+  entities: DetectedEntity[],
+  options: Pick<SafePdfOptions, 'analysisToken' | 'rasterCodec'> = {},
+): Promise<SaveResult> {
   const source = Uint8Array.from(await fs.readFile(filePath))
   const metadata = await sharp(source).metadata()
   if (!metadata.width || !metadata.height) throw new PdfGenerationError('unreadable-pdf', 'Immagine non leggibile.')
@@ -114,7 +118,9 @@ export async function generateImagePdfSafe(filePath: string, entities: DetectedE
   return flattened(filePath, bytes, entities, {
     routing: 'flattened-scan',
     layerKind: 'scan-no-text',
-    analysisToken,
+    analysisToken: options.analysisToken,
+    rasterCodec: options.rasterCodec,
+    pageSafety: [{ page: 1, status: 'scan-untrusted' } as PdfPageQualityOutcome],
   })
 }
 
@@ -186,13 +192,20 @@ async function flattened(filePath: string, source: Uint8Array, entities: Detecte
   const pageBounds: Array<readonly [number, number, number, number]> = []
   const sensitiveSequences: SensitiveWordSequence[] = []
   const rasterEncodings: RasterEncoding[] = []
-  const bitonalOptIn = options.rasterCodec === 'bitonal-auto'
-    && hasCompletePageSafety(options.pageSafety, doc.countPages())
+  const hasCompleteSafety = hasCompletePageSafety(options.pageSafety, doc.countPages())
+  const bitonalMode = hasCompleteSafety ? options.rasterCodec : undefined
+  if (options.rasterCodec === 'bitonal-force' && !hasCompleteSafety) {
+    doc.destroy()
+    throw new PdfGenerationError('validation-failed', 'Provenienza pagine incompleta per il bitonale.')
+  }
   try {
     for (let index = 0; index < doc.countPages(); index++) {
       const page = doc.loadPage(index); const bounds = page.getBounds(); const pageWidth = bounds[2] - bounds[0]; const pageHeight = bounds[3] - bounds[1]
       pageBounds.push([bounds[0], bounds[1], bounds[2], bounds[3]])
       const kind = qualityKind(options, index)
+      if (bitonalMode === 'bitonal-force' && kind === 'page-error') {
+        throw new PdfGenerationError('validation-failed', 'Pagina non verificata per il bitonale.')
+      }
       const dpi = kind === 'digital' ? MIXED_DIGITAL_DPI : rasterDpi(page)
       if (!dpi || !Number.isFinite(dpi)) throw new PdfGenerationError('resource-limit', 'DPI della scansione non determinabile in modo affidabile.')
       const matrix = mupdf.Matrix.scale(dpi / PDF_POINTS_PER_INCH, dpi / PDF_POINTS_PER_INCH)
@@ -283,7 +296,7 @@ async function flattened(filePath: string, source: Uint8Array, entities: Detecte
         const target = output.addPage([pageWidth, pageHeight])
         let bitonalEligibility: ReturnType<typeof analyzeBitonalEligibility> | null = null
         try {
-          bitonalEligibility = bitonalOptIn
+          bitonalEligibility = bitonalMode
           && kind !== 'digital'
           && kind !== 'page-error'
             ? analyzeBitonalEligibility(pixels, width, height)
@@ -291,7 +304,8 @@ async function flattened(filePath: string, source: Uint8Array, entities: Detecte
         } catch {
           throw new PdfGenerationError('validation-failed', 'Selezione bitonale non riuscita.')
         }
-        if (bitonalEligibility?.eligible) {
+        if (bitonalEligibility
+          && (bitonalMode === 'bitonal-force' || bitonalEligibility.eligible)) {
           try {
             const redactedPixels = await rasterLabelPixels(pixels, width, height, active)
             const packed = packBitonalMsb(
@@ -553,8 +567,51 @@ function validateDocument(mupdf: Mupdf, source: Uint8Array, output: Uint8Array, 
       if (expected?.codec === 'bitonal' && !hasSingleBitonalImage(outputPage, expected)) {
         throw new PdfGenerationError('validation-failed', 'Struttura immagine bitonale non valida.')
       }
+      if (expected?.codec === 'jpeg' && !hasSingleJpegImage(outputPage, expected)) {
+        throw new PdfGenerationError('validation-failed', 'Struttura immagine a colori non valida.')
+      }
     }
   } finally { before.destroy(); after.destroy() }
+}
+
+function hasSingleJpegImage(
+  page: import('mupdf').PDFPage,
+  expected: Extract<RasterEncoding, { codec: 'jpeg' }>,
+): boolean {
+  try {
+    const xObjects = page.getObject().getInheritable('Resources').get('XObject')
+    if (!xObjects.isDictionary()) return false
+    const images: import('mupdf').PDFObject[] = []
+    xObjects.forEach((candidate) => {
+      if (candidate.isStream() && candidate.get('Subtype').asName() === 'Image') images.push(candidate)
+    })
+    if (images.length !== 1) return false
+    const image = images[0]
+    if (image.get('Type').asName() !== 'XObject'
+      || image.get('Filter').asName() !== 'DCTDecode'
+      || image.get('ColorSpace').asName() !== 'DeviceRGB'
+      || image.get('BitsPerComponent').asNumber() !== 8
+      || image.get('Width').asNumber() !== expected.width
+      || image.get('Height').asNumber() !== expected.height
+      || !image.get('SMask').isNull()) return false
+    let count = 0
+    let renderedValid = true
+    const structured = page.toStructuredText('preserve-images')
+    try {
+      structured.walk({
+        onImageBlock(_bbox, _matrix, renderedImage) {
+          count++
+          if (renderedImage.getBitsPerComponent() !== 8
+            || renderedImage.getColorSpace()?.getType() !== 'RGB') renderedValid = false
+        },
+      })
+    } finally {
+      structured.destroy()
+    }
+    return count === 1 && renderedValid
+  } catch {
+    return false
+  }
 }
 
 function hasSingleBitonalImage(

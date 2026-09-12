@@ -260,7 +260,7 @@ describe('prova della fuga di pixel (pdfimages)', () => {
         const result = await generateImagePdfSafe(
           input,
           [entita('SOGGETTOALFA', 'SOGGETTO_1')],
-          token,
+          { analysisToken: token },
         )
 
         expect(result.safetyStatus).toBe('complete')

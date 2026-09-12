@@ -170,6 +170,7 @@ const ProcessDocumentSchema = z.object({
 
 const AnonymizeRequestSchema = z.object({
   analysisToken: z.string().regex(/^[a-f0-9]{64}$/),
+  pdfOutputMode: z.enum(['preserve-color', 'force-bitonal']).default('preserve-color'),
   entities: z.array(z.object({
     entityId: z.string().min(1),
     type: EntityTypeSchema,
@@ -1008,7 +1009,7 @@ Per ogni pagina:
   2. Il DPI deriva dalla mediana pesata per area dei raster; le pagine digitali di un PDF misto usano 300 DPI. Oltre 50 milioni di pixel la generazione fallisce senza output.
   3. I bbox dell'unica passata OCR vengono trasformati da pixel a spazio pagina mediante l'inversa della matrice registrata, quindi nella pixmap corrente.
   4. Rettangoli e pseudonimi sono disegnati direttamente nei pixel; la pagina viene codificata JPEG colore qualità 85 per default.
-     Un prototipo opt-in esclusivamente Main (`rasterCodec: 'bitonal-auto'`, non esposto via IPC/UI) si attiva solo con una `pageSafety` completa e biunivoca; se la provenienza manca o è incompleta tutte le pagine conservano JPEG. Il Main ricalcola l'idoneità sull'esatto raster RGB. La policy iniziale ammette soltanto scansioni sostanzialmente bianco/nero pure: basta un pixel con differenza fra canale massimo e minimo maggiore di 24, oppure con luma strettamente compresa fra 32 e 223, per mantenere la pagina in JPEG. Rumore, antialiasing, compressione JPEG, colore e tratti sbiaditi possono quindi escludere legittimamente il bitonale. Solo dopo avere impresso le redazioni, il nuovo raster viene quantizzato in modo distruttivo da RGB a 1 bit e impacchettato MSB-first come `/DeviceGray`, `/BitsPerComponent 1`; `/FlateDecode` comprime senza perdita il bitmask già quantizzato, non l'immagine RGB originaria. L'inidoneità prevista conserva JPEG; un errore tecnico del codec o della validazione fallisce senza fallback.
+     La scelta UI predefinita `preserve-color` mantiene l'aspetto a colori con ricompressione JPEG qualità 85, ma non promette una copia pixel-identica. La scelta `force-bitonal`, preceduta da avviso e conferma esplicita, converte irreversibilmente le pagine scan e le immagini a `/DeviceGray`, `/BitsPerComponent 1`; le pagine digitali non vengono convertite. La provenienza `pageSafety` resta calcolata nel Main e deve essere completa: se manca, contiene `page-error`, oppure il codec/validator fallisce, la scrittura viene interrotta atomicamente senza fallback JPEG. Il precedente `bitonal-auto` resta un'opzione esclusivamente Main per test e harness manuali: applica il selettore conservativo e può mantenere JPEG per colore, rumore, antialiasing o toni ambigui. In entrambi i percorsi le redazioni vengono impresse prima della quantizzazione; `/FlateDecode` comprime senza perdita soltanto il bitmask già distruttivamente convertito, non l'immagine RGB originaria.
   5. Il file temporaneo viene validato su ogni pagina e rinominato atomicamente. Non esiste fallback overlay.
 ```
 
@@ -1190,6 +1191,8 @@ L'app React è strutturata come una macchina a stati con 7 schermate, gestite da
   - HTML sanitizzato tramite `sanitizeDocxHtml()` in `utils/docxPreview.ts` (whitelist tag semantici, nessuna dipendenza esterna)
   - Per PDF, ODT, TXT e immagini il pannello non appare (nessuna regressione)
 - Sezione warning collassabile (se il parser ha generato avvertimenti)
+- Le scansioni sotto 200 DPI nativi mostrano un avviso dedicato: sotto 150 DPI è critico; tra 150 e 199 DPI invita a verificare attentamente le entità senza proporre un inutile aumento del DPI OCR. Il DPI nativo misura il dettaglio realmente acquisito e non coincide con il DPI di rendering OCR, che resta 300 per default. Se il layer è anche disallineato, ha priorità l'avviso geometrico con “Rifai OCR”, perché in quel caso rigenerare il layer può correggere i riquadri pur senza inventare dettaglio assente.
+- Per PDF scansionati e immagini mostra “Aspetto del PDF”: colori predefiniti oppure bianco e nero compatto. La seconda scelta avverte della perdita irreversibile di colori, timbri, firme, evidenziature, fotografie e testo sbiadito e richiede una conferma esplicita.
 - **Mini drop zone** (visibile solo quando `filePath === null`, cioè sessione ripristinata o dizionario importato da DropZone):
   - Appare sopra la lista entità con il testo "Trascina il documento da anonimizzare, oppure clicca per selezionarlo"
   - Supporta drag & drop nativo Electron tramite `nativeDropPathsRef` (stesso pattern di `DropZone.tsx`)
@@ -1220,6 +1223,7 @@ L'app React è strutturata come una macchina a stati con 7 schermate, gestite da
 
 - Come EntityReview ma con entità deduplicate da più file
 - Badge aggiuntivo "×N file" se un'entità appare in più documenti
+- Se il batch contiene PDF scansionati o immagini, espone la stessa scelta di output e chiarisce che non modifica gli altri formati
 - Footer: stessi pulsanti "Aggiungi" / "Esporta" / "Importa" di EntityReview
 - "Anonimizza N file" → filtra entità per file → `batchAnonymize()`
 
