@@ -1,4 +1,10 @@
-# Anonimator
+<p align="center">
+  <img src="build-resources/anonimator.png" alt="Icona ufficiale di Anonimator: un robot arancione con maschera" width="180">
+</p>
+
+<h1 align="center">Anonimator</h1>
+
+<p align="center"><strong>Pseudoanonimizzazione locale di documenti legali, con revisione del professionista.</strong></p>
 
 Anonimator è un’app desktop che aiuta a **pseudoanonimizzare documenti legali in locale**. Individua nomi e altri dati da proteggere, li sottopone alla revisione dell’utente e crea una nuova copia del documento con pseudonimi coerenti.
 
@@ -7,6 +13,26 @@ Anonimator è un’app desktop che aiuta a **pseudoanonimizzare documenti legali
 **Versione pubblicata: 1.8.0.** Nel codice è in preparazione la 1.9.0, che aggiunge la ricerca verificata nel documento descritta più avanti.
 
 > Anonimator è uno strumento di supporto, non un controllo automatico definitivo. Il riconoscimento può omettere dati o proporre elementi non sensibili. Prima di comunicare, produrre o depositare il file, un professionista deve sempre verificare sia l’elenco delle entità sia il documento risultante.
+
+## Indice
+
+- [Come lavora, in breve](#in-breve-come-lavora)
+- [Dati che può riconoscere](#che-cosa-riconosce)
+- [Revisione e pseudonimi](#revisione-e-pseudonimi)
+  - [Aggiunta verificata dal documento (sviluppo 1.9.0)](#aggiunta-verificata-dal-documento--sviluppo-190)
+- [Formati supportati e nota importante sui DOCX](#formati-supportati)
+- [PDF scansionati, OCR e sicurezza dell’output](#pdf-scansionati-ocr-e-sicurezza-delloutput)
+  - [Aspetto a colori o bianco e nero](#aspetto-a-colori-o-bianco-e-nero)
+- [Privacy e trattamento locale](#privacy-che-cosa-resta-locale)
+- [Installazione della versione 1.8.0](#installazione-della-versione-180)
+  - [macOS](#macos)
+  - [Windows](#windows)
+  - [Linux](#linux)
+- [Uso essenziale](#uso-essenziale)
+- [Limiti da conoscere](#limiti-da-conoscere)
+- [Sviluppo assistito da IA agentica](#sviluppo-assistito-da-ia-agentica)
+- [Informazioni per sviluppatori](#per-sviluppatori)
+- [Licenza](#licenza)
 
 ## In breve: come lavora
 
@@ -90,6 +116,18 @@ Limiti attuali:
 | Markdown (`.md`) | Nuovo file Markdown |
 
 È possibile elaborare più file insieme e revisionare le entità in un’unica schermata. La resa dei formati modificabili, specialmente DOCX e ODT complessi, deve essere confrontata con l’originale.
+
+> **NOTA IMPORTANTE PER I FILE DOCX (MICROSOFT WORD)**
+>
+> Microsoft Word può suddividere internamente una parola o una frase in più frammenti, anche quando sullo schermo il testo appare continuo. Formattazione, revisioni e altri elementi del documento possono quindi rendere meno affidabili l’individuazione e la sostituzione diretta delle entità in un DOCX complesso.
+>
+> **Percorso consigliato:**
+>
+> 1. ricavare dal DOCX una versione solo testuale, per esempio in formato TXT, e usarla in Anonimator per individuare e revisionare le entità;
+> 2. esportare dall’app il dizionario delle entità in formato JSON;
+> 3. caricare nuovamente il file DOCX originale e importare il JSON prima di creare il nuovo documento Word.
+>
+> È un passaggio in più e può risultare scomodo, ma evita molti problemi legati alla struttura interna dei file Word. Non elimina comunque la necessità di confrontare integralmente il DOCX prodotto con l’originale.
 
 ## PDF scansionati, OCR e sicurezza dell’output
 
