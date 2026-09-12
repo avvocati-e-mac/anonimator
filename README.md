@@ -1,216 +1,225 @@
 # Anonimator
 
-App desktop per la **pseudoanonimizzazione offline** di documenti legali italiani.
+Anonimator è un’app desktop che aiuta a **pseudoanonimizzare documenti legali in locale**. Individua nomi e altri dati da proteggere, li sottopone alla revisione dell’utente e crea una nuova copia del documento con pseudonimi coerenti.
 
-Pensata per avvocati e professionisti legali: nessun dato viene mai inviato a server esterni. Tutto il processing avviene localmente sul tuo Mac, PC Windows o Linux.
+È pensata per avvocati e professionisti che non vogliono caricare gli atti su un servizio cloud. L’analisi ordinaria avviene sul computer; la connessione Internet serve per scaricare i modelli al primo utilizzo. È possibile aggiungere un modello linguistico locale, come Ollama o LM Studio, ma non è obbligatorio.
 
-**Versione attuale: 1.5.0**
+**Versione pubblicata: 1.8.0.** Nel codice è in preparazione la 1.9.0, che aggiunge la ricerca verificata nel documento descritta più avanti.
 
-> **L'app è stata creata in vibe coding e non sono un esperto programmatore — procedi con cautela nell'utilizzo.**
+> Anonimator è uno strumento di supporto, non un controllo automatico definitivo. Il riconoscimento può omettere dati o proporre elementi non sensibili. Prima di comunicare, produrre o depositare il file, un professionista deve sempre verificare sia l’elenco delle entità sia il documento risultante.
 
-<!-- TODO: aggiungere screenshot dell'app (DropZone, revisione entità, dark mode) -->
+## In breve: come lavora
 
----
+1. Si trascina uno o più documenti nell’app.
+2. Anonimator estrae o riconosce il testo e propone i dati potenzialmente identificativi.
+3. L’avvocato sceglie cosa trattare, corregge eventuali errori e controlla gli pseudonimi.
+4. L’app crea una nuova copia; l’originale non viene modificato.
+5. L’avvocato apre il risultato e lo controlla pagina per pagina, con particolare attenzione agli eventuali avvisi.
 
-## Indice
+La **pseudoanonimizzazione** non equivale all’anonimizzazione definitiva: chi dispone del dizionario di corrispondenza, o di altre informazioni, può ricondurre uno pseudonimo alla persona originaria. Il file JSON esportato e la sessione salvata devono quindi essere custoditi come materiale riservato.
 
-- [Funzionalità](#funzionalità)
-- [Installazione](#installazione)
-  - [macOS](#macos--passaggi-obbligatori)
-  - [Windows](#windows--passaggi-obbligatori)
-  - [Linux](#linux--installazione)
-  - [Verifica installazione (macOS)](#verifica-installazione-macos)
-- [Per sviluppatori](#per-sviluppatori--installazione-da-sorgente)
-- [Architettura](#architettura)
-- [TODO](#todo--cose-da-fare)
-- [Licenza](#licenza)
+## Che cosa riconosce
 
----
+Anonimator combina regole dedicate ai documenti italiani, un modello NER locale (un sistema che riconosce nomi ed entità nel testo) e, facoltativamente, un modello linguistico locale.
 
-## Funzionalità
+Può proporre, tra gli altri:
 
-- Riconosce automaticamente nomi di persone, luoghi, organizzazioni, codici fiscali, P.IVA, IBAN, email, numeri di telefono, **targhe veicoli** e numeri documento
-- Pattern regex specializzati per documenti legali: parti processuali, difensori, indirizzi, date di nascita, numeri documento, titoli professionali (Avv., Ing., Dott., Prof., ecc.), firme digitali
-- **Organizzazioni opzionali**: le aziende/società rilevate dal modello NER appaiono deselezionate di default — l'utente le seleziona manualmente se vuole anonimizzarle (non sono dati personali obbligatori)
-- **Co-reference resolution**: riconosce automaticamente le occorrenze successive di un nome (es. "Rossi" dopo "Mario Rossi") e le sostituisce con lo stesso pseudonimo
-- **Veto filter ruoli processuali**: i termini come "RICORRENTE", "APPELLANTE", "IMPUTATO" non vengono mai anonimizzati anche se il modello BERT li classifica erroneamente come persone
-- Sostituisce le entità con pseudonimi coerenti in tutto il documento (es. "Mario Rossi" → "M. R." ovunque appaia)
-- **Entità completamente modificabili**: nella schermata di revisione puoi modificare il tipo (badge cliccabile con dropdown), il testo originale da cercare nel documento (icona matita in hover) e il pseudonimo sostitutivo
-- **Aggiunta manuale entità**: aggiungi nomi o soprannomi che il NER non ha rilevato direttamente dalla schermata di revisione
-- **Esporta/Importa dizionario**: salva le entità e i pseudonimi in un file JSON (il nome del file rispecchia quello del documento originale) e riutilizzali su documenti della stessa pratica
-- **Sessione persistente**: il dizionario pseudonimi viene salvato automaticamente dopo ogni anonimizzazione; al prossimo avvio puoi ripristinarlo con un clic senza rianalizzare i documenti. Dopo il ripristino, trascina il documento direttamente nella schermata di revisione per anonimizzare senza perdere le entità importate
-- **Statistiche di sessione**: visualizza il numero di file e pagine processate, il tempo totale e la velocità di elaborazione (pagine al secondo) nella schermata finale di successo
-- Supporta PDF (nativi e scansionati via OCR), DOCX, ODT, TXT e Markdown
-- Elaborazione **batch** di più file contemporaneamente con revisione unificata delle entità
-- **LLM locale opzionale**: connetti Ollama o LM Studio per migliorare il riconoscimento dei nomi (i dati non escono mai dalla tua macchina); se il server restituisce un errore durante l'elaborazione, l'app continua e mostra un avviso con il numero di sezioni non analizzate
-- **Schermata di benvenuto**: al primo avvio spiega il funzionamento dell'app (tre livelli di analisi, nota hardware per LLM) — disattivabile con un checkbox
-- **Dark mode**: toggle luna/sole nell'interfaccia, preferenza salvata automaticamente
-- **Diagnostica installazione**: pulsante "Copia diagnostica" nelle Impostazioni — raccoglie soltanto versione, piattaforma e stato dei componenti, senza log o percorsi locali, e copia il riepilogo negli appunti
-- **Download modello NER integrato**: se il modello di riconoscimento entità (BERT, ~65 MB) è assente, le Impostazioni mostrano un badge di avviso e un pulsante per scaricarlo direttamente nell'app, con progress bar e feedback visivo
-- 100% offline — nessuna connessione di rete durante l'elaborazione (GDPR compliant)
+- persone, cognomi, soprannomi e riferimenti successivi alla stessa persona;
+- luoghi, indirizzi, residenza, luogo e data di nascita;
+- codici fiscali, partite IVA, IBAN, email e numeri di telefono;
+- targhe e numeri di documento;
+- organizzazioni, aziende e datori di lavoro.
 
----
+Nei moduli riconosce anche campi accompagnati da etichette come “Cognome”, “Nome” o “Dipendente”. Dalla 1.8.0 tollera alcune comuni confusioni dell’OCR fra lettere e numeri e usa il contesto per ridurre falsi riconoscimenti di targhe e partite IVA.
 
-## Installazione
+Le organizzazioni individuate automaticamente sono normalmente **deselezionate**: sta all’utente decidere se debbano essere pseudoanonimizzate. Anche tutte le altre proposte devono essere controllate.
 
-Scarica il file per il tuo sistema dalla pagina [Releases](https://github.com/avvocati-e-mac/anonimator/releases):
+## Revisione e pseudonimi
 
-| File | Sistema |
+Nella schermata di revisione è possibile:
+
+- includere o escludere ogni entità;
+- correggere il testo originale da cercare;
+- cambiare il tipo di dato;
+- modificare lo pseudonimo proposto;
+- aggiungere un dato non riconosciuto automaticamente;
+- esportare e importare un dizionario JSON;
+- salvare la sessione e riutilizzare gli stessi pseudonimi su documenti della medesima pratica.
+
+Le occorrenze dello stesso nome vengono ricondotte, quando possibile, allo stesso pseudonimo. Nel lavoro su più file l’app presenta un elenco unificato, così la scelta può essere fatta una volta sola per l’intero gruppo.
+
+Altre funzioni pratiche:
+
+- una schermata iniziale spiega i tre livelli di riconoscimento e i requisiti dell’eventuale LLM locale;
+- il tema chiaro o scuro viene ricordato dall’app;
+- l’avanzamento distingue lettura, riconoscimento OCR, analisi delle entità e creazione dell’output;
+- durante la creazione di una scansione l’app chiarisce che riusa l’OCR già in memoria: non sta riconoscendo inutilmente il testo una seconda volta;
+- la schermata finale riporta file e pagine elaborati, durata e velocità;
+- dalle Impostazioni si possono controllare e scaricare i modelli mancanti e copiare una diagnostica essenziale.
+
+### Aggiunta verificata dal documento — sviluppo 1.9.0
+
+Per PDF e immagini che dispongono di una trascrizione OCR, il pulsante **Aggiungi** apre una modalità più controllabile:
+
+- si consulta la trascrizione, pagina per pagina;
+- si selezionano una o più parole e si usa **Usa selezione**;
+- l’app cerca le corrispondenze esatte nell’intero documento e ne mostra il numero;
+- si può scorrere ogni occorrenza e, su richiesta, vedere la pagina completa con l’area evidenziata;
+- solo dopo il controllo si aggiunge l’entità alla revisione.
+
+La selezione viene estesa alle **parole OCR intere**. Se si modifica a mano il testo dopo averlo selezionato, la selezione precedente viene invalidata e il valore è trattato come nuovo testo digitato. Eventuali proposte di nome più completo sono soltanto suggerimenti adiacenti: non vengono scelte automaticamente. Per esempio, cercando “Carlo” l’app può proporre “Carlo Alberto Ruggeri”; non trasforma invece “Carlo Ruggeri” in una corrispondenza che salta la parola “Alberto”.
+
+Limiti attuali:
+
+- la funzione verificata richiede parole e posizioni prodotte dall’OCR; per DOCX, ODT, TXT e Markdown resta disponibile l’aggiunta manuale ordinaria;
+- errori OCR, parole fuse o grafie diverse possono impedire una corrispondenza esatta;
+- l’anteprima grafica carica una sola pagina per volta ed è un’immagine JPEG ridimensionata: serve a orientarsi, non sostituisce il controllo del file finale;
+- se l’immagine di anteprima non può essere generata, la trascrizione e la verifica testuale restano utilizzabili;
+- il copia e incolla usa gli appunti gestiti dal sistema operativo, che sono esterni al perimetro di protezione dell’app.
+
+## Formati supportati
+
+| Ingresso | Risultato |
 |---|---|
-| `Anonimator-1.5.0-arm64.dmg` | Mac Apple Silicon (M1/M2/M3/M4) |
-| `Anonimator-1.5.0-x64.dmg` | Mac Intel |
-| `Anonimator-1.5.0-windows-x64-setup.exe` | Windows 10/11 a 64 bit |
-| `Anonimator-1.5.0-linux-x64.AppImage` | Linux a 64 bit |
+| PDF digitale | Nuovo PDF pseudoanonimizzato |
+| PDF scansionato o misto | Nuovo PDF ricostruito pagina per pagina |
+| Immagine PNG, JPG o JPEG | Nuovo PDF ricostruito dall’immagine |
+| DOCX | Nuovo DOCX |
+| ODT | Nuovo ODT |
+| TXT | Nuovo TXT |
+| Markdown (`.md`) | Nuovo file Markdown |
 
-### Per tutti i sistemi
+È possibile elaborare più file insieme e revisionare le entità in un’unica schermata. La resa dei formati modificabili, specialmente DOCX e ODT complessi, deve essere confrontata con l’originale.
 
-L’app al primo avvio scarica circa 80 Mb di modello NER e Tesseract per OCR PDF
+## PDF scansionati, OCR e sicurezza dell’output
 
-### macOS — passaggi obbligatori
+OCR significa “riconoscimento ottico dei caratteri”: trasforma una scansione in parole e posizioni utilizzabili dall’app. Anonimator valuta la qualità e l’allineamento del testo già presente nel PDF; se necessario può proporre di rifare l’OCR interno. Una scansione poco nitida, inclinata o a bassa risoluzione resta comunque difficile da interpretare e richiede maggiore controllo umano.
 
-Trascina `Anonimator.app` nella cartella Applicazioni.
+Per le scansioni, l’app non si limita a mettere un rettangolo sopra il dato: ricostruisce le pagine per non conservare nel PDF i pixel originari sottostanti. Un output completo può inoltre ricevere un nuovo livello di testo ricercabile composto da testo non sensibile e pseudonimi, non dalle entità originali confermate.
 
-Poiché l'app non è firmata né notarizzata, macOS la blocca all'apertura. Esegui questi due comandi nel Terminale **una sola volta** dopo l'installazione:
+Prima del salvataggio vengono ricontrollati file, pagine e occorrenze. Se il risultato non può essere considerato completo, il nome contiene **`_DA_VERIFICARE`** e il PDF resta privo di livello testuale ricercabile. Questo suffisso è un avviso importante, non una certificazione che le parti riuscite siano esenti da errori.
 
-**1. Rimuovi l'app dalla quarantena:**
+### Aspetto a colori o bianco e nero
+
+Per PDF scansionati e immagini si può scegliere:
+
+- **Aspetto a colori (consigliato):** mantiene colori e tonalità visibili, con ricompressione JPEG; il risultato non è una copia identica pixel per pixel.
+- **Bianco e nero compatto:** converte irreversibilmente le pagine scansionate a un solo bit. Può ridurre le dimensioni, ma può anche eliminare informazioni presenti in timbri, firme chiare, evidenziature, fotografie o testo sbiadito. L’app richiede una conferma esplicita.
+
+Le pagine PDF nate digitalmente non vengono convertite in bitonale. In entrambe le modalità il documento originale rimane invariato.
+
+## Privacy: che cosa resta locale
+
+- Testo, OCR, riconoscimento delle entità e generazione del file avvengono localmente.
+- La trascrizione OCR usata durante il lavoro resta in memoria ed è collegata alla singola analisi; viene liberata quando l’analisi è chiusa o la sessione viene azzerata.
+- I log applicativi non devono contenere testo del documento, nomi, pseudonimi, token di analisi o percorsi dei file.
+- **Copia diagnostica** raccoglie solo versione, piattaforma e stato dei componenti, senza testo degli atti o percorsi locali.
+- L’eventuale LLM deve essere un servizio locale configurato dall’utente. Anonimator non richiede un servizio LLM cloud.
+
+Servono invece Internet e contatto con servizi esterni quando l’utente scarica i modelli NER/OCR. Inoltre il sistema operativo e altri programmi possono leggere o sincronizzare appunti, file recenti, backup o cartelle cloud: la loro configurazione non è controllata da Anonimator.
+
+## Installazione della versione 1.8.0
+
+Scaricare l’asset corretto dalla pagina [Anonimator v1.8.0](https://github.com/avvocati-e-mac/anonimator/releases/tag/v1.8.0):
+
+| Sistema | File esatto |
+|---|---|
+| Mac Apple Silicon (M1, M2, M3, M4) | `Anonimator-1.8.0-arm64.dmg` |
+| Mac Intel | `Anonimator-1.8.0-x64.dmg` |
+| Windows 10/11 a 64 bit | `Anonimator-1.8.0-windows-x64-setup.exe` |
+| Linux x86_64 | `Anonimator-1.8.0-linux-x86_64.AppImage` |
+
+Al primo utilizzo l’app deve scaricare il modello NER e i dati italiani per l’OCR, circa 80 MB complessivi. Dopo il download, l’elaborazione ordinaria può avvenire senza collegamento Internet.
+
+### macOS
+
+Aprire il DMG e trascinare `Anonimator.app` in **Applicazioni**. La versione 1.8.0 non è firmata né notarizzata; se macOS la blocca, eseguire una sola volta nel Terminale:
+
 ```bash
 sudo xattr -cr /Applications/Anonimator.app
 ```
-> Il comando presume che l'app sia nella cartella Applicazioni. Se l'hai installata altrove, sostituisci il percorso di conseguenza.
 
-Dopo questo passaggio l'app si apre normalmente.
+Il comando presuppone che l’app sia stata copiata in `/Applications`.
 
+### Windows
 
-### Windows — passaggi obbligatori
+Avviare `Anonimator-1.8.0-windows-x64-setup.exe`. Poiché l’installer non è firmato con un certificato Microsoft, SmartScreen può mostrare un avviso: selezionare **Ulteriori informazioni**, quindi **Esegui comunque**, soltanto dopo aver verificato di avere scaricato il file dalla release ufficiale.
 
-Esegui il file `Anonimator-1.3.0-windows-x64-setup.exe` per installare l'app.
+### Linux
 
-Poiché l'app non è firmata con un certificato Microsoft, Windows Defender SmartScreen mostrerà un avviso. Per procedere:
-
-1. Clicca su **"Ulteriori informazioni"** (o "More info")
-2. Clicca su **"Esegui comunque"** (o "Run anyway")
-
-L'installer crea un collegamento nel menu Start e sul Desktop. L'app si disinstalla normalmente da **Impostazioni → App**.
-
-### Linux — installazione
-
-Scarica il file `.AppImage`, rendilo eseguibile e avvialo:
+Rendere eseguibile l’AppImage e avviarla:
 
 ```bash
-chmod +x Anonimator-1.3.0-linux-x64.AppImage
-./Anonimator-1.3.0-linux-x64.AppImage
+chmod +x Anonimator-1.8.0-linux-x86_64.AppImage
+./Anonimator-1.8.0-linux-x86_64.AppImage
 ```
 
-> Su alcune distribuzioni potrebbe essere necessario installare `libfuse2` (`sudo apt install libfuse2` su Ubuntu/Debian).
+Su alcune distribuzioni può essere necessario installare `libfuse2`.
 
----
+## Uso essenziale
 
-## Per sviluppatori — Installazione da sorgente
+1. Aprire Anonimator e completare, se richiesto, il download dei modelli.
+2. Trascinare il documento o selezionarlo dal computer.
+3. Attendere analisi del testo, OCR quando necessario e riconoscimento delle entità.
+4. Controllare tutte le proposte: testo originale, tipo, numero di occorrenze e pseudonimo.
+5. Aggiungere gli elementi mancanti; per PDF e immagini OCR, nella 1.9.0 usare quando disponibile la ricerca verificata.
+6. Per scansioni e immagini scegliere l’aspetto del PDF; usare il bitonale solo dopo averne valutato la possibile perdita visiva.
+7. Creare il file, aprirlo e confrontarlo integralmente con l’originale. Controllare anche ricerca, copia del testo, immagini, intestazioni, piè di pagina, allegati e metadati pertinenti al proprio flusso.
+
+Per una spiegazione tecnica e operativa più estesa vedere [GUIDA.md](GUIDA.md). Le modifiche versione per versione sono in [CHANGELOG.md](CHANGELOG.md).
+
+## Limiti da conoscere
+
+- Nessun sistema NER, OCR o LLM garantisce di individuare ogni dato personale.
+- La stessa persona può comparire con abbreviazioni, errori, soprannomi o immagini non leggibili.
+- Un riquadro visibile nell’anteprima non dimostra da solo che ogni altra occorrenza sia stata trattata.
+- La conversione bitonale può perdere contenuto utile; la modalità a colori può produrre file più grandi dell’originale.
+- Il livello ricercabile di una scansione è ricostruito dall’OCR e può contenere errori di trascrizione.
+- Dizionari JSON e sessioni salvate conservano la corrispondenza fra originali e pseudonimi e vanno protetti.
+- Anonimator non decide quali dati sia giuridicamente necessario rimuovere e non sostituisce la valutazione professionale del caso concreto.
+
+## Sviluppo assistito da IA agentica
+
+Anonimator è stato sviluppato anche con l’uso di **IA agentica**, cioè sistemi di intelligenza artificiale impiegati per analizzare il codice, proporre modifiche, scrivere test e preparare documentazione. Questa informazione è dichiarata per trasparenza: l’uso dell’IA non costituisce una garanzia di qualità, sicurezza o correttezza.
+
+Le decisioni di architettura, la revisione delle modifiche, la definizione delle verifiche, l’esecuzione dei test e la pubblicazione delle release restano sottoposte a supervisione umana. Anche con questi controlli possono esistere difetti; chi usa l’app deve mantenere la revisione professionale descritta sopra.
+
+## Per sviluppatori
 
 ### Requisiti
 
-- macOS 12+, Windows 10/11 o Linux (x64)
-- Node.js 20+ e npm 10+
-- Circa 200 MB di spazio per il modello NER e i dati OCR
+- Node.js 20 o successivo e npm 10 o successivo;
+- macOS 12+, Windows 10/11 oppure Linux x64;
+- dipendenze di sistema indicate dai test PDF/OCR per eseguire i gate completi.
 
-### Setup
+### Avvio da sorgente
 
 ```bash
-# 1. Clona il repository
 git clone https://github.com/avvocati-e-mac/anonimator.git
 cd anonimator
-
-# 2. Installa le dipendenze Node.js
 npm install
-
-# 3. Scarica il modello NER e il file tessdata per OCR
 bash scripts/download-models.sh
-
-# 4. Avvia l'app in modalità sviluppo
 npm start
 ```
 
-### Comandi disponibili
+### Controlli principali
 
-| Comando | Descrizione |
-|---|---|
-| `npm start` | Avvia l'app in modalità sviluppo |
-| `npm test` | Esegue i test unitari (vitest) |
-| `npm run typecheck` | Verifica TypeScript senza compilare |
-| `npm run dist:mac:arm64` | Crea il DMG per macOS Apple Silicon |
-| `npm run dist:mac:x64` | Crea il DMG per macOS Intel |
-| `npm run dist:mac:both` | Crea entrambi i DMG (arm64 + x64) in sequenza |
-| `npm run dist:linux` | Crea l'AppImage per Linux x64 |
-
----
-
-## Architettura
-
-- **Electron** (Main process): parsing documenti, NER engine, generazione output
-- **React 18 + TypeScript**: interfaccia utente (sandboxed renderer)
-- **Transformers.js + ONNX**: modello NER italiano locale (`DeepMount00/Italian_NER_XXL_v2`)
-- **MuPDF + pdf-lib + fontkit**: redaction, ricostruzione raster e layer OCR invisibile pseudonimizzato
-- **Tesseract.js**: OCR offline per PDF scansionati
-
-**Pipeline NER (3 livelli):**
-1. **Regex contestuali** (`regexPatterns.ts`): 12 pattern specifici per documenti legali italiani (parti processuali, difensori, firme PKI, ecc.)
-2. **BERT locale** (`Italian_NER_XXL_v2` ONNX): chunking sliding window con overlap 40 token, cache chunk SHA-256, veto filter ruoli processuali, score boosting cross-layer, co-reference resolution
-3. **LLM locale** (opzionale, Ollama/LM Studio): livello aggiuntivo configurabile dall'utente
-
-I modelli AI (NER e OCR) vengono scaricati automaticamente al primo avvio o tramite le Impostazioni per ridurre la dimensione iniziale dell'app. L'elaborazione successiva rimane 100% offline.
-
-## Struttura del progetto
-
-```
-src/
-  main/         # Processo Node.js (parser, NER, output generators)
-  preload/      # contextBridge (API renderer → main)
-  renderer/     # App React (sandboxed, zero Node.js access)
-  shared/       # Tipi TypeScript condivisi (IPC contracts)
-resources/
-  models/       # Modello ONNX NER (scaricato da download-models.sh)
-  tessdata/     # Dati OCR italiano (scaricato da download-models.sh)
-scripts/
-  download-models.sh  # Script di setup modelli
-  build-mac.sh        # Script build DMG arm64 + x64
-  check-install.sh    # Script diagnostica installazione (verifica modelli, binding, log)
-tests/          # Test unitari
+```bash
+npm run typecheck:all
+npm run ui:build
+npm run test:unit
+npm run test:ner-recall
+npm run test:corpus
+npm run test:roundtrip
+npm run test:pixel-leak
+npm run test:searchable-pdf
+npm run test:pdf-rss
 ```
 
-## TODO — Cose da fare
+I test di richiamo NER/OCR usano un corpus interamente sintetico di atti e moduli. Misurano dati trovati, omissioni e falsi positivi senza inserire documenti reali nel repository. Rendono le regressioni riproducibili, ma non garantiscono risultati completi su qualsiasi atto.
 
-### Bug da correggere
-
-- [x] **PDF scansionati: rimozione irreversibile** — dalla v1.6 il documento viene ricostruito pagina per pagina: rettangoli e pseudonimi sono impressi nel raster prima della codifica JPEG, senza conservare i pixel o gli stream originali. Dalla v1.7 un'unica passata OCR alimenta anche un layer ricercabile invisibile contenente soltanto testo non sensibile e pseudonimi.
-- [x] **NER non disponibile su Windows 10 / ARM64** — risolto l'errore tecnico `Cannot read properties of undefined (reading 'create')` tramite pre-caricamento del modulo nativo e disabilitazione del proxy worker.
-- [x] **DOCX: parser riscritto con mammoth** — estrattore testo sostituito con mammoth; run-split, tabelle, content controls e tracked changes gestiti nativamente
-- [x] **DOCX: multi-entità nello stesso paragrafo** — fix docxGenerator: algoritmo token-based garantisce la sostituzione corretta di N entità nello stesso `<w:t>` senza perdita di testo
-- [ ] **PDF: pseudonimi brevi spezzati su due righe** — "F. S." viene diviso quando il testo originale è vicino al margine destro (`pdfGenerator.ts`)
-- [ ] **PDF: footer "1 di ??" invece del totale pagine** — `pdf-lib` non legge il numero totale di pagine dal PDF originale; richiede lettura da MuPDF
-- [ ] **PDF: redaction su token con apostrofo** — es. "D'Angiolino" viene spezzato sull'apostrofo durante la redaction, il testo non viene oscurato completamente
-
-### Miglioramenti
-
-- [ ] **Screenshot nel README** — aggiungere immagini di DropZone, revisione entità e dark mode
-- [ ] **Testare DMG x64 su Mac Intel** — il DMG è prodotto ma non ancora testato su hardware Intel reale
-
-### Piattaforme
-
-- [x] **Supporto Linux** — build AppImage x64 disponibile dalla v1.1.3
-
-### Funzionalità future
-
-- [ ] **Auto-update** — check aggiornamenti opzionale (fuori dal flusso di elaborazione)
-- [x] **Statistiche di elaborazione** — tempi per pagina, numero pagine, throughput (pag/s) nella schermata di successo
-- [x] **Aggiunta manuale di entità** — possibilità di aggiungere entità non rilevate da NER/LLM direttamente dalla schermata di revisione
-- [x] **Salvataggio e importazione entità** — esportare/importare il dizionario di sostituzione per riutilizzarlo su documenti della stessa pratica con i medesimi soggetti
-- [ ] **Ottimizzazione prompt per modelli piccoli** — prompt specializzato per LLM <9B (es. Phi-3, Gemma 2B) che non gestiscono bene prompt generici lunghi
-- [x] **Ottimizzazione rilevamento entità NER** — migliorata la pipeline NER con co-reference resolution, veto filter ruoli processuali, score boosting cross-layer, sliding-window chunking, cache chunk NER (v1.4.x)
-- [x] **Riconoscimento targa veicolo** — nuovo tipo entità TARGA con pattern italiano (v1.5.0)
-- [x] **Blocklist intestazioni legali** — `PREMESSO CHE`, `SVOLGIMENTO DEL PROCESSO`, ecc. non vengono più anonimizzati per errore (v1.5.0)
-
----
+L’app usa Electron, React e TypeScript. Il processo principale gestisce file, OCR, riconoscimento e generazione; l’interfaccia non ha accesso diretto a Node.js o al filesystem. Le richieste sensibili sono validate e legate all’analisi e alla finestra che le ha create.
 
 ## Licenza
 
-MIT — vedi [LICENSE](LICENSE)
+MIT — vedere [LICENSE](LICENSE).
